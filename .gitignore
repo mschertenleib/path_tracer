@@ -1,0 +1,7 @@
+build*
+cmake-build*
+.idea
+.vscode
+.ccls
+compile_commands.json
+imgui.ini

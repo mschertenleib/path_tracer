@@ -1,2 +1,70 @@
 # path_tracer
-A path tracer using the Vulkan ray tracing extensions
+
+A path tracer written in C++, using the Vulkan ray tracing extensions
+
+## Quick start
+
+Prerequisites:
+
+- A C++ compiler
+- [git](https://git-scm.com)
+- [CMake](https://cmake.org)
+- [The Vulkan SDK](https://www.lunarg.com/vulkan-sdk)
+
+Clone the project:
+
+```
+git clone --recursive https://github.com/mathieu-schertenleib/path_tracer.git
+```
+
+If the repository was cloned non-recursively, clone the submodules with `git submodule update --init`.
+
+From the project root directory, create a build directory:
+
+```
+cd path_tracer
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+```
+
+Build the project:
+
+```
+cmake --build build
+```
+
+## External libraries
+
+- [GLFW](https://github.com/glfw/glfw)
+- [Dear ImGui](https://github.com/ocornut/imgui)
+- [stb](https://github.com/nothings/stb)
+
+## References
+
+- [smallpt](http://www.kevinbeason.com/smallpt)
+- [_Ray Tracing in One Weekend_](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
+- [_Ray Tracing: The Next Week_](https://raytracing.github.io/books/RayTracingTheNextWeek.html)
+- [_Ray Tracing: The Rest of Your
+  Life_](https://raytracing.github.io/books/RayTracingTheRestOfYourLife.html)
+- [_Physically Based Rendering: From Theory To Implementation_](https://pbr-book.org)
+- [The Cornell Box](http://www.graphics.cornell.edu/online/box)
+- [Vulkan-Tutorial](https://vulkan-tutorial.com)
+- [Sascha Willems Vulkan examples](https://github.com/SaschaWillems/Vulkan)
+- Möller, Tomas; Trumbore, Ben (1997). _Fast, Minimum Storage Ray-Triangle Intersection_. Journal of
+  Graphics Tools. 2: 21–28. http://www.graphics.cornell.edu/pubs/1997/MT97.pdf
+- https://www.researchgate.net/publication/228610268_Ray-Triangle_Intersection_Algorithm_for_Modern_CPU_Architectures
+- Veach, Eric; Guibas, Leonidas J. (1995). _Optimally Combining Sampling Techniques for Monte Carlo
+  Rendering_. SIGGRAPH 95 Proceedings, Addison-Wesley, pp.
+  419-428. https://legacy.sites.fas.harvard.edu/~cs278/papers/veach.pdf
+- Dammertz, H., Hanika, J. and Keller, A. (2008), _Shallow Bounding Volume Hierarchies for Fast SIMD
+  Ray Tracing of Incoherent Rays_. Computer Graphics Forum, 27:
+  1225-1233. https://www.uni-ulm.de/fileadmin/website_uni_ulm/iui.inst.100/institut/Papers/QBVH.pdf
+- V. Fuetterling, C. Lojewski, F.-J. Pfreundt, A. Ebert, _Efficient Ray Tracing Kernels for Modern
+  CPU Architectures_, Journal of Computer Graphics Techniques (JCGT), vol. 4, no. 4, 91–111,
+  2015, https://jcgt.org/published/0004/04/05/
+- _A Fast and Robust Method for Avoiding Self-Intersection_
+  , https://link.springer.com/content/pdf/10.1007/978-1-4842-4427-2_6.pdf
+- _Ray Tracing Gems II_, https://link.springer.com/book/10.1007/978-1-4842-7185-8
+
+## License
+
+This software is released under [MIT License](LICENSE)
