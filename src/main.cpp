@@ -816,14 +816,43 @@ vkDestroyDebugUtilsMessengerEXT(VkInstance instance,
     func(instance, messenger, pAllocator);
 }
 
+template <typename EF>
+class scope_exit
+{
+public:
+    explicit scope_exit(EF &&fn) : m_fn {std::forward<EF>(fn)}
+    {
+    }
+
+    ~scope_exit() noexcept
+    {
+        m_fn();
+    }
+
+private:
+    EF m_fn;
+};
+
+#define CONCATENATE_IMPL(s1, s2) s1##s2
+#define CONCATENATE(s1, s2)      CONCATENATE_IMPL(s1, s2)
+
+#ifdef __COUNTER__
+#define ANONYMOUS_VARIABLE(s) CONCATENATE(s, __COUNTER__)
+#else
+#define ANONYMOUS_VARIABLE(s) CONCATENATE(s, __LINE__)
+#endif
+
+#define SCOPE_EXIT(fn)                                                         \
+    auto ANONYMOUS_VARIABLE(scope_exit_object_) = scope_exit(fn)
+
 int main()
 {
     try
     {
         context ctx {};
+        SCOPE_EXIT([&] { shutdown(ctx); });
         init(ctx);
         run(ctx);
-        shutdown(ctx);
     }
     catch (const std::exception &e)
     {
