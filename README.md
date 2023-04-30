@@ -37,9 +37,11 @@ cmake --build build
 - [GLFW](https://github.com/glfw/glfw)
 - [Dear ImGui](https://github.com/ocornut/imgui)
 - [stb](https://github.com/nothings/stb)
+- [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
 
 ## References
 
+- [vk_mini_path_tracer](https://github.com/nvpro-samples/vk_mini_path_tracer)
 - [smallpt](http://www.kevinbeason.com/smallpt)
 - [_Ray Tracing in One Weekend_](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
 - [_Ray Tracing: The Next Week_](https://raytracing.github.io/books/RayTracingTheNextWeek.html)

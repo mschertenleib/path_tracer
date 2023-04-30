@@ -1,20 +1,8 @@
 #version 450
 
-#extension GL_EXT_scalar_block_layout : require
-
 layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
 layout(binding = 0, rgba32f) uniform image2D storage_image;
-
-layout(binding = 1, scalar) buffer vertex_buffer
-{
-    vec3 vertices[];
-};
-
-layout(binding = 2, scalar) buffer index_buffer
-{
-    uint indices[];
-};
 
 uint hash(uint x)
 {
@@ -44,8 +32,8 @@ void main()
         return;
     }
 
-    const vec2 uv = vec2(gl_GlobalInvocationID.xy) / vec2(image_size.xy);
-    const vec4 color = vec4(uv, 0.0, 1.0);
+    uint rng_state = hash(gl_GlobalInvocationID.y * 8192 + gl_GlobalInvocationID.x + 1);
+    const vec4 color = vec4(random(rng_state), random(rng_state), random(rng_state), 1.0);
 
     imageStore(storage_image, ivec2(gl_GlobalInvocationID.xy), color);
 }

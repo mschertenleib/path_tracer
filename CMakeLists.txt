@@ -65,13 +65,11 @@ target_link_libraries(imgui PRIVATE
 
 add_executable(path_tracer
         src/main.cpp
-        src/renderer.cpp src/renderer.hpp
-        src/utils.cpp src/utils.hpp
-        external/stb/stb_image.h
         external/stb/stb_image_write.h)
 target_include_directories(path_tracer PRIVATE
         external/stb
         external/glfw/include
+        external/VulkanMemoryAllocator/include
         external/imgui
         external/imgui/backends)
 target_compile_options(path_tracer PRIVATE ${PROJECT_OPTIONS})
@@ -81,11 +79,9 @@ target_compile_definitions(path_tracer PRIVATE
         $<$<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>>:NDEBUG>
         _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(path_tracer PRIVATE
-        Vulkan::Vulkan
-        glfw
-        imgui)
+        Vulkan::Vulkan)
 
-set(SHADERS fullscreen.vert fullscreen.frag render.comp)
+set(SHADERS render.comp)
 foreach (SHADER IN LISTS SHADERS)
     set(SRC_SHADER ${CMAKE_SOURCE_DIR}/src/${SHADER})
     set(SPV_SHADER ${CMAKE_BINARY_DIR}/${SHADER}.spv)
@@ -100,11 +96,13 @@ add_custom_target(shaders ALL DEPENDS ${SPV_SHADERS})
 add_dependencies(path_tracer shaders)
 
 
+message(CHECK_START "Checking for IPO support")
 include(CheckIPOSupported)
-check_ipo_supported(RESULT ipo_supported OUTPUT ipo_supported_error)
-if (ipo_supported)
+check_ipo_supported(RESULT ipo_supported_result OUTPUT ipo_supported_output)
+if (ipo_supported_result)
+    message(CHECK_PASS "supported")
     set_property(GLOBAL PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
     set_property(GLOBAL PROPERTY INTERPROCEDURAL_OPTIMIZATION_MIN_SIZE_REL TRUE)
 else ()
-    message(WARNING "IPO is not supported: ${ipo_supported_error}")
+    message(CHECK_FAIL "not supported")
 endif ()
