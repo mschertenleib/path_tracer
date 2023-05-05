@@ -79,7 +79,8 @@ target_compile_definitions(path_tracer PRIVATE
         $<$<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>>:NDEBUG>
         _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(path_tracer PRIVATE
-        Vulkan::Vulkan)
+        Vulkan::Vulkan
+        glfw)
 
 set(SHADERS render.comp)
 foreach (SHADER IN LISTS SHADERS)

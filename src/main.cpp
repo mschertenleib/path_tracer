@@ -5,12 +5,20 @@
 #pragma GCC diagnostic ignored "-Wuseless-cast"
 #pragma GCC diagnostic ignored "-Wconversion"
 #pragma GCC diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic ignored "-Wnull-dereference"
 #endif
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
 #endif
+
+#define VK_NO_PROTOTYPES
+#include <vulkan/vulkan.h>
+
+#define GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
 
 #ifdef __GNUC__
 #pragma GCC diagnostic push
@@ -28,13 +36,8 @@
 #pragma GCC diagnostic pop
 #endif
 
-#include <vulkan/vulkan.h>
-
-#include <algorithm>
 #include <array>
-#include <bit>
 #include <cassert>
-#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -49,6 +52,53 @@
 
 namespace
 {
+
+#define VULKAN_GLOBAL_COMMANDS(FUNC)                                           \
+    FUNC(vkGetInstanceProcAddr)                                                \
+    FUNC(vkEnumerateInstanceLayerProperties)                                   \
+    FUNC(vkEnumerateInstanceExtensionProperties)                               \
+    FUNC(vkCreateInstance)
+
+#define VULKAN_DEBUG_INSTANCE_COMMANDS(FUNC)                                   \
+    FUNC(vkCreateDebugUtilsMessengerEXT)                                       \
+    FUNC(vkDestroyDebugUtilsMessengerEXT)
+
+#define VULKAN_INSTANCE_COMMANDS(FUNC)                                         \
+    FUNC(vkDestroyInstance)                                                    \
+    FUNC(vkEnumeratePhysicalDevices)                                           \
+    FUNC(vkEnumerateDeviceExtensionProperties)                                 \
+    FUNC(vkGetPhysicalDeviceQueueFamilyProperties)                             \
+    FUNC(vkGetPhysicalDeviceFeatures2)                                         \
+    FUNC(vkCreateDevice)                                                       \
+    FUNC(vkGetDeviceProcAddr)
+
+#define VULKAN_DEVICE_COMMANDS(FUNC)                                           \
+    FUNC(vkDestroyDevice)                                                      \
+    FUNC(vkGetDeviceQueue)                                                     \
+    FUNC(vkCreateImageView)                                                    \
+    FUNC(vkDestroyImageView)                                                   \
+    FUNC(vkDestroyImage)                                                       \
+    FUNC(vkCreateCommandPool)                                                  \
+    FUNC(vkDestroyCommandPool)                                                 \
+    FUNC(vkAllocateCommandBuffers)                                             \
+    FUNC(vkFreeCommandBuffers)                                                 \
+    FUNC(vkBeginCommandBuffer)                                                 \
+    FUNC(vkEndCommandBuffer)                                                   \
+    FUNC(vkCmdPipelineBarrier)                                                 \
+    FUNC(vkCmdCopyImageToBuffer)                                               \
+    FUNC(vkCmdClearColorImage)                                                 \
+    FUNC(vkQueueSubmit)                                                        \
+    FUNC(vkQueueWaitIdle)                                                      \
+    FUNC(vkDeviceWaitIdle)
+
+#define VULKAN_DECLARE_FUNCTION_POINTER(name) PFN_##name name {};
+VULKAN_GLOBAL_COMMANDS(VULKAN_DECLARE_FUNCTION_POINTER)
+#ifdef ENABLE_VALIDATION_LAYERS
+VULKAN_DEBUG_INSTANCE_COMMANDS(VULKAN_DECLARE_FUNCTION_POINTER)
+#endif
+VULKAN_INSTANCE_COMMANDS(VULKAN_DECLARE_FUNCTION_POINTER)
+VULKAN_DEVICE_COMMANDS(VULKAN_DECLARE_FUNCTION_POINTER)
+#undef VULKAN_DECLARE_FUNCTION_POINTER
 
 struct context
 {
@@ -77,6 +127,59 @@ fatal_error(std::string_view message,
     std::ostringstream oss;
     oss << loc.file_name() << ':' << loc.line() << ": " << message;
     throw std::runtime_error(oss.str());
+}
+
+void glfw_error_callback(int error, const char *description)
+{
+    std::cerr << "GLFW error " << error << ": " << description << '\n';
+}
+
+void load_global_commands()
+{
+    vkGetInstanceProcAddr = reinterpret_cast<decltype(vkGetInstanceProcAddr)>(
+        glfwGetInstanceProcAddress(nullptr, "vkGetInstanceProcAddr"));
+    assert(vkGetInstanceProcAddr != nullptr);
+
+#define VULKAN_LOAD_GLOBAL_COMMAND(func)                                       \
+    func = reinterpret_cast<decltype(func)>(                                   \
+        vkGetInstanceProcAddr(nullptr, #func));                                \
+    assert(func != nullptr);
+
+    VULKAN_GLOBAL_COMMANDS(VULKAN_LOAD_GLOBAL_COMMAND)
+
+#undef VULKAN_LOAD_GLOBAL_COMMAND
+}
+
+void load_instance_commands(VkInstance instance)
+{
+    assert(instance != nullptr);
+
+#define VULKAN_LOAD_INSTANCE_COMMAND(func)                                     \
+    func = reinterpret_cast<decltype(func)>(                                   \
+        vkGetInstanceProcAddr(instance, #func));                               \
+    assert(func != nullptr);
+
+    VULKAN_INSTANCE_COMMANDS(VULKAN_LOAD_INSTANCE_COMMAND)
+#ifdef ENABLE_VALIDATION_LAYERS
+    VULKAN_DEBUG_INSTANCE_COMMANDS(VULKAN_LOAD_INSTANCE_COMMAND)
+#endif
+
+#undef VULKAN_LOAD_INSTANCE_COMMAND
+}
+
+void load_device_commands(VkDevice device)
+{
+    assert(device != nullptr);
+    assert(vkGetDeviceProcAddr != nullptr);
+
+#define VULKAN_LOAD_DEVICE_COMMAND(func)                                       \
+    func =                                                                     \
+        reinterpret_cast<decltype(func)>(vkGetDeviceProcAddr(device, #func));  \
+    assert(func != nullptr);
+
+    VULKAN_DEVICE_COMMANDS(VULKAN_LOAD_DEVICE_COMMAND)
+
+#undef VULKAN_LOAD_DEVICE_COMMAND
 }
 
 [[nodiscard]] constexpr const char *
@@ -413,6 +516,22 @@ void store_image_to_png(context &ctx, const char *filename)
 void init(context &ctx)
 {
     {
+        glfwSetErrorCallback(glfw_error_callback);
+
+        if (!glfwInit())
+        {
+            fatal_error("Failed to initialize GLFW");
+        }
+
+        if (!glfwVulkanSupported())
+        {
+            fatal_error("Vulkan loader or ICD have not been found");
+        }
+    }
+
+    load_global_commands();
+
+    {
         VkApplicationInfo application_info {};
         application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         application_info.apiVersion = VK_API_VERSION_1_2;
@@ -492,6 +611,8 @@ void init(context &ctx)
         vk_check(
             vkCreateInstance(&instance_create_info, nullptr, &ctx.instance));
 
+        load_instance_commands(ctx.instance);
+
         vk_check(vkCreateDebugUtilsMessengerEXT(ctx.instance,
                                                 &debug_messenger_create_info,
                                                 nullptr,
@@ -506,6 +627,7 @@ void init(context &ctx)
         vk_check(
             vkCreateInstance(&instance_create_info, nullptr, &ctx.instance));
 
+        load_instance_commands(ctx.instance);
 #endif
     }
 
@@ -564,17 +686,24 @@ void init(context &ctx)
             ctx.physical_device, &device_create_info, nullptr, &ctx.device));
     }
 
+    load_device_commands(ctx.device);
+
     {
         vkGetDeviceQueue(
             ctx.device, ctx.compute_queue_family, 0, &ctx.compute_queue);
     }
 
     {
+        VmaVulkanFunctions vulkan_functions {};
+        vulkan_functions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+        vulkan_functions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+
         VmaAllocatorCreateInfo allocatorCreateInfo {};
         allocatorCreateInfo.vulkanApiVersion = VK_API_VERSION_1_2;
         allocatorCreateInfo.physicalDevice = ctx.physical_device;
         allocatorCreateInfo.device = ctx.device;
         allocatorCreateInfo.instance = ctx.instance;
+        allocatorCreateInfo.pVulkanFunctions = &vulkan_functions;
 
         vk_check(vmaCreateAllocator(&allocatorCreateInfo, &ctx.allocator));
     }
@@ -712,6 +841,8 @@ void shutdown(context &ctx)
     }
 
     ctx = {};
+
+    glfwTerminate();
 }
 
 void run(context &ctx)
@@ -792,29 +923,6 @@ void run(context &ctx)
 }
 
 } // namespace
-
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateDebugUtilsMessengerEXT(
-    VkInstance instance,
-    const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
-    const VkAllocationCallbacks *pAllocator,
-    VkDebugUtilsMessengerEXT *pMessenger)
-{
-    const auto func = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
-        vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT"));
-    assert(func);
-    return func(instance, pCreateInfo, pAllocator, pMessenger);
-}
-
-VKAPI_ATTR void VKAPI_CALL
-vkDestroyDebugUtilsMessengerEXT(VkInstance instance,
-                                VkDebugUtilsMessengerEXT messenger,
-                                const VkAllocationCallbacks *pAllocator)
-{
-    const auto func = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
-        vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
-    assert(func);
-    func(instance, messenger, pAllocator);
-}
 
 template <typename EF>
 class scope_exit
