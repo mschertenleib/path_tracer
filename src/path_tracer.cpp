@@ -1757,39 +1757,40 @@ void run()
         ImGui_ImplVulkan_NewFrame();
         ImGui::NewFrame();
 
-        ImGui::Text("%.3f ms/frame, %.1f fps",
-                    1000.0 / static_cast<double>(ImGui::GetIO().Framerate),
-                    static_cast<double>(ImGui::GetIO().Framerate));
-
-        /*if (ImGui::Begin("Viewport"))
+        if (ImGui::Begin("Viewport"))
         {
-            const auto image_aspect_ratio =
-                static_cast<float>(g.render_image_width) /
-                static_cast<float>(g.render_image_height);
+            ImGui::Text("%.3f ms/frame, %.1f fps",
+                        1000.0 / static_cast<double>(ImGui::GetIO().Framerate),
+                        static_cast<double>(ImGui::GetIO().Framerate));
 
-            const auto region_min = ImGui::GetWindowContentRegionMin();
-            const auto region_max = ImGui::GetWindowContentRegionMax();
-            const auto region_width = region_max.x - region_min.x;
-            const auto region_height = region_max.y - region_min.y;
-            if (region_width > 0.0f && region_height > 0.0f)
+            const auto region_size = ImGui::GetContentRegionAvail();
+            if (region_size.x > 0.0f && region_size.y > 0.0f)
             {
-                const auto region_aspect_ratio = region_width / region_height;
-                auto image_width = region_width;
-                auto image_height = region_height;
+                const auto image_aspect_ratio =
+                    static_cast<float>(g.render_image_width) /
+                    static_cast<float>(g.render_image_height);
+                const auto region_aspect_ratio = region_size.x / region_size.y;
+                const auto cursor_pos = ImGui::GetCursorPos();
+                auto width = region_size.x;
+                auto height = region_size.y;
+                auto x = cursor_pos.x;
+                auto y = cursor_pos.y;
                 if (image_aspect_ratio >= region_aspect_ratio)
                 {
-                    image_height = image_width / image_aspect_ratio;
+                    height = width / image_aspect_ratio;
+                    y += (region_size.y - height) * 0.5f;
                 }
                 else
                 {
-                    image_width = image_height * image_aspect_ratio;
+                    width = height * image_aspect_ratio;
+                    x += (region_size.x - width) * 0.5f;
                 }
-
+                ImGui::SetCursorPos({x, y});
                 ImGui::Image(static_cast<ImTextureID>(g.descriptor_set),
-                             {image_width, image_height});
+                             {width, height});
             }
         }
-        ImGui::End();*/
+        ImGui::End();
 
         ImGui::Render();
 
