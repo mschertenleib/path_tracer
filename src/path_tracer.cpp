@@ -88,6 +88,10 @@ struct
     PFN_vkGetPhysicalDeviceQueueFamilyProperties
         vkGetPhysicalDeviceQueueFamilyProperties;
     PFN_vkGetPhysicalDeviceFeatures2 vkGetPhysicalDeviceFeatures2;
+    PFN_vkGetPhysicalDeviceSurfaceFormatsKHR
+        vkGetPhysicalDeviceSurfaceFormatsKHR;
+    PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR;
     PFN_vkCreateDevice vkCreateDevice;
     PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr;
 
@@ -101,6 +105,9 @@ struct
 
     PFN_vkDestroyDevice vkDestroyDevice;
     PFN_vkGetDeviceQueue vkGetDeviceQueue;
+    PFN_vkCreateSwapchainKHR vkCreateSwapchainKHR;
+    PFN_vkDestroySwapchainKHR vkDestroySwapchainKHR;
+    PFN_vkGetSwapchainImagesKHR vkGetSwapchainImagesKHR;
     PFN_vkCreateImageView vkCreateImageView;
     PFN_vkDestroyImageView vkDestroyImageView;
     PFN_vkDestroyImage vkDestroyImage;
@@ -133,6 +140,11 @@ struct
 
     VkQueue queue;
     VmaAllocator allocator;
+    VkSwapchainKHR swapchain;
+    std::uint32_t swapchain_image_count;
+    std::uint32_t swapchain_min_image_count;
+    std::vector<VkImage> swapchain_images;
+    std::vector<VkImageView> swapchain_image_views;
     VkImage render_image;
     VkImageView render_image_view;
     VmaAllocation render_image_allocation;
@@ -346,6 +358,8 @@ void load_instance_commands() noexcept
     LOAD(vkEnumerateDeviceExtensionProperties)
     LOAD(vkGetPhysicalDeviceQueueFamilyProperties)
     LOAD(vkGetPhysicalDeviceFeatures2)
+    LOAD(vkGetPhysicalDeviceSurfaceFormatsKHR)
+    LOAD(vkGetPhysicalDeviceSurfaceCapabilitiesKHR)
     LOAD(vkCreateDevice)
     LOAD(vkGetDeviceProcAddr)
 
@@ -364,6 +378,9 @@ void load_device_commands() noexcept
 
     LOAD(vkDestroyDevice)
     LOAD(vkGetDeviceQueue)
+    LOAD(vkCreateSwapchainKHR)
+    LOAD(vkDestroySwapchainKHR)
+    LOAD(vkGetSwapchainImagesKHR)
     LOAD(vkCreateImageView)
     LOAD(vkDestroyImageView)
     LOAD(vkDestroyImage)
@@ -489,6 +506,145 @@ is_physical_device_suitable(VkPhysicalDevice physical_device,
     }
 
     return true;
+}
+
+void create_swapchain()
+{
+    VkResult result;
+
+    std::uint32_t surface_format_count {};
+    result = g.vkGetPhysicalDeviceSurfaceFormatsKHR(
+        g.physical_device, g.surface, &surface_format_count, nullptr);
+    vk_check(result);
+    std::vector<VkSurfaceFormatKHR> surface_formats(surface_format_count);
+    result = g.vkGetPhysicalDeviceSurfaceFormatsKHR(g.physical_device,
+                                                    g.surface,
+                                                    &surface_format_count,
+                                                    surface_formats.data());
+    vk_check(result);
+
+    auto swapchain_format = surface_formats.front();
+    for (const auto &format : surface_formats)
+    {
+        if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
+            format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+        {
+            swapchain_format = format;
+            break;
+        }
+    }
+
+    VkSurfaceCapabilitiesKHR surface_capabilities {};
+    result = g.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+        g.physical_device, g.surface, &surface_capabilities);
+    vk_check(result);
+
+    VkExtent2D swapchain_extent;
+    if (surface_capabilities.currentExtent.width !=
+        std::numeric_limits<std::uint32_t>::max())
+    {
+        swapchain_extent = surface_capabilities.currentExtent;
+    }
+    else
+    {
+        int framebuffer_width;
+        int framebuffer_height;
+        glfwGetFramebufferSize(
+            g.window, &framebuffer_width, &framebuffer_height);
+        swapchain_extent = {static_cast<std::uint32_t>(framebuffer_width),
+                            static_cast<std::uint32_t>(framebuffer_height)};
+    }
+    swapchain_extent.width =
+        std::clamp(swapchain_extent.width,
+                   surface_capabilities.minImageExtent.width,
+                   surface_capabilities.maxImageExtent.width);
+    swapchain_extent.height =
+        std::clamp(swapchain_extent.height,
+                   surface_capabilities.minImageExtent.height,
+                   surface_capabilities.maxImageExtent.height);
+
+    g.swapchain_min_image_count = surface_capabilities.minImageCount + 1;
+    if (surface_capabilities.maxImageCount > 0 &&
+        g.swapchain_min_image_count > surface_capabilities.maxImageCount)
+    {
+        g.swapchain_min_image_count = surface_capabilities.maxImageCount;
+    }
+
+    VkSwapchainCreateInfoKHR swapchain_create_info {};
+    swapchain_create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    swapchain_create_info.surface = g.surface;
+    swapchain_create_info.minImageCount = g.swapchain_min_image_count;
+    swapchain_create_info.imageFormat = swapchain_format.format;
+    swapchain_create_info.imageColorSpace = swapchain_format.colorSpace;
+    swapchain_create_info.imageExtent = swapchain_extent;
+    swapchain_create_info.imageArrayLayers = 1;
+    swapchain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    swapchain_create_info.preTransform = surface_capabilities.currentTransform;
+    swapchain_create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    swapchain_create_info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    swapchain_create_info.clipped = VK_TRUE;
+    swapchain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    swapchain_create_info.queueFamilyIndexCount = 1;
+    swapchain_create_info.pQueueFamilyIndices = &g.queue_family;
+
+    result = g.vkCreateSwapchainKHR(
+        g.device, &swapchain_create_info, nullptr, &g.swapchain);
+    vk_check(result);
+
+    result = g.vkGetSwapchainImagesKHR(
+        g.device, g.swapchain, &g.swapchain_image_count, nullptr);
+    vk_check(result);
+    g.swapchain_images.resize(g.swapchain_image_count);
+    result = g.vkGetSwapchainImagesKHR(g.device,
+                                       g.swapchain,
+                                       &g.swapchain_image_count,
+                                       g.swapchain_images.data());
+    vk_check(result);
+
+    g.swapchain_image_views.resize(g.swapchain_image_count);
+
+    VkImageViewCreateInfo image_view_create_info {};
+    image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    image_view_create_info.format = swapchain_format.format;
+    image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_R;
+    image_view_create_info.components.g = VK_COMPONENT_SWIZZLE_G;
+    image_view_create_info.components.b = VK_COMPONENT_SWIZZLE_B;
+    image_view_create_info.components.a = VK_COMPONENT_SWIZZLE_A;
+    image_view_create_info.subresourceRange.aspectMask =
+        VK_IMAGE_ASPECT_COLOR_BIT;
+    image_view_create_info.subresourceRange.baseMipLevel = 0;
+    image_view_create_info.subresourceRange.levelCount = 1;
+    image_view_create_info.subresourceRange.baseArrayLayer = 0;
+    image_view_create_info.subresourceRange.layerCount = 1;
+
+    for (std::uint32_t i {}; i < g.swapchain_image_count; ++i)
+    {
+        image_view_create_info.image = g.swapchain_images[i];
+        result = g.vkCreateImageView(g.device,
+                                     &image_view_create_info,
+                                     nullptr,
+                                     &g.swapchain_image_views[i]);
+        vk_check(result);
+    }
+}
+
+void destroy_swapchain()
+{
+    if (!g.device)
+    {
+        return;
+    }
+
+    for (const auto image_view : g.swapchain_image_views)
+    {
+        g.vkDestroyImageView(g.device, image_view, nullptr);
+    }
+
+    if (g.swapchain)
+    {
+        g.vkDestroySwapchainKHR(g.device, g.swapchain, nullptr);
+    }
 }
 
 void init()
@@ -643,6 +799,7 @@ void init()
     }
 
     constexpr const char *device_extensions[] {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         VK_KHR_RAY_QUERY_EXTENSION_NAME};
@@ -721,6 +878,8 @@ void init()
         result = vmaCreateAllocator(&allocatorCreateInfo, &g.allocator);
         vk_check(result);
     }
+
+    create_swapchain();
 
     {
         g.render_image_width = 160;
@@ -826,16 +985,28 @@ void init()
     }
 
     {
-        VkDescriptorPoolSize pool_size {};
-        pool_size.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        pool_size.descriptorCount = 1;
+        const VkDescriptorPoolSize pool_sizes[] {
+            {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
+            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
+            {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
+            {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000}};
 
         VkDescriptorPoolCreateInfo descriptor_pool_create_info {};
         descriptor_pool_create_info.sType =
             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        descriptor_pool_create_info.maxSets = 1;
-        descriptor_pool_create_info.poolSizeCount = 1;
-        descriptor_pool_create_info.pPoolSizes = &pool_size;
+        descriptor_pool_create_info.flags =
+            VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        descriptor_pool_create_info.maxSets = 1000 * std::size(pool_sizes);
+        descriptor_pool_create_info.poolSizeCount =
+            static_cast<std::uint32_t>(std::size(pool_sizes));
+        descriptor_pool_create_info.pPoolSizes = pool_sizes;
 
         result = g.vkCreateDescriptorPool(g.device,
                                           &descriptor_pool_create_info,
@@ -933,21 +1104,21 @@ void init()
 
         ImGui_ImplGlfw_InitForVulkan(g.window, true);
 
-        /*ImGui_ImplVulkan_InitInfo init_info {};
-        init_info.Instance = {};
-        init_info.PhysicalDevice = {};
-        init_info.Device = {};
-        init_info.QueueFamily = {};
-        init_info.Queue = {};
-        init_info.PipelineCache = {};
-        init_info.DescriptorPool = {};
-        init_info.Subpass = {};
-        init_info.MinImageCount = {};
-        init_info.ImageCount = {};
+        ImGui_ImplVulkan_InitInfo init_info {};
+        init_info.Instance = g.instance;
+        init_info.PhysicalDevice = g.physical_device;
+        init_info.Device = g.device;
+        init_info.QueueFamily = g.queue_family;
+        init_info.Queue = g.queue;
+        init_info.PipelineCache = VK_NULL_HANDLE;
+        init_info.DescriptorPool = g.descriptor_pool;
+        init_info.Subpass = VK_SUBPASS_EXTERNAL;
+        init_info.MinImageCount = g.swapchain_min_image_count;
+        init_info.ImageCount = g.swapchain_image_count;
         init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
         init_info.Allocator = nullptr;
         init_info.CheckVkResultFn = &imgui_vk_check;
-        ImGui_ImplVulkan_Init(&init_info, g.render_pass);*/
+        // ImGui_ImplVulkan_Init(&init_info, g.render_pass);
 
         /*const auto command_buffer =
             begin_one_time_submit_command_buffer(m_device, m_command_pool);
@@ -1014,6 +1185,8 @@ void shutdown()
             g.vkDestroyImage(g.device, g.render_image, nullptr);
         }
     }
+
+    destroy_swapchain();
 
     if (g.allocator)
     {
