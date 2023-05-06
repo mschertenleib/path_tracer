@@ -64,6 +64,8 @@
 namespace
 {
 
+inline constexpr std::uint32_t frames_in_flight {3};
+
 struct
 {
     GLFWwindow *window;
@@ -122,6 +124,8 @@ struct
     PFN_vkCmdBindDescriptorSets vkCmdBindDescriptorSets;
     PFN_vkCmdBindPipeline vkCmdBindPipeline;
     PFN_vkCmdDispatch vkCmdDispatch;
+    PFN_vkCmdBeginRenderPass vkCmdBeginRenderPass;
+    PFN_vkCmdEndRenderPass vkCmdEndRenderPass;
     PFN_vkQueueSubmit vkQueueSubmit;
     PFN_vkQueueWaitIdle vkQueueWaitIdle;
     PFN_vkDeviceWaitIdle vkDeviceWaitIdle;
@@ -139,11 +143,23 @@ struct
     PFN_vkDestroyPipeline vkDestroyPipeline;
     PFN_vkCreateRenderPass vkCreateRenderPass;
     PFN_vkDestroyRenderPass vkDestroyRenderPass;
+    PFN_vkCreateFramebuffer vkCreateFramebuffer;
+    PFN_vkDestroyFramebuffer vkDestroyFramebuffer;
+    PFN_vkCreateSemaphore vkCreateSemaphore;
+    PFN_vkDestroySemaphore vkDestroySemaphore;
+    PFN_vkCreateFence vkCreateFence;
+    PFN_vkDestroyFence vkDestroyFence;
+    PFN_vkWaitForFences vkWaitForFences;
+    PFN_vkAcquireNextImageKHR vkAcquireNextImageKHR;
+    PFN_vkResetFences vkResetFences;
+    PFN_vkResetCommandBuffer vkResetCommandBuffer;
+    PFN_vkQueuePresentKHR vkQueuePresentKHR;
 
     VkQueue queue;
     VmaAllocator allocator;
     VkSwapchainKHR swapchain;
     VkFormat swapchain_format;
+    VkExtent2D swapchain_extent;
     std::uint32_t swapchain_image_count;
     std::uint32_t swapchain_min_image_count;
     std::vector<VkImage> swapchain_images;
@@ -160,6 +176,13 @@ struct
     VkPipelineLayout compute_pipeline_layout;
     VkPipeline compute_pipeline;
     VkRenderPass render_pass;
+    std::vector<VkFramebuffer> framebuffers;
+    std::array<VkCommandBuffer, frames_in_flight> draw_command_buffers;
+    std::array<VkSemaphore, frames_in_flight> image_available_semaphores;
+    std::array<VkSemaphore, frames_in_flight> render_finished_semaphores;
+    std::array<VkFence, frames_in_flight> in_flight_fences;
+    std::uint32_t current_frame;
+    bool framebuffer_resized;
 } g {};
 
 [[noreturn]] void
@@ -174,6 +197,13 @@ fatal_error(std::string_view message,
 void glfw_error_callback(int error, const char *description)
 {
     std::cerr << "GLFW error " << error << ": " << description << '\n';
+}
+
+void glfw_framebuffer_size_callback([[maybe_unused]] GLFWwindow *window,
+                                    [[maybe_unused]] int width,
+                                    [[maybe_unused]] int height)
+{
+    g.framebuffer_resized = true;
 }
 
 [[nodiscard]] constexpr const char *
@@ -398,6 +428,8 @@ void load_device_commands() noexcept
     LOAD(vkCmdBindDescriptorSets)
     LOAD(vkCmdBindPipeline)
     LOAD(vkCmdDispatch)
+    LOAD(vkCmdBeginRenderPass)
+    LOAD(vkCmdEndRenderPass)
     LOAD(vkQueueSubmit)
     LOAD(vkQueueWaitIdle)
     LOAD(vkDeviceWaitIdle)
@@ -415,6 +447,17 @@ void load_device_commands() noexcept
     LOAD(vkDestroyPipeline)
     LOAD(vkCreateRenderPass)
     LOAD(vkDestroyRenderPass)
+    LOAD(vkCreateFramebuffer)
+    LOAD(vkDestroyFramebuffer)
+    LOAD(vkCreateSemaphore)
+    LOAD(vkDestroySemaphore)
+    LOAD(vkCreateFence)
+    LOAD(vkDestroyFence)
+    LOAD(vkWaitForFences)
+    LOAD(vkAcquireNextImageKHR)
+    LOAD(vkResetFences)
+    LOAD(vkResetCommandBuffer)
+    LOAD(vkQueuePresentKHR)
 
 #undef LOAD
 }
@@ -544,11 +587,10 @@ void create_swapchain()
         g.physical_device, g.surface, &surface_capabilities);
     vk_check(result);
 
-    VkExtent2D swapchain_extent;
     if (surface_capabilities.currentExtent.width !=
         std::numeric_limits<std::uint32_t>::max())
     {
-        swapchain_extent = surface_capabilities.currentExtent;
+        g.swapchain_extent = surface_capabilities.currentExtent;
     }
     else
     {
@@ -556,15 +598,15 @@ void create_swapchain()
         int framebuffer_height;
         glfwGetFramebufferSize(
             g.window, &framebuffer_width, &framebuffer_height);
-        swapchain_extent = {static_cast<std::uint32_t>(framebuffer_width),
-                            static_cast<std::uint32_t>(framebuffer_height)};
+        g.swapchain_extent = {static_cast<std::uint32_t>(framebuffer_width),
+                              static_cast<std::uint32_t>(framebuffer_height)};
     }
-    swapchain_extent.width =
-        std::clamp(swapchain_extent.width,
+    g.swapchain_extent.width =
+        std::clamp(g.swapchain_extent.width,
                    surface_capabilities.minImageExtent.width,
                    surface_capabilities.maxImageExtent.width);
-    swapchain_extent.height =
-        std::clamp(swapchain_extent.height,
+    g.swapchain_extent.height =
+        std::clamp(g.swapchain_extent.height,
                    surface_capabilities.minImageExtent.height,
                    surface_capabilities.maxImageExtent.height);
 
@@ -583,7 +625,7 @@ void create_swapchain()
     swapchain_create_info.minImageCount = g.swapchain_min_image_count;
     swapchain_create_info.imageFormat = surface_format.format;
     swapchain_create_info.imageColorSpace = surface_format.colorSpace;
-    swapchain_create_info.imageExtent = swapchain_extent;
+    swapchain_create_info.imageExtent = g.swapchain_extent;
     swapchain_create_info.imageArrayLayers = 1;
     swapchain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     swapchain_create_info.preTransform = surface_capabilities.currentTransform;
@@ -654,6 +696,60 @@ void destroy_swapchain()
     }
 }
 
+void create_framebuffers()
+{
+    g.framebuffers.resize(g.swapchain_image_count);
+
+    VkFramebufferCreateInfo framebuffer_create_info {};
+    framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebuffer_create_info.renderPass = g.render_pass;
+    framebuffer_create_info.attachmentCount = 1;
+    framebuffer_create_info.width = g.swapchain_extent.width;
+    framebuffer_create_info.height = g.swapchain_extent.height;
+    framebuffer_create_info.layers = 1;
+
+    for (std::uint32_t i {}; i < g.swapchain_image_count; ++i)
+    {
+        framebuffer_create_info.pAttachments = &g.swapchain_image_views[i];
+
+        const auto result = g.vkCreateFramebuffer(
+            g.device, &framebuffer_create_info, nullptr, &g.framebuffers[i]);
+        vk_check(result);
+    }
+}
+
+void destroy_framebuffers()
+{
+    for (std::uint32_t i {}; i < g.swapchain_image_count; ++i)
+    {
+        if (g.framebuffers[i])
+        {
+            g.vkDestroyFramebuffer(g.device, g.framebuffers[i], nullptr);
+        }
+    }
+}
+
+void recreate_swapchain()
+{
+    int width {};
+    int height {};
+    glfwGetFramebufferSize(g.window, &width, &height);
+    while (width == 0 || height == 0)
+    {
+        glfwGetFramebufferSize(g.window, &width, &height);
+        glfwWaitEvents();
+    }
+
+    const auto result = g.vkDeviceWaitIdle(g.device);
+    vk_check(result);
+
+    destroy_framebuffers();
+    destroy_swapchain();
+
+    create_swapchain();
+    create_framebuffers();
+}
+
 [[nodiscard]] VkCommandBuffer begin_one_time_submit_command_buffer()
 {
     VkResult result;
@@ -701,6 +797,117 @@ void end_one_time_submit_command_buffer(VkCommandBuffer command_buffer)
     vk_check(result);
 }
 
+void draw_frame()
+{
+    VkResult result;
+
+    result = g.vkWaitForFences(g.device,
+                               1,
+                               &g.in_flight_fences[g.current_frame],
+                               VK_TRUE,
+                               std::numeric_limits<std::uint64_t>::max());
+    vk_check(result);
+
+    std::uint32_t image_index;
+    result =
+        g.vkAcquireNextImageKHR(g.device,
+                                g.swapchain,
+                                std::numeric_limits<std::uint64_t>::max(),
+                                g.image_available_semaphores[g.current_frame],
+                                VK_NULL_HANDLE,
+                                &image_index);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        recreate_swapchain();
+        return;
+    }
+    else if (result != VK_SUBOPTIMAL_KHR)
+    {
+        vk_check(result);
+    }
+
+    result = g.vkResetFences(g.device, 1, &g.in_flight_fences[g.current_frame]);
+    vk_check(result);
+
+    const auto command_buffer = g.draw_command_buffers[g.current_frame];
+
+    result = g.vkResetCommandBuffer(command_buffer, {});
+    vk_check(result);
+
+    VkCommandBufferBeginInfo command_buffer_begin_info {};
+    command_buffer_begin_info.sType =
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+    result = g.vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
+    vk_check(result);
+
+    const VkClearValue clear_value {
+        .color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}}};
+
+    VkRenderPassBeginInfo render_pass_begin_info {};
+    render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    render_pass_begin_info.renderPass = g.render_pass;
+    render_pass_begin_info.framebuffer = g.framebuffers[image_index];
+    render_pass_begin_info.renderArea.offset = {0, 0};
+    render_pass_begin_info.renderArea.extent = g.swapchain_extent;
+    render_pass_begin_info.clearValueCount = 1;
+    render_pass_begin_info.pClearValues = &clear_value;
+
+    g.vkCmdBeginRenderPass(
+        command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
+
+    g.vkCmdEndRenderPass(command_buffer);
+
+    result = g.vkEndCommandBuffer(command_buffer);
+    vk_check(result);
+
+    const VkPipelineStageFlags wait_stage {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+
+    VkSubmitInfo submit_info {};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.waitSemaphoreCount = 1;
+    submit_info.pWaitSemaphores =
+        &g.image_available_semaphores[g.current_frame];
+    submit_info.pWaitDstStageMask = &wait_stage;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffer;
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores =
+        &g.render_finished_semaphores[g.current_frame];
+
+    result = g.vkQueueSubmit(
+        g.queue, 1, &submit_info, g.in_flight_fences[g.current_frame]);
+    vk_check(result);
+
+    VkPresentInfoKHR present_info {};
+    present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    present_info.waitSemaphoreCount = 1;
+    present_info.pWaitSemaphores =
+        &g.render_finished_semaphores[g.current_frame];
+    present_info.swapchainCount = 1;
+    present_info.pSwapchains = &g.swapchain;
+    present_info.pImageIndices = &image_index;
+
+    result = g.vkQueuePresentKHR(g.queue, &present_info);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
+        g.framebuffer_resized)
+    {
+        g.framebuffer_resized = false;
+        recreate_swapchain();
+    }
+    else
+    {
+        vk_check(result);
+    }
+
+    g.current_frame = (g.current_frame + 1) % frames_in_flight;
+}
+
 void init()
 {
     {
@@ -723,6 +930,9 @@ void init()
         {
             fatal_error("Failed to create GLFW window");
         }
+
+        glfwSetFramebufferSizeCallback(g.window,
+                                       glfw_framebuffer_size_callback);
     }
 
     load_global_commands();
@@ -996,6 +1206,8 @@ void init()
         VkCommandPoolCreateInfo command_pool_create_info {};
         command_pool_create_info.sType =
             VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        command_pool_create_info.flags =
+            VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         command_pool_create_info.queueFamilyIndex = g.queue_family;
         result = g.vkCreateCommandPool(
             g.device, &command_pool_create_info, nullptr, &g.command_pool);
@@ -1185,6 +1397,48 @@ void init()
         vk_check(result);
     }
 
+    create_framebuffers();
+
+    {
+        VkCommandBufferAllocateInfo command_buffer_allocate_info {};
+        command_buffer_allocate_info.sType =
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        command_buffer_allocate_info.commandPool = g.command_pool;
+        command_buffer_allocate_info.commandBufferCount = frames_in_flight;
+
+        result = g.vkAllocateCommandBuffers(g.device,
+                                            &command_buffer_allocate_info,
+                                            g.draw_command_buffers.data());
+        vk_check(result);
+    }
+
+    {
+        VkSemaphoreCreateInfo semaphore_create_info {};
+        semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+        VkFenceCreateInfo fence_create_info {};
+        fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+        for (std::uint32_t i {}; i < frames_in_flight; ++i)
+        {
+            result = g.vkCreateSemaphore(g.device,
+                                         &semaphore_create_info,
+                                         nullptr,
+                                         &g.image_available_semaphores[i]);
+            vk_check(result);
+            result = g.vkCreateSemaphore(g.device,
+                                         &semaphore_create_info,
+                                         nullptr,
+                                         &g.render_finished_semaphores[i]);
+            vk_check(result);
+            result = g.vkCreateFence(
+                g.device, &fence_create_info, nullptr, &g.in_flight_fences[i]);
+            vk_check(result);
+        }
+    }
+
     {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -1235,6 +1489,26 @@ void shutdown()
 
     if (g.device)
     {
+        for (std::uint32_t i {}; i < frames_in_flight; ++i)
+        {
+            if (g.in_flight_fences[i])
+            {
+                g.vkDestroyFence(g.device, g.in_flight_fences[i], nullptr);
+            }
+            if (g.render_finished_semaphores[i])
+            {
+                g.vkDestroySemaphore(
+                    g.device, g.render_finished_semaphores[i], nullptr);
+            }
+            if (g.image_available_semaphores[i])
+            {
+                g.vkDestroySemaphore(
+                    g.device, g.image_available_semaphores[i], nullptr);
+            }
+        }
+
+        destroy_framebuffers();
+
         if (g.render_pass)
         {
             g.vkDestroyRenderPass(g.device, g.render_pass, nullptr);
@@ -1374,7 +1648,7 @@ void run()
         end_one_time_submit_command_buffer(command_buffer);
     }
 
-    {
+    /*{
         VkBufferCreateInfo buffer_create_info {};
         buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         buffer_create_info.size =
@@ -1473,12 +1747,57 @@ void run()
 
         vmaDestroyBuffer(
             g.allocator, staging_buffer, staging_buffer_allocation);
-    }
+    }*/
 
     while (!glfwWindowShouldClose(g.window))
     {
         glfwPollEvents();
+
+        ImGui_ImplGlfw_NewFrame();
+        ImGui_ImplVulkan_NewFrame();
+        ImGui::NewFrame();
+
+        ImGui::Text("%.3f ms/frame, %.1f fps",
+                    1000.0 / static_cast<double>(ImGui::GetIO().Framerate),
+                    static_cast<double>(ImGui::GetIO().Framerate));
+
+        /*if (ImGui::Begin("Viewport"))
+        {
+            const auto image_aspect_ratio =
+                static_cast<float>(g.render_image_width) /
+                static_cast<float>(g.render_image_height);
+
+            const auto region_min = ImGui::GetWindowContentRegionMin();
+            const auto region_max = ImGui::GetWindowContentRegionMax();
+            const auto region_width = region_max.x - region_min.x;
+            const auto region_height = region_max.y - region_min.y;
+            if (region_width > 0.0f && region_height > 0.0f)
+            {
+                const auto region_aspect_ratio = region_width / region_height;
+                auto image_width = region_width;
+                auto image_height = region_height;
+                if (image_aspect_ratio >= region_aspect_ratio)
+                {
+                    image_height = image_width / image_aspect_ratio;
+                }
+                else
+                {
+                    image_width = image_height * image_aspect_ratio;
+                }
+
+                ImGui::Image(static_cast<ImTextureID>(g.descriptor_set),
+                             {image_width, image_height});
+            }
+        }
+        ImGui::End();*/
+
+        ImGui::Render();
+
+        draw_frame();
     }
+
+    const auto result = g.vkDeviceWaitIdle(g.device);
+    vk_check(result);
 }
 
 } // namespace
