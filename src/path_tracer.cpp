@@ -137,10 +137,13 @@ struct
     PFN_vkDestroyPipelineLayout vkDestroyPipelineLayout;
     PFN_vkCreateComputePipelines vkCreateComputePipelines;
     PFN_vkDestroyPipeline vkDestroyPipeline;
+    PFN_vkCreateRenderPass vkCreateRenderPass;
+    PFN_vkDestroyRenderPass vkDestroyRenderPass;
 
     VkQueue queue;
     VmaAllocator allocator;
     VkSwapchainKHR swapchain;
+    VkFormat swapchain_format;
     std::uint32_t swapchain_image_count;
     std::uint32_t swapchain_min_image_count;
     std::vector<VkImage> swapchain_images;
@@ -151,12 +154,12 @@ struct
     std::uint32_t render_image_width;
     std::uint32_t render_image_height;
     VkCommandPool command_pool;
-    VkCommandBuffer command_buffer;
     VkDescriptorSetLayout descriptor_set_layout;
     VkDescriptorPool descriptor_pool;
     VkDescriptorSet descriptor_set;
     VkPipelineLayout compute_pipeline_layout;
     VkPipeline compute_pipeline;
+    VkRenderPass render_pass;
 } g {};
 
 [[noreturn]] void
@@ -410,6 +413,8 @@ void load_device_commands() noexcept
     LOAD(vkDestroyPipelineLayout)
     LOAD(vkCreateComputePipelines)
     LOAD(vkDestroyPipeline)
+    LOAD(vkCreateRenderPass)
+    LOAD(vkDestroyRenderPass)
 
 #undef LOAD
 }
@@ -523,13 +528,13 @@ void create_swapchain()
                                                     surface_formats.data());
     vk_check(result);
 
-    auto swapchain_format = surface_formats.front();
+    auto surface_format = surface_formats.front();
     for (const auto &format : surface_formats)
     {
         if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
             format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
         {
-            swapchain_format = format;
+            surface_format = format;
             break;
         }
     }
@@ -570,12 +575,14 @@ void create_swapchain()
         g.swapchain_min_image_count = surface_capabilities.maxImageCount;
     }
 
+    g.swapchain_format = surface_format.format;
+
     VkSwapchainCreateInfoKHR swapchain_create_info {};
     swapchain_create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     swapchain_create_info.surface = g.surface;
     swapchain_create_info.minImageCount = g.swapchain_min_image_count;
-    swapchain_create_info.imageFormat = swapchain_format.format;
-    swapchain_create_info.imageColorSpace = swapchain_format.colorSpace;
+    swapchain_create_info.imageFormat = surface_format.format;
+    swapchain_create_info.imageColorSpace = surface_format.colorSpace;
     swapchain_create_info.imageExtent = swapchain_extent;
     swapchain_create_info.imageArrayLayers = 1;
     swapchain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
@@ -606,7 +613,7 @@ void create_swapchain()
     VkImageViewCreateInfo image_view_create_info {};
     image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    image_view_create_info.format = swapchain_format.format;
+    image_view_create_info.format = g.swapchain_format;
     image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_R;
     image_view_create_info.components.g = VK_COMPONENT_SWIZZLE_G;
     image_view_create_info.components.b = VK_COMPONENT_SWIZZLE_B;
@@ -645,6 +652,53 @@ void destroy_swapchain()
     {
         g.vkDestroySwapchainKHR(g.device, g.swapchain, nullptr);
     }
+}
+
+[[nodiscard]] VkCommandBuffer begin_one_time_submit_command_buffer()
+{
+    VkResult result;
+
+    VkCommandBufferAllocateInfo command_buffer_allocate_info {};
+    command_buffer_allocate_info.sType =
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    command_buffer_allocate_info.commandPool = g.command_pool;
+    command_buffer_allocate_info.commandBufferCount = 1;
+
+    VkCommandBuffer command_buffer;
+    result = g.vkAllocateCommandBuffers(
+        g.device, &command_buffer_allocate_info, &command_buffer);
+    vk_check(result);
+
+    VkCommandBufferBeginInfo command_buffer_begin_info {};
+    command_buffer_begin_info.sType =
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    command_buffer_begin_info.flags =
+        VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    result = g.vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
+    vk_check(result);
+
+    return command_buffer;
+}
+
+void end_one_time_submit_command_buffer(VkCommandBuffer command_buffer)
+{
+    VkResult result;
+
+    result = g.vkEndCommandBuffer(command_buffer);
+    vk_check(result);
+
+    VkSubmitInfo submit_info {};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffer;
+
+    result = g.vkQueueSubmit(g.queue, 1, &submit_info, VK_NULL_HANDLE);
+    vk_check(result);
+
+    result = g.vkQueueWaitIdle(g.queue);
+    vk_check(result);
 }
 
 void init()
@@ -949,19 +1003,6 @@ void init()
     }
 
     {
-        VkCommandBufferAllocateInfo command_buffer_allocate_info {};
-        command_buffer_allocate_info.sType =
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        command_buffer_allocate_info.commandPool = g.command_pool;
-        command_buffer_allocate_info.commandBufferCount = 1;
-
-        result = g.vkAllocateCommandBuffers(
-            g.device, &command_buffer_allocate_info, &g.command_buffer);
-        vk_check(result);
-    }
-
-    {
         VkDescriptorSetLayoutBinding descriptor_set_layout_binding {};
         descriptor_set_layout_binding.binding = 0;
         descriptor_set_layout_binding.descriptorType =
@@ -1096,6 +1137,55 @@ void init()
     }
 
     {
+        VkAttachmentDescription color_attachment_description {};
+        color_attachment_description.format = g.swapchain_format;
+        color_attachment_description.samples = VK_SAMPLE_COUNT_1_BIT;
+        color_attachment_description.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        color_attachment_description.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        color_attachment_description.stencilLoadOp =
+            VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        color_attachment_description.stencilStoreOp =
+            VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        color_attachment_description.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        color_attachment_description.finalLayout =
+            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        VkAttachmentReference color_attachment_reference {};
+        color_attachment_reference.attachment = 0;
+        color_attachment_reference.layout =
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkSubpassDescription subpass_description {};
+        subpass_description.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass_description.colorAttachmentCount = 1;
+        subpass_description.pColorAttachments = &color_attachment_reference;
+
+        VkSubpassDependency subpass_dependency {};
+        subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        subpass_dependency.dstSubpass = 0;
+        subpass_dependency.srcStageMask =
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        subpass_dependency.dstStageMask =
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        subpass_dependency.srcAccessMask = VK_ACCESS_NONE;
+        subpass_dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+        VkRenderPassCreateInfo render_pass_create_info {};
+        render_pass_create_info.sType =
+            VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        render_pass_create_info.attachmentCount = 1;
+        render_pass_create_info.pAttachments = &color_attachment_description;
+        render_pass_create_info.subpassCount = 1;
+        render_pass_create_info.pSubpasses = &subpass_description;
+        render_pass_create_info.dependencyCount = 1;
+        render_pass_create_info.pDependencies = &subpass_dependency;
+
+        result = g.vkCreateRenderPass(
+            g.device, &render_pass_create_info, nullptr, &g.render_pass);
+        vk_check(result);
+    }
+
+    {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
@@ -1103,6 +1193,10 @@ void init()
         ImGui::StyleColorsDark();
 
         ImGui_ImplGlfw_InitForVulkan(g.window, true);
+
+        const auto loader_func = [](const char *name, void *)
+        { return g.vkGetInstanceProcAddr(g.instance, name); };
+        ImGui_ImplVulkan_LoadFunctions(loader_func);
 
         ImGui_ImplVulkan_InitInfo init_info {};
         init_info.Instance = g.instance;
@@ -1112,20 +1206,18 @@ void init()
         init_info.Queue = g.queue;
         init_info.PipelineCache = VK_NULL_HANDLE;
         init_info.DescriptorPool = g.descriptor_pool;
-        init_info.Subpass = VK_SUBPASS_EXTERNAL;
+        init_info.Subpass = 0;
         init_info.MinImageCount = g.swapchain_min_image_count;
         init_info.ImageCount = g.swapchain_image_count;
         init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
         init_info.Allocator = nullptr;
         init_info.CheckVkResultFn = &imgui_vk_check;
-        // ImGui_ImplVulkan_Init(&init_info, g.render_pass);
+        ImGui_ImplVulkan_Init(&init_info, g.render_pass);
 
-        /*const auto command_buffer =
-            begin_one_time_submit_command_buffer(m_device, m_command_pool);
-        ImGui_ImplVulkan_CreateFontsTexture(*command_buffer);
-        end_one_time_submit_command_buffer(command_buffer, m_graphics_queue);
-        m_device->waitIdle();
-        ImGui_ImplVulkan_DestroyFontUploadObjects();*/
+        const auto command_buffer = begin_one_time_submit_command_buffer();
+        ImGui_ImplVulkan_CreateFontsTexture(command_buffer);
+        end_one_time_submit_command_buffer(command_buffer);
+        ImGui_ImplVulkan_DestroyFontUploadObjects();
     }
 }
 
@@ -1137,12 +1229,17 @@ void shutdown()
         vk_check(result);
     }
 
-    // ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplVulkan_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 
     if (g.device)
     {
+        if (g.render_pass)
+        {
+            g.vkDestroyRenderPass(g.device, g.render_pass, nullptr);
+        }
+
         if (g.compute_pipeline)
         {
             g.vkDestroyPipeline(g.device, g.compute_pipeline, nullptr);
@@ -1224,18 +1321,8 @@ void shutdown()
 
 void run()
 {
-    VkResult result;
-
     {
-        VkCommandBufferBeginInfo command_buffer_begin_info {};
-        command_buffer_begin_info.sType =
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        command_buffer_begin_info.flags =
-            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-        result = g.vkBeginCommandBuffer(g.command_buffer,
-                                        &command_buffer_begin_info);
-        vk_check(result);
+        const auto command_buffer = begin_one_time_submit_command_buffer();
 
         VkImageSubresourceRange subresource_range {};
         subresource_range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1255,7 +1342,7 @@ void run()
         image_memory_barrier.image = g.render_image;
         image_memory_barrier.subresourceRange = subresource_range;
 
-        g.vkCmdPipelineBarrier(g.command_buffer,
+        g.vkCmdPipelineBarrier(command_buffer,
                                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                                {},
@@ -1266,7 +1353,7 @@ void run()
                                1,
                                &image_memory_barrier);
 
-        g.vkCmdBindDescriptorSets(g.command_buffer,
+        g.vkCmdBindDescriptorSets(command_buffer,
                                   VK_PIPELINE_BIND_POINT_COMPUTE,
                                   g.compute_pipeline_layout,
                                   0,
@@ -1275,28 +1362,16 @@ void run()
                                   0,
                                   nullptr);
 
-        g.vkCmdBindPipeline(g.command_buffer,
-                            VK_PIPELINE_BIND_POINT_COMPUTE,
-                            g.compute_pipeline);
+        g.vkCmdBindPipeline(
+            command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, g.compute_pipeline);
 
         constexpr std::uint32_t group_size_x {32};
         constexpr std::uint32_t group_size_y {32};
         constexpr std::uint32_t group_size_z {1};
         g.vkCmdDispatch(
-            g.command_buffer, group_size_x, group_size_y, group_size_z);
+            command_buffer, group_size_x, group_size_y, group_size_z);
 
-        result = g.vkEndCommandBuffer(g.command_buffer);
-        vk_check(result);
-
-        VkSubmitInfo submit_info {};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &g.command_buffer;
-        result = g.vkQueueSubmit(g.queue, 1, &submit_info, VK_NULL_HANDLE);
-        vk_check(result);
-
-        result = g.vkQueueWaitIdle(g.queue);
-        vk_check(result);
+        end_one_time_submit_command_buffer(command_buffer);
     }
 
     {
@@ -1325,27 +1400,7 @@ void run()
                                  &staging_buffer_allocation,
                                  &staging_buffer_allocation_info));
 
-        VkCommandBufferAllocateInfo command_buffer_allocate_info {};
-        command_buffer_allocate_info.sType =
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        command_buffer_allocate_info.commandPool = g.command_pool;
-        command_buffer_allocate_info.commandBufferCount = 1;
-
-        VkCommandBuffer command_buffer;
-        result = g.vkAllocateCommandBuffers(
-            g.device, &command_buffer_allocate_info, &command_buffer);
-        vk_check(result);
-
-        VkCommandBufferBeginInfo command_buffer_begin_info {};
-        command_buffer_begin_info.sType =
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        command_buffer_begin_info.flags =
-            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-        result =
-            g.vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
-        vk_check(result);
+        const auto command_buffer = begin_one_time_submit_command_buffer();
 
         VkImageSubresourceRange subresource_range {};
         subresource_range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1393,20 +1448,7 @@ void run()
                                  1,
                                  &region);
 
-        result = g.vkEndCommandBuffer(command_buffer);
-        vk_check(result);
-
-        VkSubmitInfo submit_info {};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &command_buffer;
-        result = g.vkQueueSubmit(g.queue, 1, &submit_info, VK_NULL_HANDLE);
-        vk_check(result);
-
-        result = g.vkQueueWaitIdle(g.queue);
-        vk_check(result);
-
-        g.vkFreeCommandBuffers(g.device, g.command_pool, 1, &command_buffer);
+        end_one_time_submit_command_buffer(command_buffer);
 
         const auto *const hdr_image_data = reinterpret_cast<float *>(
             staging_buffer_allocation_info.pMappedData);
