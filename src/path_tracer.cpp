@@ -1,5 +1,4 @@
 
-
 #ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
@@ -13,9 +12,6 @@
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
 #endif
-
-#define VK_NO_PROTOTYPES
-#include <vulkan/vulkan.h>
 
 #ifdef __GNUC__
 #pragma GCC diagnostic push
@@ -33,9 +29,23 @@
 #pragma GCC diagnostic pop
 #endif
 
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+#endif
+#include "imgui_impl_vulkan.h"
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
+
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+
+#include <vulkan/vulkan.h>
 
 #include <array>
 #include <cassert>
@@ -56,6 +66,8 @@ namespace
 
 struct
 {
+    GLFWwindow *window;
+
     PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr;
     PFN_vkEnumerateInstanceLayerProperties vkEnumerateInstanceLayerProperties;
     PFN_vkEnumerateInstanceExtensionProperties
@@ -64,11 +76,12 @@ struct
 
     VkInstance instance;
 
-#ifdef ENABLE_VALIDATION_LAYERS
+#ifndef NDEBUG
     PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
     PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT;
 #endif
     PFN_vkDestroyInstance vkDestroyInstance;
+    PFN_vkDestroySurfaceKHR vkDestroySurfaceKHR;
     PFN_vkEnumeratePhysicalDevices vkEnumeratePhysicalDevices;
     PFN_vkEnumerateDeviceExtensionProperties
         vkEnumerateDeviceExtensionProperties;
@@ -78,11 +91,12 @@ struct
     PFN_vkCreateDevice vkCreateDevice;
     PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr;
 
-#ifdef ENABLE_VALIDATION_LAYERS
+#ifndef NDEBUG
     VkDebugUtilsMessengerEXT debug_messenger;
 #endif
+    VkSurfaceKHR surface;
     VkPhysicalDevice physical_device;
-    std::uint32_t compute_queue_family;
+    std::uint32_t queue_family;
     VkDevice device;
 
     PFN_vkDestroyDevice vkDestroyDevice;
@@ -117,7 +131,7 @@ struct
     PFN_vkCreateComputePipelines vkCreateComputePipelines;
     PFN_vkDestroyPipeline vkDestroyPipeline;
 
-    VkQueue compute_queue;
+    VkQueue queue;
     VmaAllocator allocator;
     VkImage render_image;
     VkImageView render_image_view;
@@ -131,7 +145,7 @@ struct
     VkDescriptorSet descriptor_set;
     VkPipelineLayout compute_pipeline_layout;
     VkPipeline compute_pipeline;
-} vk {};
+} g {};
 
 [[noreturn]] void
 fatal_error(std::string_view message,
@@ -232,6 +246,18 @@ void vk_check(VkResult result,
     fatal_error(oss.str(), loc);
 }
 
+void imgui_vk_check(VkResult result)
+{
+    if (result == VK_SUCCESS)
+    {
+        return;
+    }
+
+    std::ostringstream oss;
+    oss << "VkResult is " << vk_result_to_string(result);
+    fatal_error(oss.str());
+}
+
 [[nodiscard]] std::vector<std::uint32_t> read_binary_file(const char *file_name)
 {
     const std::filesystem::path path(file_name);
@@ -268,7 +294,7 @@ void vk_check(VkResult result,
     return buffer;
 }
 
-#ifdef ENABLE_VALIDATION_LAYERS
+#ifndef NDEBUG
 
 VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT message_severity [[maybe_unused]],
@@ -284,14 +310,14 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
 
 void load_global_commands() noexcept
 {
-    vk.vkGetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+    g.vkGetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
         glfwGetInstanceProcAddress(nullptr, "vkGetInstanceProcAddr"));
-    assert(vk.vkGetInstanceProcAddr);
+    assert(g.vkGetInstanceProcAddr);
 
 #define LOAD(func)                                                             \
-    vk.func = reinterpret_cast<PFN_##func>(                                    \
-        vk.vkGetInstanceProcAddr(nullptr, #func));                             \
-    assert(vk.func);
+    g.func =                                                                   \
+        reinterpret_cast<PFN_##func>(g.vkGetInstanceProcAddr(nullptr, #func)); \
+    assert(g.func);
 
     LOAD(vkEnumerateInstanceLayerProperties)
     LOAD(vkEnumerateInstanceExtensionProperties)
@@ -302,19 +328,20 @@ void load_global_commands() noexcept
 
 void load_instance_commands() noexcept
 {
-    assert(vk.vkGetInstanceProcAddr);
-    assert(vk.instance);
+    assert(g.vkGetInstanceProcAddr);
+    assert(g.instance);
 
 #define LOAD(func)                                                             \
-    vk.func = reinterpret_cast<PFN_##func>(                                    \
-        vk.vkGetInstanceProcAddr(vk.instance, #func));                         \
-    assert(vk.func);
+    g.func = reinterpret_cast<PFN_##func>(                                     \
+        g.vkGetInstanceProcAddr(g.instance, #func));                           \
+    assert(g.func);
 
-#ifdef ENABLE_VALIDATION_LAYERS
+#ifndef NDEBUG
     LOAD(vkCreateDebugUtilsMessengerEXT)
     LOAD(vkDestroyDebugUtilsMessengerEXT)
 #endif
     LOAD(vkDestroyInstance)
+    LOAD(vkDestroySurfaceKHR)
     LOAD(vkEnumeratePhysicalDevices)
     LOAD(vkEnumerateDeviceExtensionProperties)
     LOAD(vkGetPhysicalDeviceQueueFamilyProperties)
@@ -327,13 +354,13 @@ void load_instance_commands() noexcept
 
 void load_device_commands() noexcept
 {
-    assert(vk.vkGetDeviceProcAddr);
-    assert(vk.device);
+    assert(g.vkGetDeviceProcAddr);
+    assert(g.device);
 
 #define LOAD(func)                                                             \
-    vk.func = reinterpret_cast<PFN_##func>(                                    \
-        vk.vkGetDeviceProcAddr(vk.device, #func));                             \
-    assert(vk.func);
+    g.func =                                                                   \
+        reinterpret_cast<PFN_##func>(g.vkGetDeviceProcAddr(g.device, #func));  \
+    assert(g.func);
 
     LOAD(vkDestroyDevice)
     LOAD(vkGetDeviceQueue)
@@ -371,22 +398,25 @@ void load_device_commands() noexcept
 }
 
 void get_queue_families(VkPhysicalDevice physical_device,
-                        std::uint32_t &compute_queue_family)
+                        std::uint32_t &queue_family)
 {
-    compute_queue_family = std::numeric_limits<std::uint32_t>::max();
+    queue_family = std::numeric_limits<std::uint32_t>::max();
 
     std::uint32_t property_count {};
-    vk.vkGetPhysicalDeviceQueueFamilyProperties(
+    g.vkGetPhysicalDeviceQueueFamilyProperties(
         physical_device, &property_count, nullptr);
     std::vector<VkQueueFamilyProperties> properties(property_count);
-    vk.vkGetPhysicalDeviceQueueFamilyProperties(
+    g.vkGetPhysicalDeviceQueueFamilyProperties(
         physical_device, &property_count, properties.data());
 
     for (std::uint32_t i {}; i < property_count; ++i)
     {
-        if (properties[i].queueFlags & VK_QUEUE_COMPUTE_BIT)
+        if ((properties[i].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
+            (properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
+            glfwGetPhysicalDevicePresentationSupport(
+                g.instance, physical_device, i))
         {
-            compute_queue_family = i;
+            queue_family = i;
             return;
         }
     }
@@ -399,24 +429,24 @@ is_physical_device_suitable(VkPhysicalDevice physical_device,
 {
     VkResult result;
 
-    std::uint32_t compute_queue_family;
-    get_queue_families(physical_device, compute_queue_family);
-    if (compute_queue_family == std::numeric_limits<std::uint32_t>::max())
+    std::uint32_t queue_family;
+    get_queue_families(physical_device, queue_family);
+    if (queue_family == std::numeric_limits<std::uint32_t>::max())
     {
         return false;
     }
 
     std::uint32_t extension_property_count {};
-    result = vk.vkEnumerateDeviceExtensionProperties(
+    result = g.vkEnumerateDeviceExtensionProperties(
         physical_device, nullptr, &extension_property_count, nullptr);
     vk_check(result);
     std::vector<VkExtensionProperties> extension_properties(
         extension_property_count);
     result =
-        vk.vkEnumerateDeviceExtensionProperties(physical_device,
-                                                nullptr,
-                                                &extension_property_count,
-                                                extension_properties.data());
+        g.vkEnumerateDeviceExtensionProperties(physical_device,
+                                               nullptr,
+                                               &extension_property_count,
+                                               extension_properties.data());
     vk_check(result);
 
     const auto is_extension_supported =
@@ -450,7 +480,7 @@ is_physical_device_suitable(VkPhysicalDevice physical_device,
     features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     features.pNext = &acceleration_structure_features;
 
-    vk.vkGetPhysicalDeviceFeatures2(physical_device, &features);
+    g.vkGetPhysicalDeviceFeatures2(physical_device, &features);
 
     if (!acceleration_structure_features.accelerationStructure ||
         !ray_query_features.rayQuery)
@@ -475,6 +505,14 @@ void init()
         {
             fatal_error("Vulkan loader or ICD have not been found");
         }
+
+        glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        g.window = glfwCreateWindow(1280, 720, "Path Tracer", nullptr, nullptr);
+        if (!g.window)
+        {
+            fatal_error("Failed to create GLFW window");
+        }
     }
 
     load_global_commands();
@@ -486,15 +524,19 @@ void init()
         application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         application_info.apiVersion = VK_API_VERSION_1_2;
 
-#ifdef ENABLE_VALIDATION_LAYERS
+        std::uint32_t glfw_required_extension_count {};
+        const auto glfw_required_extensions =
+            glfwGetRequiredInstanceExtensions(&glfw_required_extension_count);
+
+#ifndef NDEBUG
 
         std::uint32_t layer_property_count {};
-        result = vk.vkEnumerateInstanceLayerProperties(&layer_property_count,
-                                                       nullptr);
+        result = g.vkEnumerateInstanceLayerProperties(&layer_property_count,
+                                                      nullptr);
         vk_check(result);
         std::vector<VkLayerProperties> layer_properties(layer_property_count);
-        result = vk.vkEnumerateInstanceLayerProperties(&layer_property_count,
-                                                       layer_properties.data());
+        result = g.vkEnumerateInstanceLayerProperties(&layer_property_count,
+                                                      layer_properties.data());
         vk_check(result);
 
         constexpr auto khronos_validation_layer = "VK_LAYER_KHRONOS_validation";
@@ -508,16 +550,18 @@ void init()
             fatal_error("Validation layers are not supported");
         }
 
-        const char *const required_extensions[] {
-            VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
+        std::vector<const char *> required_extensions(
+            glfw_required_extensions,
+            glfw_required_extensions + glfw_required_extension_count);
+        required_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
         std::uint32_t extension_property_count {};
-        result = vk.vkEnumerateInstanceExtensionProperties(
+        result = g.vkEnumerateInstanceExtensionProperties(
             nullptr, &extension_property_count, nullptr);
         vk_check(result);
         std::vector<VkExtensionProperties> extension_properties(
             extension_property_count);
-        result = vk.vkEnumerateInstanceExtensionProperties(
+        result = g.vkEnumerateInstanceExtensionProperties(
             nullptr, &extension_property_count, extension_properties.data());
         vk_check(result);
 
@@ -533,8 +577,8 @@ void init()
                 });
         };
 
-        if (!std::all_of(std::begin(required_extensions),
-                         std::end(required_extensions),
+        if (!std::all_of(required_extensions.begin(),
+                         required_extensions.end(),
                          is_extension_supported))
         {
             fatal_error("Unsupported instance extension");
@@ -559,19 +603,20 @@ void init()
         instance_create_info.enabledLayerCount = 1;
         instance_create_info.ppEnabledLayerNames = &khronos_validation_layer;
         instance_create_info.enabledExtensionCount =
-            static_cast<std::uint32_t>(std::size(required_extensions));
-        instance_create_info.ppEnabledExtensionNames = required_extensions;
+            static_cast<std::uint32_t>(required_extensions.size());
+        instance_create_info.ppEnabledExtensionNames =
+            required_extensions.data();
 
         result =
-            vk.vkCreateInstance(&instance_create_info, nullptr, &vk.instance);
+            g.vkCreateInstance(&instance_create_info, nullptr, &g.instance);
         vk_check(result);
 
         load_instance_commands();
 
-        result = vk.vkCreateDebugUtilsMessengerEXT(vk.instance,
-                                                   &debug_messenger_create_info,
-                                                   nullptr,
-                                                   &vk.debug_messenger);
+        result = g.vkCreateDebugUtilsMessengerEXT(g.instance,
+                                                  &debug_messenger_create_info,
+                                                  nullptr,
+                                                  &g.debug_messenger);
         vk_check(result);
 
 #else
@@ -579,13 +624,22 @@ void init()
         VkInstanceCreateInfo instance_create_info {};
         instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         instance_create_info.pApplicationInfo = &application_info;
+        instance_create_info.enabledExtensionCount =
+            glfw_required_extension_count;
+        instance_create_info.ppEnabledExtensionNames = glfw_required_extensions;
 
         result =
-            vk.vkCreateInstance(&instance_create_info, nullptr, &vk.instance);
+            g.vkCreateInstance(&instance_create_info, nullptr, &g.instance);
         vk_check(result);
 
         load_instance_commands();
 #endif
+    }
+
+    {
+        result =
+            glfwCreateWindowSurface(g.instance, g.window, nullptr, &g.surface);
+        vk_check(result);
     }
 
     constexpr const char *device_extensions[] {
@@ -597,8 +651,8 @@ void init()
 
     {
         std::uint32_t physical_device_count {};
-        result = vk.vkEnumeratePhysicalDevices(
-            vk.instance, &physical_device_count, nullptr);
+        result = g.vkEnumeratePhysicalDevices(
+            g.instance, &physical_device_count, nullptr);
         vk_check(result);
         if (physical_device_count == 0)
         {
@@ -606,21 +660,21 @@ void init()
         }
 
         std::vector<VkPhysicalDevice> physical_devices(physical_device_count);
-        result = vk.vkEnumeratePhysicalDevices(
-            vk.instance, &physical_device_count, physical_devices.data());
+        result = g.vkEnumeratePhysicalDevices(
+            g.instance, &physical_device_count, physical_devices.data());
         vk_check(result);
 
-        vk.physical_device = {};
+        g.physical_device = {};
         for (const auto physical_device : physical_devices)
         {
             if (is_physical_device_suitable(
                     physical_device, device_extensions, device_extension_count))
             {
-                vk.physical_device = physical_device;
+                g.physical_device = physical_device;
                 break;
             }
         }
-        if (!vk.physical_device)
+        if (!g.physical_device)
         {
             fatal_error("Failed to find a suitable physical device");
         }
@@ -630,7 +684,7 @@ void init()
         const float queue_priority {1.0f};
         VkDeviceQueueCreateInfo queue_create_info {};
         queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queue_create_info.queueFamilyIndex = vk.compute_queue_family;
+        queue_create_info.queueFamilyIndex = g.queue_family;
         queue_create_info.queueCount = 1;
         queue_create_info.pQueuePriorities = &queue_priority;
 
@@ -641,37 +695,36 @@ void init()
         device_create_info.enabledExtensionCount = device_extension_count;
         device_create_info.ppEnabledExtensionNames = device_extensions;
 
-        result = vk.vkCreateDevice(
-            vk.physical_device, &device_create_info, nullptr, &vk.device);
+        result = g.vkCreateDevice(
+            g.physical_device, &device_create_info, nullptr, &g.device);
         vk_check(result);
     }
 
     load_device_commands();
 
     {
-        vk.vkGetDeviceQueue(
-            vk.device, vk.compute_queue_family, 0, &vk.compute_queue);
+        g.vkGetDeviceQueue(g.device, g.queue_family, 0, &g.queue);
     }
 
     {
         VmaVulkanFunctions vulkan_functions {};
-        vulkan_functions.vkGetInstanceProcAddr = vk.vkGetInstanceProcAddr;
-        vulkan_functions.vkGetDeviceProcAddr = vk.vkGetDeviceProcAddr;
+        vulkan_functions.vkGetInstanceProcAddr = g.vkGetInstanceProcAddr;
+        vulkan_functions.vkGetDeviceProcAddr = g.vkGetDeviceProcAddr;
 
         VmaAllocatorCreateInfo allocatorCreateInfo {};
         allocatorCreateInfo.vulkanApiVersion = VK_API_VERSION_1_2;
-        allocatorCreateInfo.physicalDevice = vk.physical_device;
-        allocatorCreateInfo.device = vk.device;
-        allocatorCreateInfo.instance = vk.instance;
+        allocatorCreateInfo.physicalDevice = g.physical_device;
+        allocatorCreateInfo.device = g.device;
+        allocatorCreateInfo.instance = g.instance;
         allocatorCreateInfo.pVulkanFunctions = &vulkan_functions;
 
-        result = vmaCreateAllocator(&allocatorCreateInfo, &vk.allocator);
+        result = vmaCreateAllocator(&allocatorCreateInfo, &g.allocator);
         vk_check(result);
     }
 
     {
-        vk.render_image_width = 160;
-        vk.render_image_height = 90;
+        g.render_image_width = 160;
+        g.render_image_height = 90;
 
         constexpr auto format = VK_FORMAT_R32G32B32A32_SFLOAT;
 
@@ -679,8 +732,8 @@ void init()
         image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         image_create_info.imageType = VK_IMAGE_TYPE_2D;
         image_create_info.format = format;
-        image_create_info.extent.width = vk.render_image_width;
-        image_create_info.extent.height = vk.render_image_height;
+        image_create_info.extent.width = g.render_image_width;
+        image_create_info.extent.height = g.render_image_height;
         image_create_info.extent.depth = 1;
         image_create_info.mipLevels = 1;
         image_create_info.arrayLayers = 1;
@@ -691,23 +744,23 @@ void init()
                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT;
         image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         image_create_info.queueFamilyIndexCount = 1;
-        image_create_info.pQueueFamilyIndices = &vk.compute_queue_family;
+        image_create_info.pQueueFamilyIndices = &g.queue_family;
         image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
         VmaAllocationCreateInfo allocation_create_info {};
         allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-        result = vmaCreateImage(vk.allocator,
+        result = vmaCreateImage(g.allocator,
                                 &image_create_info,
                                 &allocation_create_info,
-                                &vk.render_image,
-                                &vk.render_image_allocation,
+                                &g.render_image,
+                                &g.render_image_allocation,
                                 nullptr);
         vk_check(result);
 
         VkImageViewCreateInfo image_view_create_info {};
         image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        image_view_create_info.image = vk.render_image;
+        image_view_create_info.image = g.render_image;
         image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
         image_view_create_info.format = format;
         image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_R;
@@ -721,8 +774,8 @@ void init()
         image_view_create_info.subresourceRange.baseArrayLayer = 0;
         image_view_create_info.subresourceRange.layerCount = 1;
 
-        result = vk.vkCreateImageView(
-            vk.device, &image_view_create_info, nullptr, &vk.render_image_view);
+        result = g.vkCreateImageView(
+            g.device, &image_view_create_info, nullptr, &g.render_image_view);
         vk_check(result);
     }
 
@@ -730,9 +783,9 @@ void init()
         VkCommandPoolCreateInfo command_pool_create_info {};
         command_pool_create_info.sType =
             VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        command_pool_create_info.queueFamilyIndex = vk.compute_queue_family;
-        result = vk.vkCreateCommandPool(
-            vk.device, &command_pool_create_info, nullptr, &vk.command_pool);
+        command_pool_create_info.queueFamilyIndex = g.queue_family;
+        result = g.vkCreateCommandPool(
+            g.device, &command_pool_create_info, nullptr, &g.command_pool);
         vk_check(result);
     }
 
@@ -741,11 +794,11 @@ void init()
         command_buffer_allocate_info.sType =
             VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        command_buffer_allocate_info.commandPool = vk.command_pool;
+        command_buffer_allocate_info.commandPool = g.command_pool;
         command_buffer_allocate_info.commandBufferCount = 1;
 
-        result = vk.vkAllocateCommandBuffers(
-            vk.device, &command_buffer_allocate_info, &vk.command_buffer);
+        result = g.vkAllocateCommandBuffers(
+            g.device, &command_buffer_allocate_info, &g.command_buffer);
         vk_check(result);
     }
 
@@ -765,10 +818,10 @@ void init()
             &descriptor_set_layout_binding;
 
         result =
-            vk.vkCreateDescriptorSetLayout(vk.device,
-                                           &descriptor_set_layout_create_info,
-                                           nullptr,
-                                           &vk.descriptor_set_layout);
+            g.vkCreateDescriptorSetLayout(g.device,
+                                          &descriptor_set_layout_create_info,
+                                          nullptr,
+                                          &g.descriptor_set_layout);
         vk_check(result);
     }
 
@@ -784,10 +837,10 @@ void init()
         descriptor_pool_create_info.poolSizeCount = 1;
         descriptor_pool_create_info.pPoolSizes = &pool_size;
 
-        result = vk.vkCreateDescriptorPool(vk.device,
-                                           &descriptor_pool_create_info,
-                                           nullptr,
-                                           &vk.descriptor_pool);
+        result = g.vkCreateDescriptorPool(g.device,
+                                          &descriptor_pool_create_info,
+                                          nullptr,
+                                          &g.descriptor_pool);
         vk_check(result);
     }
 
@@ -795,29 +848,29 @@ void init()
         VkDescriptorSetAllocateInfo descriptor_set_allocate_info {};
         descriptor_set_allocate_info.sType =
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        descriptor_set_allocate_info.descriptorPool = vk.descriptor_pool;
+        descriptor_set_allocate_info.descriptorPool = g.descriptor_pool;
         descriptor_set_allocate_info.descriptorSetCount = 1;
-        descriptor_set_allocate_info.pSetLayouts = &vk.descriptor_set_layout;
+        descriptor_set_allocate_info.pSetLayouts = &g.descriptor_set_layout;
 
-        result = vk.vkAllocateDescriptorSets(
-            vk.device, &descriptor_set_allocate_info, &vk.descriptor_set);
+        result = g.vkAllocateDescriptorSets(
+            g.device, &descriptor_set_allocate_info, &g.descriptor_set);
         vk_check(result);
 
         VkDescriptorImageInfo descriptor_image_info {};
         descriptor_image_info.sampler = VK_NULL_HANDLE;
-        descriptor_image_info.imageView = vk.render_image_view;
+        descriptor_image_info.imageView = g.render_image_view;
         descriptor_image_info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
         VkWriteDescriptorSet descriptor_write {};
         descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptor_write.dstSet = vk.descriptor_set;
+        descriptor_write.dstSet = g.descriptor_set;
         descriptor_write.dstBinding = 0;
         descriptor_write.dstArrayElement = 0;
         descriptor_write.descriptorCount = 1;
         descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         descriptor_write.pImageInfo = &descriptor_image_info;
 
-        vk.vkUpdateDescriptorSets(vk.device, 1, &descriptor_write, 0, nullptr);
+        g.vkUpdateDescriptorSets(g.device, 1, &descriptor_write, 0, nullptr);
     }
 
     {
@@ -831,8 +884,8 @@ void init()
         shader_module_create_info.pCode = shader_code.data();
 
         VkShaderModule shader_module {};
-        result = vk.vkCreateShaderModule(
-            vk.device, &shader_module_create_info, nullptr, &shader_module);
+        result = g.vkCreateShaderModule(
+            g.device, &shader_module_create_info, nullptr, &shader_module);
         vk_check(result);
 
         VkPipelineShaderStageCreateInfo shader_stage_create_info {};
@@ -846,111 +899,154 @@ void init()
         pipeline_layout_create_info.sType =
             VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipeline_layout_create_info.setLayoutCount = 1;
-        pipeline_layout_create_info.pSetLayouts = &vk.descriptor_set_layout;
+        pipeline_layout_create_info.pSetLayouts = &g.descriptor_set_layout;
 
-        result = vk.vkCreatePipelineLayout(vk.device,
-                                           &pipeline_layout_create_info,
-                                           nullptr,
-                                           &vk.compute_pipeline_layout);
+        result = g.vkCreatePipelineLayout(g.device,
+                                          &pipeline_layout_create_info,
+                                          nullptr,
+                                          &g.compute_pipeline_layout);
         vk_check(result);
 
         VkComputePipelineCreateInfo compute_pipeline_create_info {};
         compute_pipeline_create_info.sType =
             VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
         compute_pipeline_create_info.stage = shader_stage_create_info;
-        compute_pipeline_create_info.layout = vk.compute_pipeline_layout;
+        compute_pipeline_create_info.layout = g.compute_pipeline_layout;
 
-        result = vk.vkCreateComputePipelines(vk.device,
-                                             VK_NULL_HANDLE,
-                                             1,
-                                             &compute_pipeline_create_info,
-                                             nullptr,
-                                             &vk.compute_pipeline);
+        result = g.vkCreateComputePipelines(g.device,
+                                            VK_NULL_HANDLE,
+                                            1,
+                                            &compute_pipeline_create_info,
+                                            nullptr,
+                                            &g.compute_pipeline);
         vk_check(result);
 
-        vk.vkDestroyShaderModule(vk.device, shader_module, nullptr);
+        g.vkDestroyShaderModule(g.device, shader_module, nullptr);
+    }
+
+    {
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+        ImGui::StyleColorsDark();
+
+        ImGui_ImplGlfw_InitForVulkan(g.window, true);
+
+        /*ImGui_ImplVulkan_InitInfo init_info {};
+        init_info.Instance = {};
+        init_info.PhysicalDevice = {};
+        init_info.Device = {};
+        init_info.QueueFamily = {};
+        init_info.Queue = {};
+        init_info.PipelineCache = {};
+        init_info.DescriptorPool = {};
+        init_info.Subpass = {};
+        init_info.MinImageCount = {};
+        init_info.ImageCount = {};
+        init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+        init_info.Allocator = nullptr;
+        init_info.CheckVkResultFn = &imgui_vk_check;
+        ImGui_ImplVulkan_Init(&init_info, g.render_pass);*/
+
+        /*const auto command_buffer =
+            begin_one_time_submit_command_buffer(m_device, m_command_pool);
+        ImGui_ImplVulkan_CreateFontsTexture(*command_buffer);
+        end_one_time_submit_command_buffer(command_buffer, m_graphics_queue);
+        m_device->waitIdle();
+        ImGui_ImplVulkan_DestroyFontUploadObjects();*/
     }
 }
 
 void shutdown()
 {
-    if (vk.device)
+    if (g.device)
     {
-        const auto result = vk.vkDeviceWaitIdle(vk.device);
+        const auto result = g.vkDeviceWaitIdle(g.device);
         vk_check(result);
     }
 
-    if (vk.device)
+    // ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
+    if (g.device)
     {
-        if (vk.compute_pipeline)
+        if (g.compute_pipeline)
         {
-            vk.vkDestroyPipeline(vk.device, vk.compute_pipeline, nullptr);
+            g.vkDestroyPipeline(g.device, g.compute_pipeline, nullptr);
         }
 
-        if (vk.compute_pipeline_layout)
+        if (g.compute_pipeline_layout)
         {
-            vk.vkDestroyPipelineLayout(
-                vk.device, vk.compute_pipeline_layout, nullptr);
+            g.vkDestroyPipelineLayout(
+                g.device, g.compute_pipeline_layout, nullptr);
         }
 
-        if (vk.descriptor_pool)
+        if (g.descriptor_pool)
         {
-            vk.vkDestroyDescriptorPool(vk.device, vk.descriptor_pool, nullptr);
+            g.vkDestroyDescriptorPool(g.device, g.descriptor_pool, nullptr);
         }
 
-        if (vk.descriptor_set_layout)
+        if (g.descriptor_set_layout)
         {
-            vk.vkDestroyDescriptorSetLayout(
-                vk.device, vk.descriptor_set_layout, nullptr);
+            g.vkDestroyDescriptorSetLayout(
+                g.device, g.descriptor_set_layout, nullptr);
         }
 
-        if (vk.command_pool)
+        if (g.command_pool)
         {
-            vk.vkDestroyCommandPool(vk.device, vk.command_pool, nullptr);
+            g.vkDestroyCommandPool(g.device, g.command_pool, nullptr);
         }
 
-        if (vk.render_image_allocation)
+        if (g.render_image_allocation)
         {
-            vmaFreeMemory(vk.allocator, vk.render_image_allocation);
+            vmaFreeMemory(g.allocator, g.render_image_allocation);
         }
 
-        if (vk.render_image_view)
+        if (g.render_image_view)
         {
-            vk.vkDestroyImageView(vk.device, vk.render_image_view, nullptr);
+            g.vkDestroyImageView(g.device, g.render_image_view, nullptr);
         }
 
-        if (vk.render_image)
+        if (g.render_image)
         {
-            vk.vkDestroyImage(vk.device, vk.render_image, nullptr);
+            g.vkDestroyImage(g.device, g.render_image, nullptr);
         }
     }
 
-    if (vk.allocator)
+    if (g.allocator)
     {
-        vmaDestroyAllocator(vk.allocator);
+        vmaDestroyAllocator(g.allocator);
     }
 
-    if (vk.device)
+    if (g.device)
     {
-        vk.vkDestroyDevice(vk.device, nullptr);
+        g.vkDestroyDevice(g.device, nullptr);
     }
 
-    if (vk.instance)
+    if (g.instance)
     {
-#ifdef ENABLE_VALIDATION_LAYERS
-        if (vk.debug_messenger)
+        if (g.surface)
         {
-            vk.vkDestroyDebugUtilsMessengerEXT(
-                vk.instance, vk.debug_messenger, nullptr);
+            g.vkDestroySurfaceKHR(g.instance, g.surface, nullptr);
+        }
+
+#ifndef NDEBUG
+        if (g.debug_messenger)
+        {
+            g.vkDestroyDebugUtilsMessengerEXT(
+                g.instance, g.debug_messenger, nullptr);
         }
 #endif
 
-        vk.vkDestroyInstance(vk.instance, nullptr);
+        g.vkDestroyInstance(g.instance, nullptr);
     }
 
-    vk = {};
-
+    glfwDestroyWindow(g.window);
     glfwTerminate();
+
+    g = {};
 }
 
 void run()
@@ -964,8 +1060,8 @@ void run()
         command_buffer_begin_info.flags =
             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-        result = vk.vkBeginCommandBuffer(vk.command_buffer,
-                                         &command_buffer_begin_info);
+        result = g.vkBeginCommandBuffer(g.command_buffer,
+                                        &command_buffer_begin_info);
         vk_check(result);
 
         VkImageSubresourceRange subresource_range {};
@@ -983,51 +1079,50 @@ void run()
         image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
         image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        image_memory_barrier.image = vk.render_image;
+        image_memory_barrier.image = g.render_image;
         image_memory_barrier.subresourceRange = subresource_range;
 
-        vk.vkCmdPipelineBarrier(vk.command_buffer,
-                                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                {},
-                                0,
-                                nullptr,
-                                0,
-                                nullptr,
-                                1,
-                                &image_memory_barrier);
+        g.vkCmdPipelineBarrier(g.command_buffer,
+                               VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                               {},
+                               0,
+                               nullptr,
+                               0,
+                               nullptr,
+                               1,
+                               &image_memory_barrier);
 
-        vk.vkCmdBindDescriptorSets(vk.command_buffer,
-                                   VK_PIPELINE_BIND_POINT_COMPUTE,
-                                   vk.compute_pipeline_layout,
-                                   0,
-                                   1,
-                                   &vk.descriptor_set,
-                                   0,
-                                   nullptr);
+        g.vkCmdBindDescriptorSets(g.command_buffer,
+                                  VK_PIPELINE_BIND_POINT_COMPUTE,
+                                  g.compute_pipeline_layout,
+                                  0,
+                                  1,
+                                  &g.descriptor_set,
+                                  0,
+                                  nullptr);
 
-        vk.vkCmdBindPipeline(vk.command_buffer,
-                             VK_PIPELINE_BIND_POINT_COMPUTE,
-                             vk.compute_pipeline);
+        g.vkCmdBindPipeline(g.command_buffer,
+                            VK_PIPELINE_BIND_POINT_COMPUTE,
+                            g.compute_pipeline);
 
         constexpr std::uint32_t group_size_x {32};
         constexpr std::uint32_t group_size_y {32};
         constexpr std::uint32_t group_size_z {1};
-        vk.vkCmdDispatch(
-            vk.command_buffer, group_size_x, group_size_y, group_size_z);
+        g.vkCmdDispatch(
+            g.command_buffer, group_size_x, group_size_y, group_size_z);
 
-        result = vk.vkEndCommandBuffer(vk.command_buffer);
+        result = g.vkEndCommandBuffer(g.command_buffer);
         vk_check(result);
 
         VkSubmitInfo submit_info {};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &vk.command_buffer;
-        result =
-            vk.vkQueueSubmit(vk.compute_queue, 1, &submit_info, VK_NULL_HANDLE);
+        submit_info.pCommandBuffers = &g.command_buffer;
+        result = g.vkQueueSubmit(g.queue, 1, &submit_info, VK_NULL_HANDLE);
         vk_check(result);
 
-        result = vk.vkQueueWaitIdle(vk.compute_queue);
+        result = g.vkQueueWaitIdle(g.queue);
         vk_check(result);
     }
 
@@ -1035,11 +1130,11 @@ void run()
         VkBufferCreateInfo buffer_create_info {};
         buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         buffer_create_info.size =
-            vk.render_image_width * vk.render_image_height * 4 * sizeof(float);
+            g.render_image_width * g.render_image_height * 4 * sizeof(float);
         buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         buffer_create_info.queueFamilyIndexCount = 1;
-        buffer_create_info.pQueueFamilyIndices = &vk.compute_queue_family;
+        buffer_create_info.pQueueFamilyIndices = &g.queue_family;
 
         VmaAllocationCreateInfo allocation_create_info {};
         allocation_create_info.flags =
@@ -1050,7 +1145,7 @@ void run()
         VkBuffer staging_buffer {};
         VmaAllocation staging_buffer_allocation {};
         VmaAllocationInfo staging_buffer_allocation_info {};
-        vk_check(vmaCreateBuffer(vk.allocator,
+        vk_check(vmaCreateBuffer(g.allocator,
                                  &buffer_create_info,
                                  &allocation_create_info,
                                  &staging_buffer,
@@ -1061,12 +1156,12 @@ void run()
         command_buffer_allocate_info.sType =
             VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        command_buffer_allocate_info.commandPool = vk.command_pool;
+        command_buffer_allocate_info.commandPool = g.command_pool;
         command_buffer_allocate_info.commandBufferCount = 1;
 
         VkCommandBuffer command_buffer;
-        result = vk.vkAllocateCommandBuffers(
-            vk.device, &command_buffer_allocate_info, &command_buffer);
+        result = g.vkAllocateCommandBuffers(
+            g.device, &command_buffer_allocate_info, &command_buffer);
         vk_check(result);
 
         VkCommandBufferBeginInfo command_buffer_begin_info {};
@@ -1076,7 +1171,7 @@ void run()
             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
         result =
-            vk.vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
+            g.vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
         vk_check(result);
 
         VkImageSubresourceRange subresource_range {};
@@ -1094,57 +1189,56 @@ void run()
         image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        image_memory_barrier.image = vk.render_image;
+        image_memory_barrier.image = g.render_image;
         image_memory_barrier.subresourceRange = subresource_range;
 
-        vk.vkCmdPipelineBarrier(command_buffer,
-                                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                {},
-                                0,
-                                nullptr,
-                                0,
-                                nullptr,
-                                1,
-                                &image_memory_barrier);
+        g.vkCmdPipelineBarrier(command_buffer,
+                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                               VK_PIPELINE_STAGE_TRANSFER_BIT,
+                               {},
+                               0,
+                               nullptr,
+                               0,
+                               nullptr,
+                               1,
+                               &image_memory_barrier);
 
         VkBufferImageCopy region {};
         region.bufferOffset = 0;
-        region.bufferImageHeight = vk.render_image_height;
+        region.bufferImageHeight = g.render_image_height;
         region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         region.imageSubresource.mipLevel = 0;
         region.imageSubresource.baseArrayLayer = 0;
         region.imageSubresource.layerCount = 1;
         region.imageOffset = {0, 0, 0};
-        region.imageExtent = {vk.render_image_width, vk.render_image_height, 1};
+        region.imageExtent = {g.render_image_width, g.render_image_height, 1};
 
-        vk.vkCmdCopyImageToBuffer(command_buffer,
-                                  vk.render_image,
-                                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                  staging_buffer,
-                                  1,
-                                  &region);
+        g.vkCmdCopyImageToBuffer(command_buffer,
+                                 g.render_image,
+                                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                 staging_buffer,
+                                 1,
+                                 &region);
 
-        result = vk.vkEndCommandBuffer(command_buffer);
+        result = g.vkEndCommandBuffer(command_buffer);
         vk_check(result);
 
         VkSubmitInfo submit_info {};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit_info.commandBufferCount = 1;
         submit_info.pCommandBuffers = &command_buffer;
-        result =
-            vk.vkQueueSubmit(vk.compute_queue, 1, &submit_info, VK_NULL_HANDLE);
+        result = g.vkQueueSubmit(g.queue, 1, &submit_info, VK_NULL_HANDLE);
         vk_check(result);
 
-        result = vk.vkQueueWaitIdle(vk.compute_queue);
+        result = g.vkQueueWaitIdle(g.queue);
         vk_check(result);
 
-        vk.vkFreeCommandBuffers(vk.device, vk.command_pool, 1, &command_buffer);
+        g.vkFreeCommandBuffers(g.device, g.command_pool, 1, &command_buffer);
 
         const auto *const hdr_image_data = reinterpret_cast<float *>(
             staging_buffer_allocation_info.pMappedData);
         const auto image_size =
-            vk.render_image_width * vk.render_image_height * 4;
+            g.render_image_width * g.render_image_height * 4;
         std::vector<std::uint8_t> rgba8_image_data(image_size);
         for (std::uint32_t i {}; i < image_size; ++i)
         {
@@ -1153,17 +1247,22 @@ void run()
         }
 
         if (!stbi_write_png("image.png",
-                            static_cast<int>(vk.render_image_width),
-                            static_cast<int>(vk.render_image_height),
+                            static_cast<int>(g.render_image_width),
+                            static_cast<int>(g.render_image_height),
                             4,
                             rgba8_image_data.data(),
-                            static_cast<int>(vk.render_image_width * 4)))
+                            static_cast<int>(g.render_image_width * 4)))
         {
             fatal_error("Failed to write PNG image");
         }
 
         vmaDestroyBuffer(
-            vk.allocator, staging_buffer, staging_buffer_allocation);
+            g.allocator, staging_buffer, staging_buffer_allocation);
+    }
+
+    while (!glfwWindowShouldClose(g.window))
+    {
+        glfwPollEvents();
     }
 }
 

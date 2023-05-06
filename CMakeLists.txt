@@ -2,9 +2,14 @@ cmake_minimum_required(VERSION 3.19)
 
 project(path_tracer LANGUAGES CXX)
 
+
+add_compile_definitions(
+        VK_NO_PROTOTYPES
+        $<$<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>>:NDEBUG>
+        _CRT_SECURE_NO_WARNINGS)
+
+
 set(CLANG_OPTIONS
-        #-march=native
-        #-ffast-math
         -Wfatal-errors
         -Wall
         -Wextra
@@ -28,11 +33,11 @@ set(GCC_OPTIONS
         -Wuseless-cast)
 
 if (CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-    set(PROJECT_OPTIONS ${CLANG_OPTIONS})
+    set(COMPILE_OPTIONS ${CLANG_OPTIONS})
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(PROJECT_OPTIONS ${GCC_OPTIONS})
+    set(COMPILE_OPTIONS ${GCC_OPTIONS})
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    set(PROJECT_OPTIONS /W4)
+    set(COMPILE_OPTIONS /W4)
 else ()
     message(WARNING "No warnings set for compiler '${CMAKE_CXX_COMPILER_ID}'")
 endif ()
@@ -56,31 +61,27 @@ add_library(imgui STATIC
         external/imgui/backends/imgui_impl_glfw.cpp
         external/imgui/backends/imgui_impl_vulkan.cpp)
 target_include_directories(imgui PRIVATE
+        ${Vulkan_INCLUDE_DIRS}
         external/imgui
         external/imgui/backends)
-target_link_libraries(imgui PRIVATE
-        Vulkan::Vulkan
-        glfw)
+target_link_libraries(imgui PRIVATE glfw)
 
 
 add_executable(path_tracer
-        src/main.cpp
+        src/path_tracer.cpp
         external/stb/stb_image_write.h)
 target_include_directories(path_tracer PRIVATE
+        ${Vulkan_INCLUDE_DIRS}
         external/stb
         external/glfw/include
         external/VulkanMemoryAllocator/include
         external/imgui
         external/imgui/backends)
-target_compile_options(path_tracer PRIVATE ${PROJECT_OPTIONS})
+target_compile_options(path_tracer PRIVATE ${COMPILE_OPTIONS})
 target_compile_features(path_tracer PRIVATE cxx_std_20)
-target_compile_definitions(path_tracer PRIVATE
-        $<$<CONFIG:Debug>:ENABLE_VALIDATION_LAYERS>
-        $<$<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>>:NDEBUG>
-        _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(path_tracer PRIVATE
-        Vulkan::Vulkan
-        glfw)
+        glfw
+        imgui)
 
 set(SHADERS render.comp)
 foreach (SHADER IN LISTS SHADERS)
