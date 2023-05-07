@@ -1,6 +1,16 @@
 
 #ifdef __GNUC__
 #pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuseless-cast"
+#endif
+#define TINYOBJLOADER_IMPLEMENTATION
+#include "tiny_obj_loader.h"
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
+
+#ifdef __GNUC__
+#pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wuseless-cast"
 #pragma GCC diagnostic ignored "-Wconversion"
@@ -131,6 +141,7 @@ struct
     PFN_vkCmdBeginRenderPass vkCmdBeginRenderPass;
     PFN_vkCmdEndRenderPass vkCmdEndRenderPass;
     PFN_vkCmdBlitImage vkCmdBlitImage;
+    PFN_vkCmdCopyBuffer vkCmdCopyBuffer;
     PFN_vkQueueSubmit vkQueueSubmit;
     PFN_vkQueueWaitIdle vkQueueWaitIdle;
     PFN_vkDeviceWaitIdle vkDeviceWaitIdle;
@@ -194,6 +205,14 @@ struct
     std::array<VkFence, frames_in_flight> in_flight_fences;
     std::uint32_t current_frame;
     bool framebuffer_resized;
+
+    VkBuffer vertex_buffer;
+    VmaAllocation vertex_buffer_allocation;
+    VkDeviceSize vertex_buffer_size;
+
+    VkBuffer index_buffer;
+    VmaAllocation index_buffer_allocation;
+    VkDeviceSize index_buffer_size;
 } g {};
 
 [[noreturn]] void
@@ -445,6 +464,7 @@ void load_device_commands() noexcept
     LOAD(vkCmdBeginRenderPass)
     LOAD(vkCmdEndRenderPass)
     LOAD(vkCmdBlitImage)
+    LOAD(vkCmdCopyBuffer)
     LOAD(vkQueueSubmit)
     LOAD(vkQueueWaitIdle)
     LOAD(vkDeviceWaitIdle)
@@ -1594,19 +1614,176 @@ void init()
     }
 
     {
-        VkDescriptorSetLayoutBinding descriptor_set_layout_binding {};
-        descriptor_set_layout_binding.binding = 0;
-        descriptor_set_layout_binding.descriptorType =
+        tinyobj::ObjReader reader;
+        reader.ParseFromFile("../resources/bunny.obj");
+        if (!reader.Valid())
+        {
+            fatal_error("Failed to load OBJ file");
+        }
+
+        const auto &vertices = reader.GetAttrib().GetVertices();
+        const auto &shapes = reader.GetShapes();
+        if (shapes.size() != 1)
+        {
+            fatal_error("OBJ file contains more than one shape");
+        }
+        const auto &shape = shapes.front();
+        std::vector<std::uint32_t> indices;
+        indices.reserve(shape.mesh.indices.size());
+        for (const auto &index : shape.mesh.indices)
+        {
+            indices.push_back(static_cast<std::uint32_t>(index.vertex_index));
+        }
+
+        {
+            g.vertex_buffer_size = vertices.size() * sizeof(tinyobj::real_t);
+
+            VkBufferCreateInfo buffer_create_info {};
+            buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            buffer_create_info.queueFamilyIndexCount = 1;
+            buffer_create_info.pQueueFamilyIndices = &g.queue_family;
+            buffer_create_info.size = g.vertex_buffer_size;
+            buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+            VmaAllocationCreateInfo allocation_create_info {};
+            allocation_create_info.flags =
+                VMA_ALLOCATION_CREATE_MAPPED_BIT |
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+            allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+
+            VkBuffer staging_buffer {};
+            VmaAllocation staging_buffer_allocation {};
+            VmaAllocationInfo staging_buffer_allocation_info {};
+            result = vmaCreateBuffer(g.allocator,
+                                     &buffer_create_info,
+                                     &allocation_create_info,
+                                     &staging_buffer,
+                                     &staging_buffer_allocation,
+                                     &staging_buffer_allocation_info);
+            vk_check(result);
+
+            buffer_create_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                       VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+            allocation_create_info.flags = {};
+            allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+            result = vmaCreateBuffer(g.allocator,
+                                     &buffer_create_info,
+                                     &allocation_create_info,
+                                     &g.vertex_buffer,
+                                     &g.vertex_buffer_allocation,
+                                     nullptr);
+            vk_check(result);
+
+            std::memcpy(staging_buffer_allocation_info.pMappedData,
+                        vertices.data(),
+                        g.vertex_buffer_size);
+
+            const auto command_buffer = begin_one_time_submit_command_buffer();
+
+            const VkBufferCopy region {
+                .srcOffset = 0, .dstOffset = 0, .size = g.vertex_buffer_size};
+
+            g.vkCmdCopyBuffer(
+                command_buffer, staging_buffer, g.vertex_buffer, 1, &region);
+
+            end_one_time_submit_command_buffer(command_buffer);
+
+            vmaDestroyBuffer(
+                g.allocator, staging_buffer, staging_buffer_allocation);
+        }
+
+        {
+            g.index_buffer_size = indices.size() * sizeof(std::uint32_t);
+
+            VkBufferCreateInfo buffer_create_info {};
+            buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            buffer_create_info.queueFamilyIndexCount = 1;
+            buffer_create_info.pQueueFamilyIndices = &g.queue_family;
+            buffer_create_info.size = g.index_buffer_size;
+            buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+            VmaAllocationCreateInfo allocation_create_info {};
+            allocation_create_info.flags =
+                VMA_ALLOCATION_CREATE_MAPPED_BIT |
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+            allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+
+            VkBuffer staging_buffer {};
+            VmaAllocation staging_buffer_allocation {};
+            VmaAllocationInfo staging_buffer_allocation_info {};
+            result = vmaCreateBuffer(g.allocator,
+                                     &buffer_create_info,
+                                     &allocation_create_info,
+                                     &staging_buffer,
+                                     &staging_buffer_allocation,
+                                     &staging_buffer_allocation_info);
+            vk_check(result);
+
+            buffer_create_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                       VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+            allocation_create_info.flags = {};
+            allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+            result = vmaCreateBuffer(g.allocator,
+                                     &buffer_create_info,
+                                     &allocation_create_info,
+                                     &g.index_buffer,
+                                     &g.index_buffer_allocation,
+                                     nullptr);
+            vk_check(result);
+
+            std::memcpy(staging_buffer_allocation_info.pMappedData,
+                        indices.data(),
+                        g.index_buffer_size);
+
+            const auto command_buffer = begin_one_time_submit_command_buffer();
+
+            const VkBufferCopy region {
+                .srcOffset = 0, .dstOffset = 0, .size = g.index_buffer_size};
+
+            g.vkCmdCopyBuffer(
+                command_buffer, staging_buffer, g.index_buffer, 1, &region);
+
+            end_one_time_submit_command_buffer(command_buffer);
+
+            vmaDestroyBuffer(
+                g.allocator, staging_buffer, staging_buffer_allocation);
+        }
+    }
+
+    {
+        VkDescriptorSetLayoutBinding descriptor_set_layout_bindings[3] {};
+
+        descriptor_set_layout_bindings[0].binding = 0;
+        descriptor_set_layout_bindings[0].descriptorType =
             VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        descriptor_set_layout_binding.descriptorCount = 1;
-        descriptor_set_layout_binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        descriptor_set_layout_bindings[0].descriptorCount = 1;
+        descriptor_set_layout_bindings[0].stageFlags =
+            VK_SHADER_STAGE_COMPUTE_BIT;
+
+        descriptor_set_layout_bindings[1].binding = 2;
+        descriptor_set_layout_bindings[1].descriptorType =
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptor_set_layout_bindings[1].descriptorCount = 1;
+        descriptor_set_layout_bindings[1].stageFlags =
+            VK_SHADER_STAGE_COMPUTE_BIT;
+
+        descriptor_set_layout_bindings[2].binding = 3;
+        descriptor_set_layout_bindings[2].descriptorType =
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptor_set_layout_bindings[2].descriptorCount = 1;
+        descriptor_set_layout_bindings[2].stageFlags =
+            VK_SHADER_STAGE_COMPUTE_BIT;
 
         VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {};
         descriptor_set_layout_create_info.sType =
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        descriptor_set_layout_create_info.bindingCount = 1;
+        descriptor_set_layout_create_info.bindingCount = 3;
         descriptor_set_layout_create_info.pBindings =
-            &descriptor_set_layout_binding;
+            descriptor_set_layout_bindings;
 
         result = g.vkCreateDescriptorSetLayout(
             g.device,
@@ -1696,6 +1873,16 @@ void init()
         storage_image_descriptor_image_info.imageLayout =
             VK_IMAGE_LAYOUT_GENERAL;
 
+        VkDescriptorBufferInfo vertex_buffer_descriptor_buffer_info {};
+        vertex_buffer_descriptor_buffer_info.buffer = g.vertex_buffer;
+        vertex_buffer_descriptor_buffer_info.offset = 0;
+        vertex_buffer_descriptor_buffer_info.range = g.vertex_buffer_size;
+
+        VkDescriptorBufferInfo index_buffer_descriptor_buffer_info {};
+        index_buffer_descriptor_buffer_info.buffer = g.index_buffer;
+        index_buffer_descriptor_buffer_info.offset = 0;
+        index_buffer_descriptor_buffer_info.range = g.index_buffer_size;
+
         VkDescriptorImageInfo render_target_descriptor_image_info {};
         render_target_descriptor_image_info.sampler = g.render_target_sampler;
         render_target_descriptor_image_info.imageView =
@@ -1703,7 +1890,7 @@ void init()
         render_target_descriptor_image_info.imageLayout =
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        VkWriteDescriptorSet descriptor_writes[2] {};
+        VkWriteDescriptorSet descriptor_writes[4] {};
         descriptor_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptor_writes[0].dstSet = g.storage_image_descriptor_set;
         descriptor_writes[0].dstBinding = 0;
@@ -1713,15 +1900,36 @@ void init()
         descriptor_writes[0].pImageInfo = &storage_image_descriptor_image_info;
 
         descriptor_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptor_writes[1].dstSet = g.render_target_descriptor_set;
-        descriptor_writes[1].dstBinding = 0;
+        descriptor_writes[1].dstSet = g.storage_image_descriptor_set;
+        descriptor_writes[1].dstBinding = 2;
         descriptor_writes[1].dstArrayElement = 0;
         descriptor_writes[1].descriptorCount = 1;
-        descriptor_writes[1].descriptorType =
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptor_writes[1].pImageInfo = &render_target_descriptor_image_info;
+        descriptor_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptor_writes[1].pBufferInfo =
+            &vertex_buffer_descriptor_buffer_info;
 
-        g.vkUpdateDescriptorSets(g.device, 2, descriptor_writes, 0, nullptr);
+        descriptor_writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor_writes[2].dstSet = g.storage_image_descriptor_set;
+        descriptor_writes[2].dstBinding = 3;
+        descriptor_writes[2].dstArrayElement = 0;
+        descriptor_writes[2].descriptorCount = 1;
+        descriptor_writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptor_writes[2].pBufferInfo = &index_buffer_descriptor_buffer_info;
+
+        descriptor_writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor_writes[3].dstSet = g.render_target_descriptor_set;
+        descriptor_writes[3].dstBinding = 0;
+        descriptor_writes[3].dstArrayElement = 0;
+        descriptor_writes[3].descriptorCount = 1;
+        descriptor_writes[3].descriptorType =
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptor_writes[3].pImageInfo = &render_target_descriptor_image_info;
+
+        g.vkUpdateDescriptorSets(g.device,
+                                 std::size(descriptor_writes),
+                                 descriptor_writes,
+                                 0,
+                                 nullptr);
     }
 
     {
@@ -1913,6 +2121,21 @@ void shutdown()
     {
         const auto result = g.vkDeviceWaitIdle(g.device);
         vk_check(result);
+    }
+
+    if (g.device)
+    {
+        if (g.index_buffer && g.index_buffer_allocation)
+        {
+            vmaDestroyBuffer(
+                g.allocator, g.index_buffer, g.index_buffer_allocation);
+        }
+
+        if (g.vertex_buffer && g.vertex_buffer_allocation)
+        {
+            vmaDestroyBuffer(
+                g.allocator, g.vertex_buffer, g.vertex_buffer_allocation);
+        }
     }
 
     ImGui_ImplVulkan_Shutdown();

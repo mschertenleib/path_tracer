@@ -1,10 +1,22 @@
 #version 450
 
+#extension GL_EXT_scalar_block_layout : require
+
 layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
 layout(binding = 0, rgba32f) uniform image2D storage_image;
 
-layout(push_constant) uniform push_constants
+layout(binding = 2, scalar) buffer Vertices
+{
+    vec3 vertices[];
+};
+
+layout(binding = 3, scalar) buffer Indices
+{
+    uint indices[];
+};
+
+layout(push_constant) uniform Push_constants
 {
     uint rng_seed;
 };

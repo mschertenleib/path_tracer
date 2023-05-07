@@ -5,3 +5,4 @@ cmake-build*
 .ccls
 compile_commands.json
 imgui.ini
+resources

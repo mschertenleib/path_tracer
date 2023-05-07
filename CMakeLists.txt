@@ -70,6 +70,7 @@ target_link_libraries(imgui PRIVATE glfw)
 add_executable(path_tracer src/path_tracer.cpp)
 target_include_directories(path_tracer PRIVATE
         ${Vulkan_INCLUDE_DIRS}
+        external
         external/stb
         external/glfw/include
         external/VulkanMemoryAllocator/include
