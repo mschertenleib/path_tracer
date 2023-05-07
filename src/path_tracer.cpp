@@ -65,7 +65,6 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
-#include <random>
 #include <source_location>
 #include <sstream>
 #include <stdexcept>
@@ -1511,7 +1510,7 @@ void init()
         VkImageCreateInfo image_create_info {};
         image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         image_create_info.imageType = VK_IMAGE_TYPE_2D;
-        image_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+        image_create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
         image_create_info.extent.width = g.storage_image_width;
         image_create_info.extent.height = g.storage_image_height;
         image_create_info.extent.depth = 1;
@@ -1542,7 +1541,7 @@ void init()
         image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         image_view_create_info.image = g.render_target_image;
         image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+        image_view_create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
         image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
         image_view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
         image_view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -2335,15 +2334,8 @@ void run()
                         1000.0 / static_cast<double>(ImGui::GetIO().Framerate),
                         static_cast<double>(ImGui::GetIO().Framerate));
 
-            VmaBudget memory_budget;
-            vmaGetHeapBudgets(g.allocator, &memory_budget);
-
-            ImGui::Text("Memory usage: %.2f MB / %.2f MB",
-                        static_cast<double>(memory_budget.usage) / 1'000'000.0,
-                        static_cast<double>(memory_budget.budget) /
-                            1'000'000.0);
-
-            ImGui::InputText("PNG file name", input_text_buffer, 256);
+            ImGui::InputText(
+                "PNG file name", input_text_buffer, sizeof(input_text_buffer));
 
             if (ImGui::Button("Store to PNG"))
             {
