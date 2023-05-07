@@ -6,7 +6,7 @@ A path tracer written in C++, using the Vulkan ray tracing extensions
 
 Prerequisites:
 
-- A C++ compiler
+- A C++20 compiler
 - [git](https://git-scm.com)
 - [CMake](https://cmake.org)
 - [The Vulkan SDK](https://www.lunarg.com/vulkan-sdk)
@@ -38,6 +38,7 @@ cmake --build build
 - [Dear ImGui](https://github.com/ocornut/imgui)
 - [stb](https://github.com/nothings/stb)
 - [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
+- [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader)
 
 ## References
 
