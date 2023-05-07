@@ -4,6 +4,11 @@ layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
 layout(binding = 0, rgba32f) uniform image2D storage_image;
 
+layout(push_constant) uniform push_constants
+{
+    uint rng_seed;
+};
+
 uint hash(uint x)
 {
     x += x << 10;
@@ -27,12 +32,13 @@ void main()
     const uvec2 image_size = imageSize(storage_image);
 
     if (gl_GlobalInvocationID.x >= image_size.x ||
-        gl_GlobalInvocationID.y >= image_size.y)
+    gl_GlobalInvocationID.y >= image_size.y)
     {
         return;
     }
 
-    uint rng_state = hash(gl_GlobalInvocationID.y * 8192 + gl_GlobalInvocationID.x + 1);
+    const uint pixel_index = gl_GlobalInvocationID.y * image_size.x + gl_GlobalInvocationID.x;
+    uint rng_state = hash(rng_seed + pixel_index);
     const vec4 color = vec4(random(rng_state), random(rng_state), random(rng_state), 1.0);
 
     imageStore(storage_image, ivec2(gl_GlobalInvocationID.xy), color);
