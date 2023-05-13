@@ -67,7 +67,9 @@ target_include_directories(imgui PRIVATE
 target_link_libraries(imgui PRIVATE glfw)
 
 
-add_executable(path_tracer src/path_tracer.cpp)
+add_executable(path_tracer
+        src/path_tracer.cpp
+        src/scope_guard.hpp)
 target_include_directories(path_tracer PRIVATE
         ${Vulkan_INCLUDE_DIRS}
         external
