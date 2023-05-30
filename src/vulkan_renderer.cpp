@@ -1,3 +1,4 @@
+#include "vulkan_renderer.hpp"
 
 #ifdef __GNUC__
 #pragma GCC diagnostic push
@@ -157,19 +158,40 @@ namespace
     MACRO(vkResetCommandBuffer)                                                \
     MACRO(vkQueuePresentKHR)
 
-#define DECLARE_FUNCTION(name) PFN_##name name;
+#define DECLARE_FUNCTION(name) PFN_##name name {};
 GLOBAL_FUNCTIONS_MAP(DECLARE_FUNCTION)
 INSTANCE_FUNCTIONS_MAP(DECLARE_FUNCTION)
 DEVICE_FUNCTIONS_MAP(DECLARE_FUNCTION)
+#undef DECLARE_FUNCTION
 
-inline constexpr std::uint32_t frames_in_flight {2};
-
-struct Buffer
+struct Vulkan_buffer
 {
     VkBuffer buffer;
     VmaAllocation allocation;
     VkDeviceSize size;
 };
+
+struct Vulkan_image
+{
+    VkImage image;
+    VmaAllocation allocation;
+    VkImageView image_view;
+    std::uint32_t width;
+    std::uint32_t height;
+};
+
+struct Vulkan_swapchain
+{
+    VkSwapchainKHR swapchain;
+    VkFormat format;
+    VkExtent2D extent;
+    std::uint32_t image_count;
+    std::uint32_t min_image_count;
+    std::vector<VkImage> images;
+    std::vector<VkImageView> image_views;
+};
+
+inline constexpr std::uint32_t frames_in_flight {2};
 
 struct
 {
@@ -182,26 +204,14 @@ struct
 #endif
     VkSurfaceKHR surface;
     VkPhysicalDevice physical_device;
-    std::uint32_t queue_family;
+    std::uint32_t queue_family {std::numeric_limits<std::uint32_t>::max()};
     VkDevice device;
 
     VkQueue queue;
     VmaAllocator allocator;
-    VkSwapchainKHR swapchain;
-    VkFormat swapchain_format;
-    VkExtent2D swapchain_extent;
-    std::uint32_t swapchain_image_count;
-    std::uint32_t swapchain_min_image_count;
-    std::vector<VkImage> swapchain_images;
-    std::vector<VkImageView> swapchain_image_views;
-    VkImage storage_image;
-    VkImageView storage_image_view;
-    VmaAllocation storage_image_allocation;
-    std::uint32_t storage_image_width;
-    std::uint32_t storage_image_height;
-    VkImage render_target_image;
-    VkImageView render_target_image_view;
-    VmaAllocation render_target_allocation;
+    Vulkan_swapchain swapchain;
+    Vulkan_image storage_image;
+    Vulkan_image render_target;
     VkSampler render_target_sampler;
     VkCommandPool command_pool;
     VkDescriptorSetLayout storage_image_descriptor_set_layout;
@@ -220,13 +230,8 @@ struct
     std::uint32_t current_frame;
     bool framebuffer_resized;
 
-    VkBuffer vertex_buffer;
-    VmaAllocation vertex_buffer_allocation;
-    VkDeviceSize vertex_buffer_size;
-
-    VkBuffer index_buffer;
-    VmaAllocation index_buffer_allocation;
-    VkDeviceSize index_buffer_size;
+    Vulkan_buffer vertex_buffer;
+    Vulkan_buffer index_buffer;
 } g {};
 
 [[noreturn]] void
@@ -397,7 +402,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
 
 #endif
 
-void load_global_commands() noexcept
+void load_global_commands()
 {
     vkGetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
         glfwGetInstanceProcAddress(nullptr, "vkGetInstanceProcAddr"));
@@ -413,7 +418,7 @@ void load_global_commands() noexcept
 #undef LOAD_FUNCTION
 }
 
-void load_instance_commands() noexcept
+void load_instance_commands()
 {
     assert(vkGetInstanceProcAddr);
     assert(g.instance);
@@ -428,7 +433,7 @@ void load_instance_commands() noexcept
 #undef LOAD_FUNCTION
 }
 
-void load_device_commands() noexcept
+void load_device_commands()
 {
     assert(vkGetDeviceProcAddr);
     assert(g.device);
@@ -442,15 +447,15 @@ void load_device_commands() noexcept
 #undef LOAD_FUNCTION
 }
 
-[[nodiscard]] Buffer create_buffer(VmaAllocator allocator,
-                                   VkDeviceSize size,
-                                   std::uint32_t queue_family_index,
-                                   VkBufferUsageFlags buffer_usage,
-                                   VmaAllocationCreateFlags flags,
-                                   VmaMemoryUsage memory_usage,
-                                   VmaAllocationInfo *allocation_info)
+[[nodiscard]] Vulkan_buffer create_buffer(VmaAllocator allocator,
+                                          VkDeviceSize size,
+                                          std::uint32_t queue_family_index,
+                                          VkBufferUsageFlags buffer_usage,
+                                          VmaAllocationCreateFlags flags,
+                                          VmaMemoryUsage memory_usage,
+                                          VmaAllocationInfo *allocation_info)
 {
-    Buffer buffer {};
+    Vulkan_buffer buffer {};
     buffer.size = size;
 
     VkBufferCreateInfo buffer_create_info {};
@@ -476,16 +481,17 @@ void load_device_commands() noexcept
     return buffer;
 }
 
-void destroy_buffer(VmaAllocator allocator, Buffer &buffer)
+void destroy_buffer(VmaAllocator allocator, Vulkan_buffer &buffer)
 {
     vmaDestroyBuffer(allocator, buffer.buffer, buffer.allocation);
     buffer = {};
 }
 
-[[nodiscard]] Buffer create_staging_buffer(VmaAllocator allocator,
-                                           VkDeviceSize size,
-                                           std::uint32_t queue_family_index,
-                                           VmaAllocationInfo *allocation_info)
+[[nodiscard]] Vulkan_buffer
+create_staging_buffer(VmaAllocator allocator,
+                      VkDeviceSize size,
+                      std::uint32_t queue_family_index,
+                      VmaAllocationInfo *allocation_info)
 {
     return create_buffer(
         allocator,
@@ -625,7 +631,7 @@ void create_swapchain()
     if (surface_capabilities.currentExtent.width !=
         std::numeric_limits<std::uint32_t>::max())
     {
-        g.swapchain_extent = surface_capabilities.currentExtent;
+        g.swapchain.extent = surface_capabilities.currentExtent;
     }
     else
     {
@@ -633,34 +639,34 @@ void create_swapchain()
         int framebuffer_height;
         glfwGetFramebufferSize(
             g.window, &framebuffer_width, &framebuffer_height);
-        g.swapchain_extent = {static_cast<std::uint32_t>(framebuffer_width),
+        g.swapchain.extent = {static_cast<std::uint32_t>(framebuffer_width),
                               static_cast<std::uint32_t>(framebuffer_height)};
     }
-    g.swapchain_extent.width =
-        std::clamp(g.swapchain_extent.width,
+    g.swapchain.extent.width =
+        std::clamp(g.swapchain.extent.width,
                    surface_capabilities.minImageExtent.width,
                    surface_capabilities.maxImageExtent.width);
-    g.swapchain_extent.height =
-        std::clamp(g.swapchain_extent.height,
+    g.swapchain.extent.height =
+        std::clamp(g.swapchain.extent.height,
                    surface_capabilities.minImageExtent.height,
                    surface_capabilities.maxImageExtent.height);
 
-    g.swapchain_min_image_count = surface_capabilities.minImageCount + 1;
+    g.swapchain.min_image_count = surface_capabilities.minImageCount + 1;
     if (surface_capabilities.maxImageCount > 0 &&
-        g.swapchain_min_image_count > surface_capabilities.maxImageCount)
+        g.swapchain.min_image_count > surface_capabilities.maxImageCount)
     {
-        g.swapchain_min_image_count = surface_capabilities.maxImageCount;
+        g.swapchain.min_image_count = surface_capabilities.maxImageCount;
     }
 
-    g.swapchain_format = surface_format.format;
+    g.swapchain.format = surface_format.format;
 
     VkSwapchainCreateInfoKHR swapchain_create_info {};
     swapchain_create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     swapchain_create_info.surface = g.surface;
-    swapchain_create_info.minImageCount = g.swapchain_min_image_count;
+    swapchain_create_info.minImageCount = g.swapchain.min_image_count;
     swapchain_create_info.imageFormat = surface_format.format;
     swapchain_create_info.imageColorSpace = surface_format.colorSpace;
-    swapchain_create_info.imageExtent = g.swapchain_extent;
+    swapchain_create_info.imageExtent = g.swapchain.extent;
     swapchain_create_info.imageArrayLayers = 1;
     swapchain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     swapchain_create_info.preTransform = surface_capabilities.currentTransform;
@@ -672,25 +678,25 @@ void create_swapchain()
     swapchain_create_info.pQueueFamilyIndices = &g.queue_family;
 
     result = vkCreateSwapchainKHR(
-        g.device, &swapchain_create_info, nullptr, &g.swapchain);
+        g.device, &swapchain_create_info, nullptr, &g.swapchain.swapchain);
     vk_check(result);
 
     result = vkGetSwapchainImagesKHR(
-        g.device, g.swapchain, &g.swapchain_image_count, nullptr);
+        g.device, g.swapchain.swapchain, &g.swapchain.image_count, nullptr);
     vk_check(result);
-    g.swapchain_images.resize(g.swapchain_image_count);
+    g.swapchain.images.resize(g.swapchain.image_count);
     result = vkGetSwapchainImagesKHR(g.device,
-                                     g.swapchain,
-                                     &g.swapchain_image_count,
-                                     g.swapchain_images.data());
+                                     g.swapchain.swapchain,
+                                     &g.swapchain.image_count,
+                                     g.swapchain.images.data());
     vk_check(result);
 
-    g.swapchain_image_views.resize(g.swapchain_image_count);
+    g.swapchain.image_views.resize(g.swapchain.image_count);
 
     VkImageViewCreateInfo image_view_create_info {};
     image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    image_view_create_info.format = g.swapchain_format;
+    image_view_create_info.format = g.swapchain.format;
     image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
     image_view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
     image_view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -702,13 +708,13 @@ void create_swapchain()
     image_view_create_info.subresourceRange.baseArrayLayer = 0;
     image_view_create_info.subresourceRange.layerCount = 1;
 
-    for (std::uint32_t i {}; i < g.swapchain_image_count; ++i)
+    for (std::uint32_t i {}; i < g.swapchain.image_count; ++i)
     {
-        image_view_create_info.image = g.swapchain_images[i];
+        image_view_create_info.image = g.swapchain.images[i];
         result = vkCreateImageView(g.device,
                                    &image_view_create_info,
                                    nullptr,
-                                   &g.swapchain_image_views[i]);
+                                   &g.swapchain.image_views[i]);
         vk_check(result);
     }
 }
@@ -720,32 +726,32 @@ void destroy_swapchain()
         return;
     }
 
-    for (const auto image_view : g.swapchain_image_views)
+    for (const auto image_view : g.swapchain.image_views)
     {
         vkDestroyImageView(g.device, image_view, nullptr);
     }
 
-    if (g.swapchain)
+    if (g.swapchain.swapchain)
     {
-        vkDestroySwapchainKHR(g.device, g.swapchain, nullptr);
+        vkDestroySwapchainKHR(g.device, g.swapchain.swapchain, nullptr);
     }
 }
 
 void create_framebuffers()
 {
-    g.framebuffers.resize(g.swapchain_image_count);
+    g.framebuffers.resize(g.swapchain.image_count);
 
     VkFramebufferCreateInfo framebuffer_create_info {};
     framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     framebuffer_create_info.renderPass = g.render_pass;
     framebuffer_create_info.attachmentCount = 1;
-    framebuffer_create_info.width = g.swapchain_extent.width;
-    framebuffer_create_info.height = g.swapchain_extent.height;
+    framebuffer_create_info.width = g.swapchain.extent.width;
+    framebuffer_create_info.height = g.swapchain.extent.height;
     framebuffer_create_info.layers = 1;
 
-    for (std::uint32_t i {}; i < g.swapchain_image_count; ++i)
+    for (std::uint32_t i {}; i < g.swapchain.image_count; ++i)
     {
-        framebuffer_create_info.pAttachments = &g.swapchain_image_views[i];
+        framebuffer_create_info.pAttachments = &g.swapchain.image_views[i];
 
         const auto result = vkCreateFramebuffer(
             g.device, &framebuffer_create_info, nullptr, &g.framebuffers[i]);
@@ -755,7 +761,7 @@ void create_framebuffers()
 
 void destroy_framebuffers()
 {
-    for (std::uint32_t i {}; i < g.swapchain_image_count; ++i)
+    for (std::uint32_t i {}; i < g.swapchain.image_count; ++i)
     {
         if (g.framebuffers[i])
         {
@@ -846,7 +852,7 @@ void draw_frame(std::uint32_t rng_seed)
     std::uint32_t image_index;
     result =
         vkAcquireNextImageKHR(g.device,
-                              g.swapchain,
+                              g.swapchain.swapchain,
                               std::numeric_limits<std::uint64_t>::max(),
                               g.image_available_semaphores[g.current_frame],
                               VK_NULL_HANDLE,
@@ -911,7 +917,7 @@ void draw_frame(std::uint32_t rng_seed)
     image_memory_barriers[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     image_memory_barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     image_memory_barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    image_memory_barriers[0].image = g.storage_image;
+    image_memory_barriers[0].image = g.storage_image.image;
     image_memory_barriers[0].subresourceRange.aspectMask =
         VK_IMAGE_ASPECT_COLOR_BIT;
     image_memory_barriers[0].subresourceRange.baseMipLevel = 0;
@@ -927,7 +933,7 @@ void draw_frame(std::uint32_t rng_seed)
     image_memory_barriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     image_memory_barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     image_memory_barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    image_memory_barriers[1].image = g.render_target_image;
+    image_memory_barriers[1].image = g.render_target.image;
     image_memory_barriers[1].subresourceRange.aspectMask =
         VK_IMAGE_ASPECT_COLOR_BIT;
     image_memory_barriers[1].subresourceRange.baseMipLevel = 0;
@@ -950,8 +956,8 @@ void draw_frame(std::uint32_t rng_seed)
     VkImageBlit image_blit {};
     image_blit.srcOffsets[0] = {0, 0, 0};
     image_blit.srcOffsets[1] = {
-        static_cast<std::int32_t>(g.storage_image_width),
-        static_cast<std::int32_t>(g.storage_image_height),
+        static_cast<std::int32_t>(g.storage_image.width),
+        static_cast<std::int32_t>(g.storage_image.height),
         1};
     image_blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     image_blit.srcSubresource.mipLevel = 0;
@@ -959,8 +965,8 @@ void draw_frame(std::uint32_t rng_seed)
     image_blit.srcSubresource.layerCount = 1;
     image_blit.dstOffsets[0] = {0, 0, 0};
     image_blit.dstOffsets[1] = {
-        static_cast<std::int32_t>(g.storage_image_width),
-        static_cast<std::int32_t>(g.storage_image_height),
+        static_cast<std::int32_t>(g.storage_image.width),
+        static_cast<std::int32_t>(g.storage_image.height),
         1};
     image_blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     image_blit.dstSubresource.mipLevel = 0;
@@ -968,9 +974,9 @@ void draw_frame(std::uint32_t rng_seed)
     image_blit.dstSubresource.layerCount = 1;
 
     vkCmdBlitImage(command_buffer,
-                   g.storage_image,
+                   g.storage_image.image,
                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                   g.render_target_image,
+                   g.render_target.image,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                    1,
                    &image_blit,
@@ -981,14 +987,14 @@ void draw_frame(std::uint32_t rng_seed)
         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
     image_memory_barriers[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     image_memory_barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    image_memory_barriers[0].image = g.storage_image;
+    image_memory_barriers[0].image = g.storage_image.image;
 
     image_memory_barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     image_memory_barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     image_memory_barriers[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     image_memory_barriers[1].newLayout =
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    image_memory_barriers[1].image = g.render_target_image;
+    image_memory_barriers[1].image = g.render_target.image;
 
     vkCmdPipelineBarrier(command_buffer,
                          VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -1010,7 +1016,7 @@ void draw_frame(std::uint32_t rng_seed)
     render_pass_begin_info.renderPass = g.render_pass;
     render_pass_begin_info.framebuffer = g.framebuffers[image_index];
     render_pass_begin_info.renderArea.offset = {0, 0};
-    render_pass_begin_info.renderArea.extent = g.swapchain_extent;
+    render_pass_begin_info.renderArea.extent = g.swapchain.extent;
     render_pass_begin_info.clearValueCount = 1;
     render_pass_begin_info.pClearValues = &clear_value;
 
@@ -1049,7 +1055,7 @@ void draw_frame(std::uint32_t rng_seed)
     present_info.pWaitSemaphores =
         &g.render_finished_semaphores[g.current_frame];
     present_info.swapchainCount = 1;
-    present_info.pSwapchains = &g.swapchain;
+    present_info.pSwapchains = &g.swapchain.swapchain;
     present_info.pImageIndices = &image_index;
 
     result = vkQueuePresentKHR(g.queue, &present_info);
@@ -1073,7 +1079,7 @@ void store_to_png(const char *filename)
     VkBufferCreateInfo buffer_create_info {};
     buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     buffer_create_info.size =
-        g.storage_image_width * g.storage_image_height * 4;
+        g.storage_image.width * g.storage_image.height * 4;
     buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     buffer_create_info.queueFamilyIndexCount = 1;
@@ -1105,7 +1111,7 @@ void store_to_png(const char *filename)
     image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    image_memory_barrier.image = g.render_target_image;
+    image_memory_barrier.image = g.render_target.image;
     image_memory_barrier.subresourceRange.aspectMask =
         VK_IMAGE_ASPECT_COLOR_BIT;
     image_memory_barrier.subresourceRange.baseMipLevel = 0;
@@ -1126,16 +1132,16 @@ void store_to_png(const char *filename)
 
     VkBufferImageCopy region {};
     region.bufferOffset = 0;
-    region.bufferImageHeight = g.storage_image_height;
+    region.bufferImageHeight = g.storage_image.height;
     region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.mipLevel = 0;
     region.imageSubresource.baseArrayLayer = 0;
     region.imageSubresource.layerCount = 1;
     region.imageOffset = {0, 0, 0};
-    region.imageExtent = {g.storage_image_width, g.storage_image_height, 1};
+    region.imageExtent = {g.storage_image.width, g.storage_image.height, 1};
 
     vkCmdCopyImageToBuffer(command_buffer,
-                           g.render_target_image,
+                           g.render_target.image,
                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                            staging_buffer,
                            1,
@@ -1160,17 +1166,19 @@ void store_to_png(const char *filename)
     end_one_time_submit_command_buffer(command_buffer);
 
     if (!stbi_write_png(filename,
-                        static_cast<int>(g.storage_image_width),
-                        static_cast<int>(g.storage_image_height),
+                        static_cast<int>(g.storage_image.width),
+                        static_cast<int>(g.storage_image.height),
                         4,
                         staging_buffer_allocation_info.pMappedData,
-                        static_cast<int>(g.storage_image_width * 4)))
+                        static_cast<int>(g.storage_image.width * 4)))
     {
         fatal_error("Failed to write PNG image");
     }
 
     vmaDestroyBuffer(g.allocator, staging_buffer, staging_buffer_allocation);
 }
+
+} // namespace
 
 void init()
 {
@@ -1363,6 +1371,8 @@ void init()
         }
     }
 
+    get_queue_families(g.physical_device, g.queue_family);
+
     {
         const float queue_priority {1.0f};
         VkDeviceQueueCreateInfo queue_create_info {};
@@ -1420,15 +1430,15 @@ void init()
     }
 
     {
-        g.storage_image_width = 160;
-        g.storage_image_height = 90;
+        g.storage_image.width = 160;
+        g.storage_image.height = 90;
 
         VkImageCreateInfo image_create_info {};
         image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         image_create_info.imageType = VK_IMAGE_TYPE_2D;
         image_create_info.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-        image_create_info.extent.width = g.storage_image_width;
-        image_create_info.extent.height = g.storage_image_height;
+        image_create_info.extent.width = g.storage_image.width;
+        image_create_info.extent.height = g.storage_image.height;
         image_create_info.extent.depth = 1;
         image_create_info.mipLevels = 1;
         image_create_info.arrayLayers = 1;
@@ -1447,14 +1457,14 @@ void init()
         result = vmaCreateImage(g.allocator,
                                 &image_create_info,
                                 &allocation_create_info,
-                                &g.storage_image,
-                                &g.storage_image_allocation,
+                                &g.storage_image.image,
+                                &g.storage_image.allocation,
                                 nullptr);
         vk_check(result);
 
         VkImageViewCreateInfo image_view_create_info {};
         image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        image_view_create_info.image = g.storage_image;
+        image_view_create_info.image = g.storage_image.image;
         image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
         image_view_create_info.format = VK_FORMAT_R32G32B32A32_SFLOAT;
         image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -1468,8 +1478,10 @@ void init()
         image_view_create_info.subresourceRange.baseArrayLayer = 0;
         image_view_create_info.subresourceRange.layerCount = 1;
 
-        result = vkCreateImageView(
-            g.device, &image_view_create_info, nullptr, &g.storage_image_view);
+        result = vkCreateImageView(g.device,
+                                   &image_view_create_info,
+                                   nullptr,
+                                   &g.storage_image.image_view);
         vk_check(result);
 
         const auto command_buffer = begin_one_time_submit_command_buffer();
@@ -1483,7 +1495,7 @@ void init()
         image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
         image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        image_memory_barrier.image = g.storage_image;
+        image_memory_barrier.image = g.storage_image.image;
         image_memory_barrier.subresourceRange.aspectMask =
             VK_IMAGE_ASPECT_COLOR_BIT;
         image_memory_barrier.subresourceRange.baseMipLevel = 0;
@@ -1510,8 +1522,8 @@ void init()
         image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         image_create_info.imageType = VK_IMAGE_TYPE_2D;
         image_create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
-        image_create_info.extent.width = g.storage_image_width;
-        image_create_info.extent.height = g.storage_image_height;
+        image_create_info.extent.width = g.storage_image.width;
+        image_create_info.extent.height = g.storage_image.height;
         image_create_info.extent.depth = 1;
         image_create_info.mipLevels = 1;
         image_create_info.arrayLayers = 1;
@@ -1531,14 +1543,14 @@ void init()
         result = vmaCreateImage(g.allocator,
                                 &image_create_info,
                                 &allocation_create_info,
-                                &g.render_target_image,
-                                &g.render_target_allocation,
+                                &g.render_target.image,
+                                &g.render_target.allocation,
                                 nullptr);
         vk_check(result);
 
         VkImageViewCreateInfo image_view_create_info {};
         image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        image_view_create_info.image = g.render_target_image;
+        image_view_create_info.image = g.render_target.image;
         image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
         image_view_create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
         image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -1555,7 +1567,7 @@ void init()
         result = vkCreateImageView(g.device,
                                    &image_view_create_info,
                                    nullptr,
-                                   &g.render_target_image_view);
+                                   &g.render_target.image_view);
         vk_check(result);
 
         VkSamplerCreateInfo sampler_create_info {};
@@ -1589,7 +1601,7 @@ void init()
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        image_memory_barrier.image = g.render_target_image;
+        image_memory_barrier.image = g.render_target.image;
         image_memory_barrier.subresourceRange.aspectMask =
             VK_IMAGE_ASPECT_COLOR_BIT;
         image_memory_barrier.subresourceRange.baseMipLevel = 0;
@@ -1634,14 +1646,14 @@ void init()
         }
 
         {
-            g.vertex_buffer_size = vertices.size() * sizeof(tinyobj::real_t);
+            g.vertex_buffer.size = vertices.size() * sizeof(tinyobj::real_t);
 
             VkBufferCreateInfo buffer_create_info {};
             buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
             buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
             buffer_create_info.queueFamilyIndexCount = 1;
             buffer_create_info.pQueueFamilyIndices = &g.queue_family;
-            buffer_create_info.size = g.vertex_buffer_size;
+            buffer_create_info.size = g.vertex_buffer.size;
             buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
             VmaAllocationCreateInfo allocation_create_info {};
@@ -1669,22 +1681,25 @@ void init()
             result = vmaCreateBuffer(g.allocator,
                                      &buffer_create_info,
                                      &allocation_create_info,
-                                     &g.vertex_buffer,
-                                     &g.vertex_buffer_allocation,
+                                     &g.vertex_buffer.buffer,
+                                     &g.vertex_buffer.allocation,
                                      nullptr);
             vk_check(result);
 
             std::memcpy(staging_buffer_allocation_info.pMappedData,
                         vertices.data(),
-                        g.vertex_buffer_size);
+                        g.vertex_buffer.size);
 
             const auto command_buffer = begin_one_time_submit_command_buffer();
 
             const VkBufferCopy region {
-                .srcOffset = 0, .dstOffset = 0, .size = g.vertex_buffer_size};
+                .srcOffset = 0, .dstOffset = 0, .size = g.vertex_buffer.size};
 
-            vkCmdCopyBuffer(
-                command_buffer, staging_buffer, g.vertex_buffer, 1, &region);
+            vkCmdCopyBuffer(command_buffer,
+                            staging_buffer,
+                            g.vertex_buffer.buffer,
+                            1,
+                            &region);
 
             end_one_time_submit_command_buffer(command_buffer);
 
@@ -1693,14 +1708,14 @@ void init()
         }
 
         {
-            g.index_buffer_size = indices.size() * sizeof(std::uint32_t);
+            g.index_buffer.size = indices.size() * sizeof(std::uint32_t);
 
             VkBufferCreateInfo buffer_create_info {};
             buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
             buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
             buffer_create_info.queueFamilyIndexCount = 1;
             buffer_create_info.pQueueFamilyIndices = &g.queue_family;
-            buffer_create_info.size = g.index_buffer_size;
+            buffer_create_info.size = g.index_buffer.size;
             buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
             VmaAllocationCreateInfo allocation_create_info {};
@@ -1728,22 +1743,25 @@ void init()
             result = vmaCreateBuffer(g.allocator,
                                      &buffer_create_info,
                                      &allocation_create_info,
-                                     &g.index_buffer,
-                                     &g.index_buffer_allocation,
+                                     &g.index_buffer.buffer,
+                                     &g.index_buffer.allocation,
                                      nullptr);
             vk_check(result);
 
             std::memcpy(staging_buffer_allocation_info.pMappedData,
                         indices.data(),
-                        g.index_buffer_size);
+                        g.index_buffer.size);
 
             const auto command_buffer = begin_one_time_submit_command_buffer();
 
             const VkBufferCopy region {
-                .srcOffset = 0, .dstOffset = 0, .size = g.index_buffer_size};
+                .srcOffset = 0, .dstOffset = 0, .size = g.index_buffer.size};
 
-            vkCmdCopyBuffer(
-                command_buffer, staging_buffer, g.index_buffer, 1, &region);
+            vkCmdCopyBuffer(command_buffer,
+                            staging_buffer,
+                            g.index_buffer.buffer,
+                            1,
+                            &region);
 
             end_one_time_submit_command_buffer(command_buffer);
 
@@ -1867,24 +1885,25 @@ void init()
 
         VkDescriptorImageInfo storage_image_descriptor_image_info {};
         storage_image_descriptor_image_info.sampler = VK_NULL_HANDLE;
-        storage_image_descriptor_image_info.imageView = g.storage_image_view;
+        storage_image_descriptor_image_info.imageView =
+            g.storage_image.image_view;
         storage_image_descriptor_image_info.imageLayout =
             VK_IMAGE_LAYOUT_GENERAL;
 
         VkDescriptorBufferInfo vertex_buffer_descriptor_buffer_info {};
-        vertex_buffer_descriptor_buffer_info.buffer = g.vertex_buffer;
+        vertex_buffer_descriptor_buffer_info.buffer = g.vertex_buffer.buffer;
         vertex_buffer_descriptor_buffer_info.offset = 0;
-        vertex_buffer_descriptor_buffer_info.range = g.vertex_buffer_size;
+        vertex_buffer_descriptor_buffer_info.range = g.vertex_buffer.size;
 
         VkDescriptorBufferInfo index_buffer_descriptor_buffer_info {};
-        index_buffer_descriptor_buffer_info.buffer = g.index_buffer;
+        index_buffer_descriptor_buffer_info.buffer = g.index_buffer.buffer;
         index_buffer_descriptor_buffer_info.offset = 0;
-        index_buffer_descriptor_buffer_info.range = g.index_buffer_size;
+        index_buffer_descriptor_buffer_info.range = g.index_buffer.size;
 
         VkDescriptorImageInfo render_target_descriptor_image_info {};
         render_target_descriptor_image_info.sampler = g.render_target_sampler;
         render_target_descriptor_image_info.imageView =
-            g.render_target_image_view;
+            g.render_target.image_view;
         render_target_descriptor_image_info.imageLayout =
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -1991,7 +2010,7 @@ void init()
 
     {
         VkAttachmentDescription attachment_description {};
-        attachment_description.format = g.swapchain_format;
+        attachment_description.format = g.swapchain.format;
         attachment_description.samples = VK_SAMPLE_COUNT_1_BIT;
         attachment_description.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         attachment_description.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -2099,8 +2118,8 @@ void init()
         init_info.PipelineCache = VK_NULL_HANDLE;
         init_info.DescriptorPool = g.descriptor_pool;
         init_info.Subpass = 0;
-        init_info.MinImageCount = g.swapchain_min_image_count;
-        init_info.ImageCount = g.swapchain_image_count;
+        init_info.MinImageCount = g.swapchain.min_image_count;
+        init_info.ImageCount = g.swapchain.image_count;
         init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
         init_info.Allocator = nullptr;
         init_info.CheckVkResultFn = &imgui_vk_check;
@@ -2123,16 +2142,17 @@ void shutdown()
 
     if (g.device)
     {
-        if (g.index_buffer && g.index_buffer_allocation)
+        if (g.index_buffer.buffer && g.index_buffer.allocation)
         {
             vmaDestroyBuffer(
-                g.allocator, g.index_buffer, g.index_buffer_allocation);
+                g.allocator, g.index_buffer.buffer, g.index_buffer.allocation);
         }
 
-        if (g.vertex_buffer && g.vertex_buffer_allocation)
+        if (g.vertex_buffer.buffer && g.vertex_buffer.allocation)
         {
-            vmaDestroyBuffer(
-                g.allocator, g.vertex_buffer, g.vertex_buffer_allocation);
+            vmaDestroyBuffer(g.allocator,
+                             g.vertex_buffer.buffer,
+                             g.vertex_buffer.allocation);
         }
     }
 
@@ -2200,9 +2220,9 @@ void shutdown()
             vkDestroyCommandPool(g.device, g.command_pool, nullptr);
         }
 
-        if (g.render_target_allocation)
+        if (g.render_target.allocation)
         {
-            vmaFreeMemory(g.allocator, g.render_target_allocation);
+            vmaFreeMemory(g.allocator, g.render_target.allocation);
         }
 
         if (g.render_target_sampler)
@@ -2210,29 +2230,29 @@ void shutdown()
             vkDestroySampler(g.device, g.render_target_sampler, nullptr);
         }
 
-        if (g.render_target_image_view)
+        if (g.render_target.image_view)
         {
-            vkDestroyImageView(g.device, g.render_target_image_view, nullptr);
+            vkDestroyImageView(g.device, g.render_target.image_view, nullptr);
         }
 
-        if (g.render_target_image)
+        if (g.render_target.image)
         {
-            vkDestroyImage(g.device, g.render_target_image, nullptr);
+            vkDestroyImage(g.device, g.render_target.image, nullptr);
         }
 
-        if (g.storage_image_allocation)
+        if (g.storage_image.allocation)
         {
-            vmaFreeMemory(g.allocator, g.storage_image_allocation);
+            vmaFreeMemory(g.allocator, g.storage_image.allocation);
         }
 
-        if (g.storage_image_view)
+        if (g.storage_image.image_view)
         {
-            vkDestroyImageView(g.device, g.storage_image_view, nullptr);
+            vkDestroyImageView(g.device, g.storage_image.image_view, nullptr);
         }
 
-        if (g.storage_image)
+        if (g.storage_image.image)
         {
-            vkDestroyImage(g.device, g.storage_image, nullptr);
+            vkDestroyImage(g.device, g.storage_image.image, nullptr);
         }
     }
 
@@ -2299,8 +2319,8 @@ void run()
             if (region_size.x > 0.0f && region_size.y > 0.0f)
             {
                 const auto image_aspect_ratio =
-                    static_cast<float>(g.storage_image_width) /
-                    static_cast<float>(g.storage_image_height);
+                    static_cast<float>(g.storage_image.width) /
+                    static_cast<float>(g.storage_image.height);
                 const auto region_aspect_ratio = region_size.x / region_size.y;
                 const auto cursor_pos = ImGui::GetCursorPos();
                 auto width = region_size.x;
@@ -2333,6 +2353,20 @@ void run()
                         1000.0 / static_cast<double>(ImGui::GetIO().Framerate),
                         static_cast<double>(ImGui::GetIO().Framerate));
 
+            VmaBudget budgets[VK_MAX_MEMORY_HEAPS] {};
+            vmaGetHeapBudgets(g.allocator, budgets);
+            ImGui::Text("Memory heaps:");
+            for (unsigned int i {}; i < VK_MAX_MEMORY_HEAPS; ++i)
+            {
+                if (budgets[i].budget > 0)
+                {
+                    ImGui::Text("  %u: %llu MB / %llu MB",
+                                i,
+                                budgets[i].usage / 1'000'000u,
+                                budgets[i].budget / 1'000'000u);
+                }
+            }
+
             ImGui::InputText(
                 "PNG file name", input_text_buffer, sizeof(input_text_buffer));
 
@@ -2343,7 +2377,7 @@ void run()
 
             if (ImGui::Button("Change RNG seed"))
             {
-                rng_seed += g.storage_image_width * g.storage_image_height;
+                rng_seed += g.storage_image.width * g.storage_image.height;
             }
         }
         ImGui::End();
@@ -2355,30 +2389,4 @@ void run()
 
     const auto result = vkDeviceWaitIdle(g.device);
     vk_check(result);
-}
-
-} // namespace
-
-int main()
-{
-    try
-    {
-        init();
-        run();
-        shutdown();
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << e.what() << '\n';
-        shutdown();
-        return EXIT_FAILURE;
-    }
-    catch (...)
-    {
-        std::cerr << "Unknown exception thrown\n";
-        shutdown();
-        return EXIT_FAILURE;
-    }
-
-    return EXIT_SUCCESS;
 }
