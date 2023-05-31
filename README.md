@@ -1,8 +1,10 @@
 # path_tracer
 
-A path tracer written in C++, using the Vulkan ray tracing extensions
+A path tracer written in C++, using the Vulkan ray tracing extensions.
 
-## Quick start
+To run this software, you need a GPU with support for the VK_KHR_ray_tracing_pipeline extension.
+
+## Build
 
 Prerequisites:
 
