@@ -1,44 +1,8 @@
 #include "vulkan_renderer.hpp"
 
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wuseless-cast"
-#endif
-#define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
 
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-#pragma GCC diagnostic ignored "-Wuseless-cast"
-#pragma GCC diagnostic ignored "-Wconversion"
-#pragma GCC diagnostic ignored "-Wsign-conversion"
-#pragma GCC diagnostic ignored "-Wnull-dereference"
-#endif
-#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
-
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wuseless-cast"
-#pragma GCC diagnostic ignored "-Wconversion"
-#pragma GCC diagnostic ignored "-Wsign-conversion"
-#pragma GCC diagnostic ignored "-Wduplicated-branches"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#endif
-#define VMA_IMPLEMENTATION
-#include "vk_mem_alloc.h"
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
 
 #ifdef __GNUC__
 #pragma GCC diagnostic push
@@ -56,11 +20,8 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include <vulkan/vulkan.h>
-
 #include <array>
 #include <cassert>
-#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -1851,7 +1812,8 @@ void init()
             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         descriptor_pool_create_info.flags =
             VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-        descriptor_pool_create_info.maxSets = 1000 * std::size(pool_sizes);
+        descriptor_pool_create_info.maxSets =
+            1000 * static_cast<std::uint32_t>(std::size(pool_sizes));
         descriptor_pool_create_info.poolSizeCount =
             static_cast<std::uint32_t>(std::size(pool_sizes));
         descriptor_pool_create_info.pPoolSizes = pool_sizes;
@@ -1942,11 +1904,12 @@ void init()
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptor_writes[3].pImageInfo = &render_target_descriptor_image_info;
 
-        vkUpdateDescriptorSets(g.device,
-                               std::size(descriptor_writes),
-                               descriptor_writes,
-                               0,
-                               nullptr);
+        vkUpdateDescriptorSets(
+            g.device,
+            static_cast<std::uint32_t>(std::size(descriptor_writes)),
+            descriptor_writes,
+            0,
+            nullptr);
     }
 
     {

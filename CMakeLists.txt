@@ -60,11 +60,27 @@ add_library(imgui STATIC
         external/imgui/imgui_widgets.cpp
         external/imgui/backends/imgui_impl_glfw.cpp
         external/imgui/backends/imgui_impl_vulkan.cpp)
-target_include_directories(imgui PRIVATE
+target_include_directories(imgui
+        PRIVATE
         ${Vulkan_INCLUDE_DIRS}
+        PUBLIC
         external/imgui
         external/imgui/backends)
 target_link_libraries(imgui PRIVATE glfw)
+
+
+add_library(stb_image STATIC src/stb_image.cpp)
+target_include_directories(stb_image PUBLIC external/stb)
+
+
+add_library(tiny_obj_loader STATIC src/tiny_obj_loader.cpp)
+target_include_directories(tiny_obj_loader PUBLIC external)
+
+
+add_library(vk_mem_alloc STATIC src/vk_mem_alloc.cpp)
+target_include_directories(vk_mem_alloc PUBLIC
+        ${Vulkan_INCLUDE_DIRS}
+        external/VulkanMemoryAllocator/include)
 
 
 add_executable(path_tracer
@@ -72,18 +88,15 @@ add_executable(path_tracer
         src/vulkan_renderer.cpp src/vulkan_renderer.hpp
         src/scope_guard.hpp)
 target_include_directories(path_tracer PRIVATE
-        ${Vulkan_INCLUDE_DIRS}
-        external
-        external/stb
-        external/glfw/include
-        external/VulkanMemoryAllocator/include
-        external/imgui
-        external/imgui/backends)
+        ${Vulkan_INCLUDE_DIRS})
 target_compile_options(path_tracer PRIVATE ${COMPILE_OPTIONS})
 target_compile_features(path_tracer PRIVATE cxx_std_20)
 target_link_libraries(path_tracer PRIVATE
+        vk_mem_alloc
         glfw
-        imgui)
+        imgui
+        stb_image
+        tiny_obj_loader)
 
 set(SHADERS render.comp)
 foreach (SHADER IN LISTS SHADERS)
