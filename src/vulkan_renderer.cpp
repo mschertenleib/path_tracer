@@ -33,6 +33,8 @@
 #include <string_view>
 #include <vector>
 
+VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+
 namespace
 {
 
@@ -1140,6 +1142,36 @@ void store_to_png(const char *filename)
 }
 
 } // namespace
+
+Unique_allocator::Unique_allocator(VmaAllocator allocator) noexcept
+    : m_allocator {allocator}
+{
+    assert(m_allocator);
+}
+
+Unique_allocator::~Unique_allocator() noexcept
+{
+    if (m_allocator)
+    {
+        vmaDestroyAllocator(m_allocator);
+    }
+}
+
+Unique_allocation::Unique_allocation(VmaAllocation allocation,
+                                     VmaAllocator allocator) noexcept
+    : m_allocation {allocation}, m_allocator {allocator}
+{
+    assert(m_allocation);
+    assert(m_allocator);
+}
+
+Unique_allocation::~Unique_allocation() noexcept
+{
+    if (m_allocation)
+    {
+        vmaFreeMemory(m_allocator, m_allocation);
+    }
+}
 
 void init()
 {
@@ -2352,4 +2384,27 @@ void run()
 
     const auto result = vkDeviceWaitIdle(g.device);
     vk_check(result);
+}
+
+Vulkan_renderer::Vulkan_renderer(GLFWwindow *window,
+                                 std::uint32_t framebuffer_width,
+                                 std::uint32_t framebuffer_height,
+                                 std::uint32_t render_width,
+                                 std::uint32_t render_height)
+{
+}
+
+Vulkan_renderer::~Vulkan_renderer()
+{
+    // This could throw, but at this point there is nothing we can do about it,
+    // so let the runtime call std::terminate()
+    m_device->waitIdle();
+}
+
+void Vulkan_renderer::draw_frame(std::uint32_t rng_seed)
+{
+}
+
+void Vulkan_renderer::store_to_png(const char *file_name)
+{
 }
