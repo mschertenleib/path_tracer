@@ -21,10 +21,6 @@
 #include <limits>
 #include <vector>
 
-[[deprecated("use Vulkan_renderer object instead")]] void init();
-[[deprecated("use Vulkan_renderer object instead")]] void shutdown();
-[[deprecated("use Vulkan_renderer object instead")]] void run();
-
 class Unique_allocator
 {
 public:
@@ -34,11 +30,11 @@ public:
 
     ~Unique_allocator() noexcept;
 
-    Unique_allocator(const Unique_allocator &) = delete;
-    Unique_allocator(Unique_allocator &&) noexcept = default;
+    Unique_allocator(Unique_allocator &&rhs) noexcept;
+    Unique_allocator &operator=(Unique_allocator &&rhs) noexcept;
 
+    Unique_allocator(const Unique_allocator &) = delete;
     Unique_allocator &operator=(const Unique_allocator &) = delete;
-    Unique_allocator &operator=(Unique_allocator &&) noexcept = default;
 
     [[nodiscard]] constexpr const VmaAllocator &get() const noexcept
     {
@@ -46,7 +42,7 @@ public:
     }
 
 private:
-    VmaAllocator m_allocator {};
+    VmaAllocator m_allocator {VK_NULL_HANDLE};
 };
 
 class Unique_allocation
@@ -59,11 +55,11 @@ public:
 
     ~Unique_allocation() noexcept;
 
-    Unique_allocation(const Unique_allocation &) = delete;
-    Unique_allocation(Unique_allocation &&) noexcept = default;
+    Unique_allocation(Unique_allocation &&rhs) noexcept;
+    Unique_allocation &operator=(Unique_allocation &&rhs) noexcept;
 
+    Unique_allocation(const Unique_allocation &) = delete;
     Unique_allocation &operator=(const Unique_allocation &) = delete;
-    Unique_allocation &operator=(Unique_allocation &&) noexcept = default;
 
     [[nodiscard]] constexpr const VmaAllocation &get() const noexcept
     {
@@ -71,8 +67,8 @@ public:
     }
 
 private:
-    VmaAllocation m_allocation {};
-    VmaAllocator m_allocator {};
+    VmaAllocation m_allocation {VK_NULL_HANDLE};
+    VmaAllocator m_allocator {VK_NULL_HANDLE};
 };
 
 struct Queue_family_indices

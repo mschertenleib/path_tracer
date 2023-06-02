@@ -1147,31 +1147,72 @@ void store_to_png(const char *filename)
 Unique_allocator::Unique_allocator(VmaAllocator allocator) noexcept
     : m_allocator {allocator}
 {
-    assert(m_allocator);
+    assert(m_allocator != VK_NULL_HANDLE);
 }
 
 Unique_allocator::~Unique_allocator() noexcept
 {
-    if (m_allocator)
+    if (m_allocator != VK_NULL_HANDLE)
     {
         vmaDestroyAllocator(m_allocator);
     }
+}
+
+Unique_allocator::Unique_allocator(Unique_allocator &&rhs) noexcept
+    : m_allocator {rhs.m_allocator}
+{
+    rhs.m_allocator = VK_NULL_HANDLE;
+}
+
+Unique_allocator &Unique_allocator::operator=(Unique_allocator &&rhs) noexcept
+{
+    const auto old_allocator = m_allocator;
+    m_allocator = rhs.m_allocator;
+    rhs.m_allocator = VK_NULL_HANDLE;
+    if (old_allocator != VK_NULL_HANDLE)
+    {
+        vmaDestroyAllocator(old_allocator);
+    }
+    return *this;
 }
 
 Unique_allocation::Unique_allocation(VmaAllocation allocation,
                                      VmaAllocator allocator) noexcept
     : m_allocation {allocation}, m_allocator {allocator}
 {
-    assert(m_allocation);
-    assert(m_allocator);
+    assert(m_allocation != VK_NULL_HANDLE);
+    assert(m_allocator != VK_NULL_HANDLE);
 }
 
 Unique_allocation::~Unique_allocation() noexcept
 {
-    if (m_allocation)
+    if (m_allocation != VK_NULL_HANDLE)
     {
         vmaFreeMemory(m_allocator, m_allocation);
     }
+}
+
+Unique_allocation::Unique_allocation(Unique_allocation &&rhs) noexcept
+    : m_allocation {rhs.m_allocation}, m_allocator {rhs.m_allocator}
+{
+    rhs.m_allocation = VK_NULL_HANDLE;
+    rhs.m_allocator = VK_NULL_HANDLE;
+}
+
+Unique_allocation &
+Unique_allocation::operator=(Unique_allocation &&rhs) noexcept
+{
+    const auto old_allocation = m_allocation;
+    const auto old_allocator = m_allocator;
+    m_allocation = rhs.m_allocation;
+    m_allocator = rhs.m_allocator;
+    rhs.m_allocation = VK_NULL_HANDLE;
+    rhs.m_allocator = VK_NULL_HANDLE;
+    if (old_allocation != VK_NULL_HANDLE)
+    {
+        vmaFreeMemory(old_allocator, old_allocation);
+    }
+    return *this;
 }
 
 void init()
@@ -2449,7 +2490,7 @@ Vulkan_renderer::Vulkan_renderer(GLFWwindow *window,
 
     create_device(device_extension_count, device_extension_names);
 
-    //create_allocator();
+    create_allocator();
 
     m_graphics_compute_queue =
         m_device->getQueue(m_queue_family_indices.graphics_compute, 0);
@@ -2696,7 +2737,6 @@ void Vulkan_renderer::create_allocator()
     const auto result = vmaCreateAllocator(&allocatorCreateInfo, &allocator);
     vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateAllocator");
     m_allocator = Unique_allocator(allocator);
-    std::unique_ptr<int> p;
 }
 
 void Vulkan_renderer::create_swapchain()
