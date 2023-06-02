@@ -321,7 +321,7 @@ void imgui_vk_check(VkResult result)
     if (!std::filesystem::exists(path))
     {
         std::ostringstream oss;
-        oss << "File \"" << file_name << "\" does not exist";
+        oss << "File " << path << " does not exist";
         fatal_error(oss.str());
     }
 
@@ -335,16 +335,17 @@ void imgui_vk_check(VkResult result)
     if (!file)
     {
         std::ostringstream oss;
-        oss << "Failed to open file \"" << path.string() << '\"';
+        oss << "Failed to open file " << path;
         fatal_error(oss.str());
     }
 
-    if (!file.read(reinterpret_cast<char *>(buffer.data()),
-                   static_cast<std::streamsize>(buffer_length *
-                                                sizeof(std::uint32_t))))
+    file.read(
+        reinterpret_cast<char *>(buffer.data()),
+        static_cast<std::streamsize>(buffer_length * sizeof(std::uint32_t)));
+    if (file.eof())
     {
         std::ostringstream oss;
-        oss << "Reading file \"" << path.string() << "\" failed";
+        oss << "End-of-file reached while reading file " << path;
         fatal_error(oss.str());
     }
 
@@ -2386,12 +2387,76 @@ void run()
     vk_check(result);
 }
 
+namespace
+{
+
+[[nodiscard]] Queue_family_indices
+get_queue_family_indices(const vk::UniqueInstance &instance,
+                         vk::PhysicalDevice physical_device)
+{
+    Queue_family_indices indices {std::numeric_limits<std::uint32_t>::max(),
+                                  std::numeric_limits<std::uint32_t>::max()};
+
+    const auto properties = physical_device.getQueueFamilyProperties();
+
+    for (std::uint32_t i {}; i < static_cast<std::uint32_t>(properties.size());
+         ++i)
+    {
+        if ((properties[i].queueFlags & vk::QueueFlagBits::eGraphics) &&
+            (properties[i].queueFlags & vk::QueueFlagBits::eCompute))
+        {
+            indices.graphics_compute = i;
+        }
+
+        if (glfwGetPhysicalDevicePresentationSupport(
+                instance.get(), physical_device, i))
+        {
+            indices.present = i;
+        }
+
+        if ((indices.graphics_compute !=
+             std::numeric_limits<std::uint32_t>::max()) &&
+            (indices.present != std::numeric_limits<std::uint32_t>::max()))
+        {
+            break;
+        }
+    }
+
+    return indices;
+}
+
+} // namespace
+
 Vulkan_renderer::Vulkan_renderer(GLFWwindow *window,
                                  std::uint32_t framebuffer_width,
                                  std::uint32_t framebuffer_height,
                                  std::uint32_t render_width,
                                  std::uint32_t render_height)
 {
+    create_instance();
+
+    create_surface(window);
+
+    constexpr const char *device_extension_names[] {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+        VK_KHR_RAY_QUERY_EXTENSION_NAME};
+    constexpr auto device_extension_count =
+        static_cast<std::uint32_t>(std::size(device_extension_names));
+
+    select_physical_device(device_extension_count, device_extension_names);
+
+    create_device(device_extension_count, device_extension_names);
+
+    //create_allocator();
+
+    m_graphics_compute_queue =
+        m_device->getQueue(m_queue_family_indices.graphics_compute, 0);
+
+    m_present_queue = m_device->getQueue(m_queue_family_indices.present, 0);
+
+    create_swapchain();
 }
 
 Vulkan_renderer::~Vulkan_renderer()
@@ -2406,5 +2471,234 @@ void Vulkan_renderer::draw_frame(std::uint32_t rng_seed)
 }
 
 void Vulkan_renderer::store_to_png(const char *file_name)
+{
+}
+
+void Vulkan_renderer::create_instance()
+{
+    const auto vkGetInstanceProcAddr =
+        reinterpret_cast<PFN_vkGetInstanceProcAddr>(glfwGetInstanceProcAddress(
+            VK_NULL_HANDLE, "vkGetInstanceProcAddr"));
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
+
+    constexpr vk::ApplicationInfo application_info {.apiVersion =
+                                                        VK_API_VERSION_1_3};
+
+    std::uint32_t glfw_required_extension_count {};
+    const auto glfw_required_extension_names =
+        glfwGetRequiredInstanceExtensions(&glfw_required_extension_count);
+
+#ifndef NDEBUG
+
+    const auto layer_properties = vk::enumerateInstanceLayerProperties();
+
+    constexpr auto khronos_validation_layer = "VK_LAYER_KHRONOS_validation";
+    if (std::none_of(layer_properties.begin(),
+                     layer_properties.end(),
+                     [](const VkLayerProperties &properties) {
+                         return std::strcmp(properties.layerName,
+                                            khronos_validation_layer) == 0;
+                     }))
+    {
+        fatal_error("Validation layers are not supported");
+    }
+
+    std::vector<const char *> required_extensions(
+        glfw_required_extension_names,
+        glfw_required_extension_names + glfw_required_extension_count);
+    required_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+
+    std::vector<const char *> unsupported_extensions;
+
+    const auto extension_properties =
+        vk::enumerateInstanceExtensionProperties();
+
+    for (const auto extension_name : required_extensions)
+    {
+        if (std::none_of(
+                extension_properties.begin(),
+                extension_properties.end(),
+                [extension_name](const VkExtensionProperties &properties) {
+                    return std::strcmp(properties.extensionName,
+                                       extension_name) == 0;
+                }))
+        {
+            unsupported_extensions.push_back(extension_name);
+        }
+    }
+
+    if (!unsupported_extensions.empty())
+    {
+        std::ostringstream oss;
+        oss << "The following instance extensions are not supported:";
+        for (const auto extension_name : unsupported_extensions)
+        {
+            oss << "\n    " << extension_name;
+        }
+        fatal_error(oss.str());
+    }
+
+    constexpr vk::DebugUtilsMessengerCreateInfoEXT
+        debug_utils_messenger_create_info {
+            .messageSeverity =
+                vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
+                vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+            .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+                           vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+                           vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
+            .pfnUserCallback = debug_callback};
+
+    const vk::InstanceCreateInfo instance_create_info {
+        .pNext = &debug_utils_messenger_create_info,
+        .pApplicationInfo = &application_info,
+        .enabledLayerCount = 1,
+        .ppEnabledLayerNames = &khronos_validation_layer,
+        .enabledExtensionCount =
+            static_cast<std::uint32_t>(required_extensions.size()),
+        .ppEnabledExtensionNames = required_extensions.data()};
+
+    m_instance = vk::createInstanceUnique(instance_create_info);
+
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(m_instance.get());
+
+    m_debug_messenger = m_instance->createDebugUtilsMessengerEXTUnique(
+        debug_utils_messenger_create_info);
+
+#else
+
+    const vk::InstanceCreateInfo instance_create_info {
+        .pApplicationInfo = &application_info,
+        .enabledExtensionCount = glfw_required_extension_count,
+        .ppEnabledExtensionNames = glfw_required_extension_names};
+
+    m_instance = vk::createInstanceUnique(instance_create_info);
+
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(m_instance.get());
+
+#endif
+}
+
+void Vulkan_renderer::create_surface(GLFWwindow *window)
+{
+    VkSurfaceKHR surface {};
+    const auto result =
+        glfwCreateWindowSurface(m_instance.get(), window, nullptr, &surface);
+    vk::resultCheck(static_cast<vk::Result>(result), "glfwCreateWindowSurface");
+    m_surface = vk::UniqueSurfaceKHR(surface, m_instance.get());
+}
+
+void Vulkan_renderer::select_physical_device(
+    std::uint32_t device_extension_count,
+    const char *const *device_extension_names)
+{
+    const auto physical_devices = m_instance->enumeratePhysicalDevices();
+
+    for (const auto physical_device : physical_devices)
+    {
+        m_queue_family_indices =
+            get_queue_family_indices(m_instance, physical_device);
+        if ((m_queue_family_indices.graphics_compute ==
+             std::numeric_limits<std::uint32_t>::max()) ||
+            (m_queue_family_indices.present ==
+             std::numeric_limits<std::uint32_t>::max()))
+        {
+            continue;
+        }
+
+        const auto extension_properties =
+            physical_device.enumerateDeviceExtensionProperties();
+
+        bool all_extensions_supported {true};
+        for (std::uint32_t i {}; i < device_extension_count; ++i)
+        {
+            const auto extension_name = device_extension_names[i];
+            if (std::none_of(
+                    extension_properties.begin(),
+                    extension_properties.end(),
+                    [extension_name](const VkExtensionProperties &properties) {
+                        return std::strcmp(properties.extensionName,
+                                           extension_name) == 0;
+                    }))
+            {
+                all_extensions_supported = false;
+                break;
+            }
+        }
+        if (!all_extensions_supported)
+        {
+            continue;
+        }
+
+        const auto features = physical_device.getFeatures2<
+            vk::PhysicalDeviceFeatures2,
+            vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+            vk::PhysicalDeviceRayQueryFeaturesKHR>();
+
+        if (!features.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>()
+                 .accelerationStructure ||
+            !features.get<vk::PhysicalDeviceRayQueryFeaturesKHR>().rayQuery)
+        {
+            continue;
+        }
+
+        m_physical_device = physical_device;
+        return;
+    }
+
+    fatal_error("Failed to find a suitable physical device");
+}
+
+void Vulkan_renderer::create_device(std::uint32_t device_extension_count,
+                                    const char *const *device_extension_names)
+{
+    constexpr float queue_priority {1.0f};
+
+    const vk::DeviceQueueCreateInfo queue_create_infos[2] {
+        {.queueFamilyIndex = m_queue_family_indices.graphics_compute,
+         .queueCount = 1,
+         .pQueuePriorities = &queue_priority},
+        {.queueFamilyIndex = m_queue_family_indices.present,
+         .queueCount = 1,
+         .pQueuePriorities = &queue_priority}};
+
+    const std::uint32_t queue_create_info_count {
+        m_queue_family_indices.graphics_compute !=
+                m_queue_family_indices.present
+            ? 2u
+            : 1u};
+    const vk::DeviceCreateInfo device_create_info {
+        .queueCreateInfoCount = queue_create_info_count,
+        .pQueueCreateInfos = queue_create_infos,
+        .enabledExtensionCount = device_extension_count,
+        .ppEnabledExtensionNames = device_extension_names};
+
+    m_device = m_physical_device.createDeviceUnique(device_create_info);
+
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(m_device.get());
+}
+
+void Vulkan_renderer::create_allocator()
+{
+    VmaVulkanFunctions vulkan_functions {};
+    vulkan_functions.vkGetInstanceProcAddr =
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr;
+    vulkan_functions.vkGetDeviceProcAddr =
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr;
+
+    VmaAllocatorCreateInfo allocatorCreateInfo {};
+    allocatorCreateInfo.physicalDevice = m_physical_device;
+    allocatorCreateInfo.device = m_device.get();
+    allocatorCreateInfo.pVulkanFunctions = &vulkan_functions;
+    allocatorCreateInfo.instance = m_instance.get();
+    allocatorCreateInfo.vulkanApiVersion = VK_API_VERSION_1_3;
+
+    VmaAllocator allocator {};
+    const auto result = vmaCreateAllocator(&allocatorCreateInfo, &allocator);
+    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateAllocator");
+    m_allocator = Unique_allocator(allocator);
+    std::unique_ptr<int> p;
+}
+
+void Vulkan_renderer::create_swapchain()
 {
 }

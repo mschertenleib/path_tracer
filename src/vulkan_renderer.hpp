@@ -75,6 +75,12 @@ private:
     VmaAllocator m_allocator {};
 };
 
+struct Queue_family_indices
+{
+    std::uint32_t graphics_compute;
+    std::uint32_t present;
+};
+
 class Vulkan_renderer
 {
 public:
@@ -98,16 +104,24 @@ public:
     void store_to_png(const char *file_name);
 
 private:
+    void create_instance();
+    void create_surface(struct GLFWwindow *window);
+    void select_physical_device(std::uint32_t device_extension_count,
+                                const char *const *device_extension_names);
+    void create_device(std::uint32_t device_extension_count,
+                       const char *const *device_extension_names);
+    void create_allocator();
+    void create_swapchain();
+
     vk::UniqueInstance m_instance {};
 #ifndef NDEBUG
     vk::UniqueDebugUtilsMessengerEXT m_debug_messenger {};
 #endif
     vk::UniqueSurfaceKHR m_surface {};
+    Queue_family_indices m_queue_family_indices {
+        std::numeric_limits<std::uint32_t>::max(),
+        std::numeric_limits<std::uint32_t>::max()};
     vk::PhysicalDevice m_physical_device {};
-    std::uint32_t m_graphics_compute_queue_family_index {
-        std::numeric_limits<std::uint32_t>::max()};
-    std::uint32_t m_present_queue_family_index {
-        std::numeric_limits<std::uint32_t>::max()};
     vk::UniqueDevice m_device {};
     Unique_allocator m_allocator {};
     vk::Queue m_graphics_compute_queue {};
