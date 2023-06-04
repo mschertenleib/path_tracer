@@ -2474,7 +2474,9 @@ Vulkan_renderer::Vulkan_renderer(GLFWwindow *window,
                                  std::uint32_t render_width,
                                  std::uint32_t render_height)
 {
-    create_instance();
+    constexpr std::uint32_t api_version {VK_API_VERSION_1_3};
+
+    create_instance(api_version);
 
     create_surface(window);
 
@@ -2490,14 +2492,24 @@ Vulkan_renderer::Vulkan_renderer(GLFWwindow *window,
 
     create_device(device_extension_count, device_extension_names);
 
-    create_allocator();
+    create_allocator(api_version);
 
     m_graphics_compute_queue =
         m_device->getQueue(m_queue_family_indices.graphics_compute, 0);
 
     m_present_queue = m_device->getQueue(m_queue_family_indices.present, 0);
 
-    create_swapchain();
+    create_swapchain(framebuffer_width, framebuffer_height);
+
+    create_command_pool();
+
+    create_storage_image(render_width, render_height);
+
+    create_render_target(render_width, render_height);
+
+    create_descriptor_set_layouts();
+
+    create_descriptor_pool();
 }
 
 Vulkan_renderer::~Vulkan_renderer()
@@ -2515,15 +2527,14 @@ void Vulkan_renderer::store_to_png(const char *file_name)
 {
 }
 
-void Vulkan_renderer::create_instance()
+void Vulkan_renderer::create_instance(std::uint32_t api_version)
 {
     const auto vkGetInstanceProcAddr =
         reinterpret_cast<PFN_vkGetInstanceProcAddr>(glfwGetInstanceProcAddress(
             VK_NULL_HANDLE, "vkGetInstanceProcAddr"));
     VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
 
-    constexpr vk::ApplicationInfo application_info {.apiVersion =
-                                                        VK_API_VERSION_1_3};
+    const vk::ApplicationInfo application_info {.apiVersion = api_version};
 
     std::uint32_t glfw_required_extension_count {};
     const auto glfw_required_extension_names =
@@ -2544,9 +2555,11 @@ void Vulkan_renderer::create_instance()
         fatal_error("Validation layers are not supported");
     }
 
-    std::vector<const char *> required_extensions(
-        glfw_required_extension_names,
-        glfw_required_extension_names + glfw_required_extension_count);
+    std::vector<const char *> required_extensions;
+    required_extensions.reserve(glfw_required_extension_count + 1);
+    required_extensions.assign(glfw_required_extension_names,
+                               glfw_required_extension_names +
+                                   glfw_required_extension_count);
     required_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
     std::vector<const char *> unsupported_extensions;
@@ -2703,10 +2716,10 @@ void Vulkan_renderer::create_device(std::uint32_t device_extension_count,
          .pQueuePriorities = &queue_priority}};
 
     const std::uint32_t queue_create_info_count {
-        m_queue_family_indices.graphics_compute !=
+        m_queue_family_indices.graphics_compute ==
                 m_queue_family_indices.present
-            ? 2u
-            : 1u};
+            ? 1u
+            : 2u};
     const vk::DeviceCreateInfo device_create_info {
         .queueCreateInfoCount = queue_create_info_count,
         .pQueueCreateInfos = queue_create_infos,
@@ -2718,7 +2731,7 @@ void Vulkan_renderer::create_device(std::uint32_t device_extension_count,
     VULKAN_HPP_DEFAULT_DISPATCHER.init(m_device.get());
 }
 
-void Vulkan_renderer::create_allocator()
+void Vulkan_renderer::create_allocator(std::uint32_t api_version)
 {
     VmaVulkanFunctions vulkan_functions {};
     vulkan_functions.vkGetInstanceProcAddr =
@@ -2731,7 +2744,7 @@ void Vulkan_renderer::create_allocator()
     allocatorCreateInfo.device = m_device.get();
     allocatorCreateInfo.pVulkanFunctions = &vulkan_functions;
     allocatorCreateInfo.instance = m_instance.get();
-    allocatorCreateInfo.vulkanApiVersion = VK_API_VERSION_1_3;
+    allocatorCreateInfo.vulkanApiVersion = api_version;
 
     VmaAllocator allocator {};
     const auto result = vmaCreateAllocator(&allocatorCreateInfo, &allocator);
@@ -2739,6 +2752,386 @@ void Vulkan_renderer::create_allocator()
     m_allocator = Unique_allocator(allocator);
 }
 
-void Vulkan_renderer::create_swapchain()
+void Vulkan_renderer::create_swapchain(std::uint32_t framebuffer_width,
+                                       std::uint32_t framebuffer_height)
 {
+    const auto surface_formats =
+        m_physical_device.getSurfaceFormatsKHR(m_surface.get());
+
+    auto surface_format = surface_formats.front();
+    for (const auto &format : surface_formats)
+    {
+        if (format.format == vk::Format::eB8G8R8A8Srgb &&
+            format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
+        {
+            surface_format = format;
+            break;
+        }
+    }
+    m_swapchain_format = surface_format.format;
+
+    const auto surface_capabilities =
+        m_physical_device.getSurfaceCapabilitiesKHR(m_surface.get());
+
+    m_swapchain_extent.width = framebuffer_width;
+    m_swapchain_extent.height = framebuffer_height;
+    if (surface_capabilities.currentExtent.width !=
+        std::numeric_limits<std::uint32_t>::max())
+    {
+        m_swapchain_extent = surface_capabilities.currentExtent;
+    }
+    m_swapchain_extent.width =
+        std::clamp(m_swapchain_extent.width,
+                   surface_capabilities.minImageExtent.width,
+                   surface_capabilities.maxImageExtent.width);
+    m_swapchain_extent.height =
+        std::clamp(m_swapchain_extent.height,
+                   surface_capabilities.minImageExtent.height,
+                   surface_capabilities.maxImageExtent.height);
+
+    m_swapchain_min_image_count = surface_capabilities.minImageCount + 1;
+    if (surface_capabilities.maxImageCount > 0 &&
+        m_swapchain_min_image_count > surface_capabilities.maxImageCount)
+    {
+        m_swapchain_min_image_count = surface_capabilities.maxImageCount;
+    }
+
+    const std::uint32_t queue_family_indices[] {
+        m_queue_family_indices.graphics_compute,
+        m_queue_family_indices.present};
+    auto sharing_mode = vk::SharingMode::eExclusive;
+    std::uint32_t queue_family_index_count {1};
+    if (m_queue_family_indices.graphics_compute !=
+        m_queue_family_indices.present)
+    {
+        sharing_mode = vk::SharingMode::eConcurrent;
+        queue_family_index_count = 2;
+    }
+
+    const vk::SwapchainCreateInfoKHR swapchain_create_info {
+        .surface = m_surface.get(),
+        .minImageCount = m_swapchain_min_image_count,
+        .imageFormat = surface_format.format,
+        .imageColorSpace = surface_format.colorSpace,
+        .imageExtent = m_swapchain_extent,
+        .imageArrayLayers = 1,
+        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
+        .imageSharingMode = sharing_mode,
+        .queueFamilyIndexCount = queue_family_index_count,
+        .pQueueFamilyIndices = queue_family_indices,
+        .preTransform = surface_capabilities.currentTransform,
+        .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
+        .presentMode = vk::PresentModeKHR::eFifo,
+        .clipped = VK_TRUE};
+
+    m_swapchain = m_device->createSwapchainKHRUnique(swapchain_create_info);
+
+    m_swapchain_images = m_device->getSwapchainImagesKHR(m_swapchain.get());
+
+    m_swapchain_image_views.resize(m_swapchain_images.size());
+    vk::ImageViewCreateInfo image_view_create_info {
+        .viewType = vk::ImageViewType::e2D,
+        .format = m_swapchain_format,
+        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor,
+                             .baseMipLevel = 0,
+                             .levelCount = 1,
+                             .baseArrayLayer = 0,
+                             .layerCount = 1}};
+    for (std::size_t i {}; i < m_swapchain_image_views.size(); ++i)
+    {
+        image_view_create_info.image = m_swapchain_images[i];
+        m_swapchain_image_views[i] =
+            m_device->createImageViewUnique(image_view_create_info);
+    }
+}
+
+void Vulkan_renderer::create_command_pool()
+{
+    const vk::CommandPoolCreateInfo create_info {
+        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+        .queueFamilyIndex = m_queue_family_indices.graphics_compute};
+
+    m_command_pool = m_device->createCommandPoolUnique(create_info);
+}
+
+[[nodiscard]] vk::CommandBuffer
+Vulkan_renderer::begin_one_time_submit_command_buffer()
+{
+    const vk::CommandBufferAllocateInfo allocate_info {
+        .commandPool = m_command_pool.get(),
+        .level = vk::CommandBufferLevel::ePrimary,
+        .commandBufferCount = 1};
+
+    auto command_buffers = m_device->allocateCommandBuffers(allocate_info);
+    auto command_buffer = command_buffers.front();
+
+    constexpr vk::CommandBufferBeginInfo begin_info {
+        .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
+
+    command_buffer.begin(begin_info);
+
+    return command_buffer;
+}
+
+void Vulkan_renderer::end_one_time_submit_command_buffer(
+    vk::CommandBuffer command_buffer)
+{
+    command_buffer.end();
+
+    const vk::SubmitInfo submit_info {.commandBufferCount = 1,
+                                      .pCommandBuffers = &command_buffer};
+
+    m_graphics_compute_queue.submit(submit_info);
+    m_graphics_compute_queue.waitIdle();
+}
+
+void Vulkan_renderer::create_storage_image(std::uint32_t width,
+                                           std::uint32_t height)
+{
+    m_storage_image_width = width;
+    m_storage_image_height = height;
+
+    constexpr auto format = vk::Format::eR32G32B32A32Sfloat;
+
+    const vk::ImageCreateInfo image_create_info {
+        .imageType = vk::ImageType::e2D,
+        .format = format,
+        .extent = {width, height, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = vk::SampleCountFlagBits::e1,
+        .tiling = vk::ImageTiling::eOptimal,
+        .usage = vk::ImageUsageFlagBits::eStorage |
+                 vk::ImageUsageFlagBits::eTransferSrc,
+        .sharingMode = vk::SharingMode::eExclusive,
+        .queueFamilyIndexCount = 1,
+        .pQueueFamilyIndices = &m_queue_family_indices.graphics_compute,
+        .initialLayout = vk::ImageLayout::eUndefined};
+
+    VmaAllocationCreateInfo allocation_create_info {};
+    allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    VkImage storage_image {};
+    VmaAllocation storage_image_allocation {};
+    const auto result = vmaCreateImage(
+        m_allocator.get(),
+        reinterpret_cast<const VkImageCreateInfo *>(&image_create_info),
+        &allocation_create_info,
+        &storage_image,
+        &storage_image_allocation,
+        nullptr);
+    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateImage");
+
+    m_storage_image = vk::UniqueImage(storage_image, m_device.get());
+    m_storage_image_allocation =
+        Unique_allocation(storage_image_allocation, m_allocator.get());
+
+    const vk::ImageViewCreateInfo image_view_create_info {
+        .image = m_storage_image.get(),
+        .viewType = vk::ImageViewType::e2D,
+        .format = format,
+        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor,
+                             .baseMipLevel = 0,
+                             .levelCount = 1,
+                             .baseArrayLayer = 0,
+                             .layerCount = 1}};
+
+    m_storage_image_view =
+        m_device->createImageViewUnique(image_view_create_info);
+
+    const auto command_buffer = begin_one_time_submit_command_buffer();
+
+    const vk::ImageMemoryBarrier memory_barrier {
+        .srcAccessMask = vk::AccessFlagBits::eNone,
+        .dstAccessMask =
+            vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite,
+        .oldLayout = vk::ImageLayout::eUndefined,
+        .newLayout = vk::ImageLayout::eGeneral,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = m_storage_image.get(),
+        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor,
+                             .baseMipLevel = 0,
+                             .levelCount = 1,
+                             .baseArrayLayer = 0,
+                             .layerCount = 1}};
+
+    command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                   vk::PipelineStageFlagBits::eComputeShader,
+                                   {},
+                                   {},
+                                   {},
+                                   memory_barrier);
+
+    end_one_time_submit_command_buffer(command_buffer);
+}
+
+void Vulkan_renderer::create_render_target(std::uint32_t width,
+                                           std::uint32_t height)
+{
+    m_render_target_width = width;
+    m_render_target_height = height;
+
+    constexpr auto format = vk::Format::eR8G8B8A8Srgb;
+
+    const vk::ImageCreateInfo image_create_info {
+        .imageType = vk::ImageType::e2D,
+        .format = format,
+        .extent = {width, height, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = vk::SampleCountFlagBits::e1,
+        .tiling = vk::ImageTiling::eOptimal,
+        .usage = vk::ImageUsageFlagBits::eSampled |
+                 vk::ImageUsageFlagBits::eTransferDst |
+                 vk::ImageUsageFlagBits::eTransferSrc,
+        .sharingMode = vk::SharingMode::eExclusive,
+        .queueFamilyIndexCount = 1,
+        .pQueueFamilyIndices = &m_queue_family_indices.graphics_compute,
+        .initialLayout = vk::ImageLayout::eUndefined};
+
+    VmaAllocationCreateInfo allocation_create_info {};
+    allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    VkImage render_target_image {};
+    VmaAllocation render_target_allocation {};
+    const auto result = vmaCreateImage(
+        m_allocator.get(),
+        reinterpret_cast<const VkImageCreateInfo *>(&image_create_info),
+        &allocation_create_info,
+        &render_target_image,
+        &render_target_allocation,
+        nullptr);
+    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateImage");
+
+    m_render_target_image =
+        vk::UniqueImage(render_target_image, m_device.get());
+    m_render_target_allocation =
+        Unique_allocation(render_target_allocation, m_allocator.get());
+
+    const vk::ImageViewCreateInfo image_view_create_info {
+        .image = m_render_target_image.get(),
+        .viewType = vk::ImageViewType::e2D,
+        .format = format,
+        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor,
+                             .baseMipLevel = 0,
+                             .levelCount = 1,
+                             .baseArrayLayer = 0,
+                             .layerCount = 1}};
+
+    m_render_target_image_view =
+        m_device->createImageViewUnique(image_view_create_info);
+
+    constexpr vk::SamplerCreateInfo sampler_create_info {
+        .magFilter = vk::Filter::eNearest,
+        .minFilter = vk::Filter::eNearest,
+        .mipmapMode = vk::SamplerMipmapMode::eNearest,
+        .addressModeU = vk::SamplerAddressMode::eRepeat,
+        .addressModeV = vk::SamplerAddressMode::eRepeat,
+        .addressModeW = vk::SamplerAddressMode::eRepeat,
+        .anisotropyEnable = VK_FALSE,
+        .compareEnable = VK_FALSE,
+        .borderColor = vk::BorderColor::eIntOpaqueBlack,
+        .unnormalizedCoordinates = VK_FALSE};
+
+    m_render_target_sampler =
+        m_device->createSamplerUnique(sampler_create_info);
+
+    const auto command_buffer = begin_one_time_submit_command_buffer();
+
+    const vk::ImageMemoryBarrier memory_barrier {
+        .srcAccessMask = vk::AccessFlagBits::eNone,
+        .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+        .oldLayout = vk::ImageLayout::eUndefined,
+        .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = m_render_target_image.get(),
+        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor,
+                             .baseMipLevel = 0,
+                             .levelCount = 1,
+                             .baseArrayLayer = 0,
+                             .layerCount = 1}};
+
+    command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                   vk::PipelineStageFlagBits::eFragmentShader,
+                                   {},
+                                   {},
+                                   {},
+                                   memory_barrier);
+
+    end_one_time_submit_command_buffer(command_buffer);
+}
+
+void Vulkan_renderer::create_descriptor_set_layouts()
+{
+    {
+        constexpr vk::DescriptorSetLayoutBinding
+            descriptor_set_layout_bindings[] {
+                {.binding = 0,
+                 .descriptorType = vk::DescriptorType::eStorageImage,
+                 .descriptorCount = 1,
+                 .stageFlags = vk::ShaderStageFlagBits::eCompute},
+                {.binding = 2,
+                 .descriptorType = vk::DescriptorType::eStorageBuffer,
+                 .descriptorCount = 1,
+                 .stageFlags = vk::ShaderStageFlagBits::eCompute},
+                {.binding = 3,
+                 .descriptorType = vk::DescriptorType::eStorageBuffer,
+                 .descriptorCount = 1,
+                 .stageFlags = vk::ShaderStageFlagBits::eCompute}};
+
+        const vk::DescriptorSetLayoutCreateInfo
+            descriptor_set_layout_create_info {
+                .bindingCount = static_cast<std::uint32_t>(
+                    std::size(descriptor_set_layout_bindings)),
+                .pBindings = descriptor_set_layout_bindings};
+
+        m_storage_image_descriptor_set_layout =
+            m_device->createDescriptorSetLayoutUnique(
+                descriptor_set_layout_create_info);
+    }
+
+    {
+        constexpr vk::DescriptorSetLayoutBinding
+            descriptor_set_layout_bindings[] {
+                {.binding = 0,
+                 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+                 .descriptorCount = 1,
+                 .stageFlags = vk::ShaderStageFlagBits::eFragment}};
+
+        const vk::DescriptorSetLayoutCreateInfo
+            descriptor_set_layout_create_info {
+                .bindingCount = static_cast<std::uint32_t>(
+                    std::size(descriptor_set_layout_bindings)),
+                .pBindings = descriptor_set_layout_bindings};
+
+        m_render_target_descriptor_set_layout =
+            m_device->createDescriptorSetLayoutUnique(
+                descriptor_set_layout_create_info);
+    }
+}
+
+void Vulkan_renderer::create_descriptor_pool()
+{
+    constexpr vk::DescriptorPoolSize pool_sizes[] {
+        {vk::DescriptorType::eSampler, 1000},
+        {vk::DescriptorType::eCombinedImageSampler, 1000},
+        {vk::DescriptorType::eSampledImage, 1000},
+        {vk::DescriptorType::eStorageImage, 1000},
+        {vk::DescriptorType::eUniformTexelBuffer, 1000},
+        {vk::DescriptorType::eStorageTexelBuffer, 1000},
+        {vk::DescriptorType::eUniformBuffer, 1000},
+        {vk::DescriptorType::eStorageBuffer, 1000},
+        {vk::DescriptorType::eUniformBufferDynamic, 1000},
+        {vk::DescriptorType::eStorageBufferDynamic, 1000},
+        {vk::DescriptorType::eInputAttachment, 1000}};
+
+    const vk::DescriptorPoolCreateInfo create_info {
+        .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+        .maxSets = 1000 * static_cast<std::uint32_t>(std::size(pool_sizes)),
+        .poolSizeCount = static_cast<std::uint32_t>(std::size(pool_sizes)),
+        .pPoolSizes = pool_sizes};
+
+    m_descriptor_pool = m_device->createDescriptorPoolUnique(create_info);
 }

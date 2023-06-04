@@ -100,67 +100,98 @@ public:
     void store_to_png(const char *file_name);
 
 private:
-    void create_instance();
+    void create_instance(std::uint32_t api_version);
     void create_surface(struct GLFWwindow *window);
     void select_physical_device(std::uint32_t device_extension_count,
                                 const char *const *device_extension_names);
     void create_device(std::uint32_t device_extension_count,
                        const char *const *device_extension_names);
-    void create_allocator();
-    void create_swapchain();
+    void create_allocator(std::uint32_t api_version);
+    void create_swapchain(std::uint32_t framebuffer_width,
+                          std::uint32_t framebuffer_height);
+    void create_command_pool();
+    [[nodiscard]] vk::CommandBuffer begin_one_time_submit_command_buffer();
+    void end_one_time_submit_command_buffer(vk::CommandBuffer command_buffer);
+    void create_storage_image(std::uint32_t width, std::uint32_t height);
+    void create_render_target(std::uint32_t width, std::uint32_t height);
+    void create_descriptor_set_layouts();
+    void create_descriptor_pool();
 
     vk::UniqueInstance m_instance {};
 #ifndef NDEBUG
     vk::UniqueDebugUtilsMessengerEXT m_debug_messenger {};
 #endif
+
     vk::UniqueSurfaceKHR m_surface {};
+
     Queue_family_indices m_queue_family_indices {
         std::numeric_limits<std::uint32_t>::max(),
         std::numeric_limits<std::uint32_t>::max()};
     vk::PhysicalDevice m_physical_device {};
+
     vk::UniqueDevice m_device {};
+
     Unique_allocator m_allocator {};
+
     vk::Queue m_graphics_compute_queue {};
     vk::Queue m_present_queue {};
-    vk::UniqueSwapchainKHR m_swapchain {};
+
     vk::Format m_swapchain_format {vk::Format::eUndefined};
     vk::Extent2D m_swapchain_extent {};
-    std::uint32_t m_swapchain_image_count {};
     std::uint32_t m_swapchain_min_image_count {};
+    vk::UniqueSwapchainKHR m_swapchain {};
     std::vector<vk::Image> m_swapchain_images {};
     std::vector<vk::UniqueImageView> m_swapchain_image_views {};
-    vk::UniqueImage m_storage_image {};
-    vk::UniqueImageView m_storage_image_view {};
+
+    vk::UniqueCommandPool m_command_pool {};
+
     std::uint32_t m_storage_image_width {};
     std::uint32_t m_storage_image_height {};
-    vk::UniqueImage m_render_target_image {};
-    vk::UniqueImageView m_render_target_image_view {};
+    vk::UniqueImage m_storage_image {};
+    Unique_allocation m_storage_image_allocation {};
+    vk::UniqueImageView m_storage_image_view {};
+
     std::uint32_t m_render_target_width {};
     std::uint32_t m_render_target_height {};
+    vk::UniqueImage m_render_target_image {};
+    Unique_allocation m_render_target_allocation {};
+    vk::UniqueImageView m_render_target_image_view {};
     vk::UniqueSampler m_render_target_sampler {};
-    vk::UniqueDescriptorPool m_command_pool {};
+
     vk::UniqueDescriptorSetLayout m_storage_image_descriptor_set_layout {};
     vk::UniqueDescriptorSetLayout m_render_target_descriptor_set_layout {};
+
     vk::UniqueDescriptorPool m_descriptor_pool {};
+
     vk::DescriptorSet m_storage_image_descriptor_set {};
     vk::DescriptorSet m_render_target_descriptor_set {};
+
     vk::UniquePipelineLayout m_compute_pipeline_layout {};
     vk::UniquePipeline m_compute_pipeline {};
+
     vk::UniqueRenderPass m_render_pass {};
+
     std::vector<vk::UniqueFramebuffer> m_framebuffers {};
+
     static constexpr std::uint32_t s_frames_in_flight {2};
+
     std::array<vk::CommandBuffer, s_frames_in_flight>
         m_frame_command_buffers {};
+
     std::array<vk::UniqueSemaphore, s_frames_in_flight>
         m_image_available_semaphores {};
     std::array<vk::UniqueSemaphore, s_frames_in_flight>
         m_render_finished_semaphores {};
     std::array<vk::UniqueFence, s_frames_in_flight> m_in_flight_fences {};
+
     std::uint32_t m_current_frame {};
+
     bool m_framebuffer_resized {};
+
     vk::UniqueBuffer m_vertex_buffer {};
     Unique_allocation m_vertex_buffer_allocation {};
     vk::DeviceSize m_vertex_buffer_size {};
+
     vk::UniqueBuffer m_index_buffer {};
     Unique_allocation m_index_buffer_allocation {};
     vk::DeviceSize m_index_buffer_size {};
