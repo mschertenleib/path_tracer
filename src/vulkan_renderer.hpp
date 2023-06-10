@@ -114,8 +114,15 @@ private:
     void end_one_time_submit_command_buffer(vk::CommandBuffer command_buffer);
     void create_storage_image(std::uint32_t width, std::uint32_t height);
     void create_render_target(std::uint32_t width, std::uint32_t height);
+    void create_vertex_buffer(const std::vector<float> &vertices);
+    void create_index_buffer(const std::vector<std::uint32_t> &indices);
+    void create_geometry_buffers();
     void create_descriptor_set_layouts();
     void create_descriptor_pool();
+    void create_descriptor_sets();
+    void create_pipeline();
+    void create_render_pass();
+    void create_framebuffers();
 
     vk::UniqueInstance m_instance {};
 #ifndef NDEBUG
@@ -158,6 +165,14 @@ private:
     vk::UniqueImageView m_render_target_image_view {};
     vk::UniqueSampler m_render_target_sampler {};
 
+    vk::DeviceSize m_vertex_buffer_size {};
+    vk::UniqueBuffer m_vertex_buffer {};
+    Unique_allocation m_vertex_buffer_allocation {};
+
+    vk::DeviceSize m_index_buffer_size {};
+    vk::UniqueBuffer m_index_buffer {};
+    Unique_allocation m_index_buffer_allocation {};
+
     vk::UniqueDescriptorSetLayout m_storage_image_descriptor_set_layout {};
     vk::UniqueDescriptorSetLayout m_render_target_descriptor_set_layout {};
 
@@ -187,14 +202,6 @@ private:
     std::uint32_t m_current_frame {};
 
     bool m_framebuffer_resized {};
-
-    vk::UniqueBuffer m_vertex_buffer {};
-    Unique_allocation m_vertex_buffer_allocation {};
-    vk::DeviceSize m_vertex_buffer_size {};
-
-    vk::UniqueBuffer m_index_buffer {};
-    Unique_allocation m_index_buffer_allocation {};
-    vk::DeviceSize m_index_buffer_size {};
 };
 
 #endif // VULKAN_RENDERER_HPP
