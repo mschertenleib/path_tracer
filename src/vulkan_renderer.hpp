@@ -96,12 +96,15 @@ public:
     Vulkan_renderer &operator=(const Vulkan_renderer &) = delete;
     Vulkan_renderer &operator=(Vulkan_renderer &&) noexcept = default;
 
+    [[nodiscard]] vk::DescriptorSet get_render_target_descriptor_set();
+    [[nodiscard]] std::array<VmaBudget, VK_MAX_MEMORY_HEAPS> get_heap_budgets();
     void draw_frame(std::uint32_t rng_seed);
+    void resize_framebuffer();
     void store_to_png(const char *file_name);
 
 private:
     void create_instance(std::uint32_t api_version);
-    void create_surface(struct GLFWwindow *window);
+    void create_surface();
     void select_physical_device(std::uint32_t device_extension_count,
                                 const char *const *device_extension_names);
     void create_device(std::uint32_t device_extension_count,
@@ -123,6 +126,12 @@ private:
     void create_pipeline();
     void create_render_pass();
     void create_framebuffers();
+    void create_command_buffers();
+    void create_synchronization_objects();
+    void init_imgui();
+    void recreate_swapchain();
+
+    struct GLFWwindow *m_window {};
 
     vk::UniqueInstance m_instance {};
 #ifndef NDEBUG
@@ -158,8 +167,6 @@ private:
     Unique_allocation m_storage_image_allocation {};
     vk::UniqueImageView m_storage_image_view {};
 
-    std::uint32_t m_render_target_width {};
-    std::uint32_t m_render_target_height {};
     vk::UniqueImage m_render_target_image {};
     Unique_allocation m_render_target_allocation {};
     vk::UniqueImageView m_render_target_image_view {};
@@ -188,11 +195,9 @@ private:
 
     std::vector<vk::UniqueFramebuffer> m_framebuffers {};
 
+    std::vector<vk::CommandBuffer> m_command_buffers {};
+
     static constexpr std::uint32_t s_frames_in_flight {2};
-
-    std::array<vk::CommandBuffer, s_frames_in_flight>
-        m_frame_command_buffers {};
-
     std::array<vk::UniqueSemaphore, s_frames_in_flight>
         m_image_available_semaphores {};
     std::array<vk::UniqueSemaphore, s_frames_in_flight>
