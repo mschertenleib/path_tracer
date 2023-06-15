@@ -140,7 +140,7 @@ int main()
                         ImGui::SetCursorPos({x, y});
                         ImGui::Image(
                             static_cast<ImTextureID>(
-                                renderer.get_render_target_descriptor_set()),
+                                renderer.get_final_render_descriptor_set()),
                             {width, height});
                     }
                 }

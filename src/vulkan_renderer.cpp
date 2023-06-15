@@ -33,6 +33,11 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 namespace
 {
 
+struct Push_constants
+{
+    std::uint32_t rng_seed;
+};
+
 #ifndef NDEBUG
 
 VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
@@ -84,57 +89,17 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     return buffer;
 }
 
-struct Push_constants
-{
-    std::uint32_t rng_seed;
-};
-
-[[nodiscard]] Queue_family_indices
-get_queue_family_indices(const vk::UniqueInstance &instance,
-                         vk::PhysicalDevice physical_device)
-{
-    Queue_family_indices indices {std::numeric_limits<std::uint32_t>::max(),
-                                  std::numeric_limits<std::uint32_t>::max()};
-
-    const auto properties = physical_device.getQueueFamilyProperties();
-
-    for (std::uint32_t i {}; i < static_cast<std::uint32_t>(properties.size());
-         ++i)
-    {
-        if ((properties[i].queueFlags & vk::QueueFlagBits::eGraphics) &&
-            (properties[i].queueFlags & vk::QueueFlagBits::eCompute))
-        {
-            indices.graphics_compute = i;
-        }
-
-        if (glfwGetPhysicalDevicePresentationSupport(
-                instance.get(), physical_device, i))
-        {
-            indices.present = i;
-        }
-
-        if ((indices.graphics_compute !=
-             std::numeric_limits<std::uint32_t>::max()) &&
-            (indices.present != std::numeric_limits<std::uint32_t>::max()))
-        {
-            break;
-        }
-    }
-
-    return indices;
-}
-
 } // namespace
 
-Unique_allocator::Unique_allocator(VmaAllocator allocator) noexcept
-    : m_allocator {allocator}
+Unique_allocator::Unique_allocator(const VmaAllocatorCreateInfo &create_info)
 {
-    assert(m_allocator != VK_NULL_HANDLE);
+    const auto result = vmaCreateAllocator(&create_info, &m_allocator);
+    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateAllocator");
 }
 
 Unique_allocator::~Unique_allocator() noexcept
 {
-    if (m_allocator != VK_NULL_HANDLE)
+    if (m_allocator)
     {
         vmaDestroyAllocator(m_allocator);
     }
@@ -143,17 +108,122 @@ Unique_allocator::~Unique_allocator() noexcept
 Unique_allocator::Unique_allocator(Unique_allocator &&rhs) noexcept
     : m_allocator {rhs.m_allocator}
 {
-    rhs.m_allocator = VK_NULL_HANDLE;
+    rhs.m_allocator = {};
 }
 
 Unique_allocator &Unique_allocator::operator=(Unique_allocator &&rhs) noexcept
 {
     const auto old_allocator = m_allocator;
     m_allocator = rhs.m_allocator;
-    rhs.m_allocator = VK_NULL_HANDLE;
-    if (old_allocator != VK_NULL_HANDLE)
+    rhs.m_allocator = {};
+    if (old_allocator)
     {
         vmaDestroyAllocator(old_allocator);
+    }
+    return *this;
+}
+
+Unique_buffer::Unique_buffer(
+    VmaAllocator allocator,
+    const vk::BufferCreateInfo &buffer_create_info,
+    const VmaAllocationCreateInfo &allocation_create_info,
+    VmaAllocationInfo *allocation_info)
+    : m_allocator {allocator}
+{
+    const auto result = vmaCreateBuffer(
+        m_allocator,
+        reinterpret_cast<const VkBufferCreateInfo *>(&buffer_create_info),
+        &allocation_create_info,
+        reinterpret_cast<VkBuffer *>(&m_buffer),
+        &m_allocation,
+        allocation_info);
+    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateBuffer");
+}
+
+Unique_buffer::~Unique_buffer() noexcept
+{
+    if (m_buffer)
+    {
+        vmaDestroyBuffer(m_allocator, m_buffer, m_allocation);
+    }
+}
+
+Unique_buffer::Unique_buffer(Unique_buffer &&rhs) noexcept
+    : m_buffer {rhs.m_buffer},
+      m_allocation {rhs.m_allocation},
+      m_allocator {rhs.m_allocator}
+{
+    rhs.m_buffer = vk::Buffer {};
+    rhs.m_allocation = {};
+    rhs.m_allocator = {};
+}
+
+Unique_buffer &Unique_buffer::operator=(Unique_buffer &&rhs) noexcept
+{
+    const auto old_buffer = m_buffer;
+    const auto old_allocation = m_allocation;
+    const auto old_allocator = m_allocator;
+    m_buffer = rhs.m_buffer;
+    m_allocation = rhs.m_allocation;
+    m_allocator = rhs.m_allocator;
+    rhs.m_buffer = vk::Buffer {};
+    rhs.m_allocation = {};
+    rhs.m_allocator = {};
+    if (old_buffer)
+    {
+        vmaDestroyBuffer(old_allocator, old_buffer, old_allocation);
+    }
+    return *this;
+}
+
+Unique_image::Unique_image(
+    VmaAllocator allocator,
+    const vk::ImageCreateInfo &image_create_info,
+    const VmaAllocationCreateInfo &allocation_create_info)
+    : m_allocator {allocator}
+{
+    const auto result = vmaCreateImage(
+        m_allocator,
+        reinterpret_cast<const VkImageCreateInfo *>(&image_create_info),
+        &allocation_create_info,
+        reinterpret_cast<VkImage *>(&m_image),
+        &m_allocation,
+        nullptr);
+    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateImage");
+}
+
+Unique_image::~Unique_image() noexcept
+{
+    if (m_image)
+    {
+        vmaDestroyImage(m_allocator, m_image, m_allocation);
+    }
+}
+
+Unique_image::Unique_image(Unique_image &&rhs) noexcept
+    : m_image {rhs.m_image},
+      m_allocation {rhs.m_allocation},
+      m_allocator {rhs.m_allocator}
+{
+    rhs.m_image = vk::Image {};
+    rhs.m_allocation = {};
+    rhs.m_allocator = {};
+}
+
+Unique_image &Unique_image::operator=(Unique_image &&rhs) noexcept
+{
+    const auto old_image = m_image;
+    const auto old_allocation = m_allocation;
+    const auto old_allocator = m_allocator;
+    m_image = rhs.m_image;
+    m_allocation = rhs.m_allocation;
+    m_allocator = rhs.m_allocator;
+    rhs.m_image = vk::Image {};
+    rhs.m_allocation = {};
+    rhs.m_allocator = {};
+    if (old_image)
+    {
+        vmaDestroyImage(old_allocator, old_image, old_allocation);
     }
     return *this;
 }
@@ -162,13 +232,13 @@ Unique_allocation::Unique_allocation(VmaAllocation allocation,
                                      VmaAllocator allocator) noexcept
     : m_allocation {allocation}, m_allocator {allocator}
 {
-    assert(m_allocation != VK_NULL_HANDLE);
-    assert(m_allocator != VK_NULL_HANDLE);
+    assert(m_allocation);
+    assert(m_allocator);
 }
 
 Unique_allocation::~Unique_allocation() noexcept
 {
-    if (m_allocation != VK_NULL_HANDLE)
+    if (m_allocation)
     {
         vmaFreeMemory(m_allocator, m_allocation);
     }
@@ -177,8 +247,8 @@ Unique_allocation::~Unique_allocation() noexcept
 Unique_allocation::Unique_allocation(Unique_allocation &&rhs) noexcept
     : m_allocation {rhs.m_allocation}, m_allocator {rhs.m_allocator}
 {
-    rhs.m_allocation = VK_NULL_HANDLE;
-    rhs.m_allocator = VK_NULL_HANDLE;
+    rhs.m_allocation = {};
+    rhs.m_allocator = {};
 }
 
 Unique_allocation &
@@ -188,9 +258,9 @@ Unique_allocation::operator=(Unique_allocation &&rhs) noexcept
     const auto old_allocator = m_allocator;
     m_allocation = rhs.m_allocation;
     m_allocator = rhs.m_allocator;
-    rhs.m_allocation = VK_NULL_HANDLE;
-    rhs.m_allocator = VK_NULL_HANDLE;
-    if (old_allocation != VK_NULL_HANDLE)
+    rhs.m_allocation = {};
+    rhs.m_allocator = {};
+    if (old_allocation)
     {
         vmaFreeMemory(old_allocator, old_allocation);
     }
@@ -239,11 +309,15 @@ Vulkan_renderer::Vulkan_renderer(GLFWwindow *window,
 
     create_geometry_buffers();
 
-    create_descriptor_set_layouts();
+    create_descriptor_set_layout();
+
+    create_final_render_descriptor_set_layout();
 
     create_descriptor_pool();
 
-    create_descriptor_sets();
+    create_descriptor_set();
+
+    create_final_render_descriptor_set();
 
     create_pipeline();
 
@@ -256,6 +330,10 @@ Vulkan_renderer::Vulkan_renderer(GLFWwindow *window,
     create_synchronization_objects();
 
     init_imgui();
+
+    create_blas();
+
+    create_tlas();
 }
 
 Vulkan_renderer::~Vulkan_renderer()
@@ -267,9 +345,9 @@ Vulkan_renderer::~Vulkan_renderer()
     ImGui_ImplVulkan_Shutdown();
 }
 
-vk::DescriptorSet Vulkan_renderer::get_render_target_descriptor_set()
+vk::DescriptorSet Vulkan_renderer::get_final_render_descriptor_set()
 {
-    return m_render_target_descriptor_set;
+    return m_final_render_descriptor_set;
 }
 
 std::array<VmaBudget, VK_MAX_MEMORY_HEAPS> Vulkan_renderer::get_heap_budgets()
@@ -317,7 +395,7 @@ void Vulkan_renderer::draw_frame(std::uint32_t rng_seed)
     command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
                                       m_compute_pipeline_layout.get(),
                                       0,
-                                      m_storage_image_descriptor_set,
+                                      m_descriptor_set,
                                       {});
 
     command_buffer.bindPipeline(vk::PipelineBindPoint::eCompute,
@@ -379,8 +457,8 @@ void Vulkan_renderer::draw_frame(std::uint32_t rng_seed)
 
     const std::array offsets {
         vk::Offset3D {0, 0, 0},
-        vk::Offset3D {static_cast<std::int32_t>(m_storage_image_width),
-                      static_cast<std::int32_t>(m_storage_image_height),
+        vk::Offset3D {static_cast<std::int32_t>(m_render_width),
+                      static_cast<std::int32_t>(m_render_height),
                       1}};
 
     const vk::ImageBlit image_blit {.srcSubresource = subresource_layers,
@@ -480,35 +558,35 @@ void Vulkan_renderer::resize_framebuffer()
     m_framebuffer_resized = true;
 }
 
+void Vulkan_renderer::resize_render_target(std::uint32_t render_width,
+                                           std::uint32_t render_height)
+{
+    m_render_target_sampler = {};
+    m_render_target_image_view = {};
+    m_render_target_image = {};
+
+    create_render_target(render_width, render_height);
+}
+
 void Vulkan_renderer::store_to_png(const char *file_name)
 {
     const vk::BufferCreateInfo staging_buffer_create_info {
-        .size = m_storage_image_width * m_storage_image_height * 4,
+        .size = m_render_width * m_render_height * 4,
         .usage = vk::BufferUsageFlagBits::eTransferDst,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &m_queue_family_indices.graphics_compute};
+        .sharingMode = vk::SharingMode::eExclusive};
 
-    VmaAllocationCreateInfo allocation_create_info {};
-    allocation_create_info.flags =
+    VmaAllocationCreateInfo staging_buffer_allocation_create_info {};
+    staging_buffer_allocation_create_info.flags =
         VMA_ALLOCATION_CREATE_MAPPED_BIT |
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-    allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    staging_buffer_allocation_create_info.usage =
+        VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
 
-    VkBuffer staging_buffer_handle {};
-    VmaAllocation staging_buffer_allocation_handle {};
     VmaAllocationInfo staging_buffer_allocation_info {};
-    auto result = vmaCreateBuffer(m_allocator.get(),
-                                  reinterpret_cast<const VkBufferCreateInfo *>(
-                                      &staging_buffer_create_info),
-                                  &allocation_create_info,
-                                  &staging_buffer_handle,
-                                  &staging_buffer_allocation_handle,
-                                  &staging_buffer_allocation_info);
-    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateBuffer");
-    vk::UniqueBuffer staging_buffer(staging_buffer_handle, m_device.get());
-    Unique_allocation staging_buffer_allocation(
-        staging_buffer_allocation_handle, m_allocator.get());
+    const Unique_buffer staging_buffer(m_allocator.get(),
+                                       staging_buffer_create_info,
+                                       staging_buffer_allocation_create_info,
+                                       &staging_buffer_allocation_info);
 
     const auto command_buffer = begin_one_time_submit_command_buffer();
 
@@ -535,13 +613,13 @@ void Vulkan_renderer::store_to_png(const char *file_name)
 
     const vk::BufferImageCopy region {
         .bufferOffset = 0,
-        .bufferImageHeight = m_storage_image_height,
+        .bufferImageHeight = m_render_height,
         .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor,
                              .mipLevel = 0,
                              .baseArrayLayer = 0,
                              .layerCount = 1},
         .imageOffset = {0, 0, 0},
-        .imageExtent = {m_storage_image_width, m_storage_image_height, 1}};
+        .imageExtent = {m_render_width, m_render_height, 1}};
 
     command_buffer.copyImageToBuffer(m_render_target_image.get(),
                                      vk::ImageLayout::eTransferSrcOptimal,
@@ -563,11 +641,11 @@ void Vulkan_renderer::store_to_png(const char *file_name)
     end_one_time_submit_command_buffer(command_buffer);
 
     if (!stbi_write_png(file_name,
-                        static_cast<int>(m_storage_image_width),
-                        static_cast<int>(m_storage_image_height),
+                        static_cast<int>(m_render_width),
+                        static_cast<int>(m_render_height),
                         4,
                         staging_buffer_allocation_info.pMappedData,
-                        static_cast<int>(m_storage_image_width * 4)))
+                        static_cast<int>(m_render_width * 4)))
     {
         throw std::runtime_error("Failed to write PNG image");
     }
@@ -695,8 +773,7 @@ void Vulkan_renderer::select_physical_device(
 
     for (const auto physical_device : physical_devices)
     {
-        m_queue_family_indices =
-            get_queue_family_indices(m_instance, physical_device);
+        m_queue_family_indices = get_queue_family_indices(physical_device);
         if ((m_queue_family_indices.graphics_compute ==
              std::numeric_limits<std::uint32_t>::max()) ||
             (m_queue_family_indices.present ==
@@ -731,12 +808,16 @@ void Vulkan_renderer::select_physical_device(
 
         const auto features = physical_device.getFeatures2<
             vk::PhysicalDeviceFeatures2,
+            vk::PhysicalDeviceVulkan12Features,
             vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
-            vk::PhysicalDeviceRayQueryFeaturesKHR>();
+            vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
 
-        if (!features.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>()
+        if (!features.get<vk::PhysicalDeviceVulkan12Features>()
+                 .bufferDeviceAddress ||
+            !features.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>()
                  .accelerationStructure ||
-            !features.get<vk::PhysicalDeviceRayQueryFeaturesKHR>().rayQuery)
+            !features.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>()
+                 .rayTracingPipeline)
         {
             continue;
         }
@@ -746,6 +827,40 @@ void Vulkan_renderer::select_physical_device(
     }
 
     throw std::runtime_error("Failed to find a suitable physical device");
+}
+
+Queue_family_indices
+Vulkan_renderer::get_queue_family_indices(vk::PhysicalDevice physical_device)
+{
+    Queue_family_indices indices {std::numeric_limits<std::uint32_t>::max(),
+                                  std::numeric_limits<std::uint32_t>::max()};
+
+    const auto properties = physical_device.getQueueFamilyProperties();
+
+    for (std::uint32_t i {}; i < static_cast<std::uint32_t>(properties.size());
+         ++i)
+    {
+        if ((properties[i].queueFlags & vk::QueueFlagBits::eGraphics) &&
+            (properties[i].queueFlags & vk::QueueFlagBits::eCompute))
+        {
+            indices.graphics_compute = i;
+        }
+
+        if (glfwGetPhysicalDevicePresentationSupport(
+                m_instance.get(), physical_device, i))
+        {
+            indices.present = i;
+        }
+
+        if ((indices.graphics_compute !=
+             std::numeric_limits<std::uint32_t>::max()) &&
+            (indices.present != std::numeric_limits<std::uint32_t>::max()))
+        {
+            break;
+        }
+    }
+
+    return indices;
 }
 
 void Vulkan_renderer::create_device(std::uint32_t device_extension_count,
@@ -766,7 +881,21 @@ void Vulkan_renderer::create_device(std::uint32_t device_extension_count,
                 m_queue_family_indices.present
             ? 1u
             : 2u};
+
+    vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
+        ray_tracing_pipeline_features {.rayTracingPipeline = VK_TRUE};
+    vk::PhysicalDeviceAccelerationStructureFeaturesKHR
+        acceleration_structure_features_khr {.pNext =
+                                                 &ray_tracing_pipeline_features,
+                                             .accelerationStructure = VK_TRUE};
+    vk::PhysicalDeviceVulkan12Features vulkan_1_2_features {
+        .pNext = &acceleration_structure_features_khr,
+        .bufferDeviceAddress = VK_TRUE};
+    const vk::PhysicalDeviceFeatures2 features_2 {.pNext =
+                                                      &vulkan_1_2_features};
+
     const vk::DeviceCreateInfo device_create_info {
+        .pNext = &features_2,
         .queueCreateInfoCount = queue_create_info_count,
         .pQueueCreateInfos = queue_create_infos,
         .enabledExtensionCount = device_extension_count,
@@ -785,17 +914,16 @@ void Vulkan_renderer::create_allocator(std::uint32_t api_version)
     vulkan_functions.vkGetDeviceProcAddr =
         VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr;
 
-    VmaAllocatorCreateInfo allocatorCreateInfo {};
-    allocatorCreateInfo.physicalDevice = m_physical_device;
-    allocatorCreateInfo.device = m_device.get();
-    allocatorCreateInfo.pVulkanFunctions = &vulkan_functions;
-    allocatorCreateInfo.instance = m_instance.get();
-    allocatorCreateInfo.vulkanApiVersion = api_version;
+    VmaAllocatorCreateInfo allocator_create_info {};
+    allocator_create_info.flags =
+        VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    allocator_create_info.physicalDevice = m_physical_device;
+    allocator_create_info.device = m_device.get();
+    allocator_create_info.pVulkanFunctions = &vulkan_functions;
+    allocator_create_info.instance = m_instance.get();
+    allocator_create_info.vulkanApiVersion = api_version;
 
-    VmaAllocator allocator {};
-    const auto result = vmaCreateAllocator(&allocatorCreateInfo, &allocator);
-    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateAllocator");
-    m_allocator = Unique_allocator(allocator);
+    m_allocator = Unique_allocator(allocator_create_info);
 }
 
 void Vulkan_renderer::create_swapchain(std::uint32_t framebuffer_width,
@@ -934,8 +1062,8 @@ void Vulkan_renderer::end_one_time_submit_command_buffer(
 void Vulkan_renderer::create_storage_image(std::uint32_t width,
                                            std::uint32_t height)
 {
-    m_storage_image_width = width;
-    m_storage_image_height = height;
+    m_render_width = width;
+    m_render_height = height;
 
     constexpr auto format = vk::Format::eR32G32B32A32Sfloat;
 
@@ -950,27 +1078,13 @@ void Vulkan_renderer::create_storage_image(std::uint32_t width,
         .usage = vk::ImageUsageFlagBits::eStorage |
                  vk::ImageUsageFlagBits::eTransferSrc,
         .sharingMode = vk::SharingMode::eExclusive,
-        .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &m_queue_family_indices.graphics_compute,
         .initialLayout = vk::ImageLayout::eUndefined};
 
     VmaAllocationCreateInfo allocation_create_info {};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    VkImage storage_image {};
-    VmaAllocation storage_image_allocation {};
-    const auto result = vmaCreateImage(
-        m_allocator.get(),
-        reinterpret_cast<const VkImageCreateInfo *>(&image_create_info),
-        &allocation_create_info,
-        &storage_image,
-        &storage_image_allocation,
-        nullptr);
-    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateImage");
-
-    m_storage_image = vk::UniqueImage(storage_image, m_device.get());
-    m_storage_image_allocation =
-        Unique_allocation(storage_image_allocation, m_allocator.get());
+    m_storage_image = Unique_image(
+        m_allocator.get(), image_create_info, allocation_create_info);
 
     const vk::ImageViewCreateInfo image_view_create_info {
         .image = m_storage_image.get(),
@@ -1029,28 +1143,13 @@ void Vulkan_renderer::create_render_target(std::uint32_t width,
                  vk::ImageUsageFlagBits::eTransferDst |
                  vk::ImageUsageFlagBits::eTransferSrc,
         .sharingMode = vk::SharingMode::eExclusive,
-        .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &m_queue_family_indices.graphics_compute,
         .initialLayout = vk::ImageLayout::eUndefined};
 
     VmaAllocationCreateInfo allocation_create_info {};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    VkImage render_target_image {};
-    VmaAllocation render_target_allocation {};
-    const auto result = vmaCreateImage(
-        m_allocator.get(),
-        reinterpret_cast<const VkImageCreateInfo *>(&image_create_info),
-        &allocation_create_info,
-        &render_target_image,
-        &render_target_allocation,
-        nullptr);
-    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateImage");
-
-    m_render_target_image =
-        vk::UniqueImage(render_target_image, m_device.get());
-    m_render_target_allocation =
-        Unique_allocation(render_target_allocation, m_allocator.get());
+    m_render_target_image = Unique_image(
+        m_allocator.get(), image_create_info, allocation_create_info);
 
     const vk::ImageViewCreateInfo image_view_create_info {
         .image = m_render_target_image.get(),
@@ -1108,60 +1207,41 @@ void Vulkan_renderer::create_render_target(std::uint32_t width,
 
 void Vulkan_renderer::create_vertex_buffer(const std::vector<float> &vertices)
 {
+    m_num_vertices = static_cast<std::uint32_t>(vertices.size() / 3);
     m_vertex_buffer_size = vertices.size() * sizeof(float);
 
     const vk::BufferCreateInfo staging_buffer_create_info {
         .size = m_vertex_buffer_size,
         .usage = vk::BufferUsageFlagBits::eTransferSrc,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &m_queue_family_indices.graphics_compute};
+        .sharingMode = vk::SharingMode::eExclusive};
 
-    VmaAllocationCreateInfo allocation_create_info {};
-    allocation_create_info.flags =
+    VmaAllocationCreateInfo staging_buffer_allocation_create_info {};
+    staging_buffer_allocation_create_info.flags =
         VMA_ALLOCATION_CREATE_MAPPED_BIT |
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-    allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    staging_buffer_allocation_create_info.usage =
+        VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
 
-    VkBuffer staging_buffer_handle {};
-    VmaAllocation staging_buffer_allocation_handle {};
     VmaAllocationInfo staging_buffer_allocation_info {};
-    auto result = vmaCreateBuffer(m_allocator.get(),
-                                  reinterpret_cast<const VkBufferCreateInfo *>(
-                                      &staging_buffer_create_info),
-                                  &allocation_create_info,
-                                  &staging_buffer_handle,
-                                  &staging_buffer_allocation_handle,
-                                  &staging_buffer_allocation_info);
-    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateBuffer");
-    vk::UniqueBuffer staging_buffer(staging_buffer_handle, m_device.get());
-    Unique_allocation staging_buffer_allocation(
-        staging_buffer_allocation_handle, m_allocator.get());
+    const Unique_buffer staging_buffer(m_allocator.get(),
+                                       staging_buffer_create_info,
+                                       staging_buffer_allocation_create_info,
+                                       &staging_buffer_allocation_info);
 
     const vk::BufferCreateInfo buffer_create_info {
         .size = m_vertex_buffer_size,
         .usage = vk::BufferUsageFlagBits::eStorageBuffer |
-                 vk::BufferUsageFlagBits::eTransferDst,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &m_queue_family_indices.graphics_compute};
+                 vk::BufferUsageFlagBits::eTransferDst |
+                 vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                 vk::BufferUsageFlagBits::
+                     eAccelerationStructureBuildInputReadOnlyKHR,
+        .sharingMode = vk::SharingMode::eExclusive};
 
-    allocation_create_info.flags = {};
+    VmaAllocationCreateInfo allocation_create_info {};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    VkBuffer vertex_buffer_handle {};
-    VmaAllocation vertex_buffer_allocation_handle {};
-    result = vmaCreateBuffer(
-        m_allocator.get(),
-        reinterpret_cast<const VkBufferCreateInfo *>(&buffer_create_info),
-        &allocation_create_info,
-        &vertex_buffer_handle,
-        &vertex_buffer_allocation_handle,
-        nullptr);
-    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateBuffer");
-    m_vertex_buffer = vk::UniqueBuffer(vertex_buffer_handle, m_device.get());
-    m_vertex_buffer_allocation =
-        Unique_allocation(vertex_buffer_allocation_handle, m_allocator.get());
+    m_vertex_buffer = Unique_buffer(
+        m_allocator.get(), buffer_create_info, allocation_create_info, nullptr);
 
     std::memcpy(staging_buffer_allocation_info.pMappedData,
                 vertices.data(),
@@ -1181,60 +1261,41 @@ void Vulkan_renderer::create_vertex_buffer(const std::vector<float> &vertices)
 void Vulkan_renderer::create_index_buffer(
     const std::vector<std::uint32_t> &indices)
 {
+    m_num_indices = static_cast<std::uint32_t>(indices.size());
     m_index_buffer_size = indices.size() * sizeof(float);
 
     const vk::BufferCreateInfo staging_buffer_create_info {
         .size = m_index_buffer_size,
         .usage = vk::BufferUsageFlagBits::eTransferSrc,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &m_queue_family_indices.graphics_compute};
+        .sharingMode = vk::SharingMode::eExclusive};
 
-    VmaAllocationCreateInfo allocation_create_info {};
-    allocation_create_info.flags =
+    VmaAllocationCreateInfo staging_buffer_allocation_create_info {};
+    staging_buffer_allocation_create_info.flags =
         VMA_ALLOCATION_CREATE_MAPPED_BIT |
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-    allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    staging_buffer_allocation_create_info.usage =
+        VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
 
-    VkBuffer staging_buffer_handle {};
-    VmaAllocation staging_buffer_allocation_handle {};
     VmaAllocationInfo staging_buffer_allocation_info {};
-    auto result = vmaCreateBuffer(m_allocator.get(),
-                                  reinterpret_cast<const VkBufferCreateInfo *>(
-                                      &staging_buffer_create_info),
-                                  &allocation_create_info,
-                                  &staging_buffer_handle,
-                                  &staging_buffer_allocation_handle,
-                                  &staging_buffer_allocation_info);
-    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateBuffer");
-    vk::UniqueBuffer staging_buffer(staging_buffer_handle, m_device.get());
-    Unique_allocation staging_buffer_allocation(
-        staging_buffer_allocation_handle, m_allocator.get());
+    const Unique_buffer staging_buffer(m_allocator.get(),
+                                       staging_buffer_create_info,
+                                       staging_buffer_allocation_create_info,
+                                       &staging_buffer_allocation_info);
 
     const vk::BufferCreateInfo buffer_create_info {
         .size = m_index_buffer_size,
         .usage = vk::BufferUsageFlagBits::eStorageBuffer |
-                 vk::BufferUsageFlagBits::eTransferDst,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &m_queue_family_indices.graphics_compute};
+                 vk::BufferUsageFlagBits::eTransferDst |
+                 vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                 vk::BufferUsageFlagBits::
+                     eAccelerationStructureBuildInputReadOnlyKHR,
+        .sharingMode = vk::SharingMode::eExclusive};
 
-    allocation_create_info.flags = {};
+    VmaAllocationCreateInfo allocation_create_info {};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    VkBuffer index_buffer_handle {};
-    VmaAllocation index_buffer_allocation_handle {};
-    result = vmaCreateBuffer(
-        m_allocator.get(),
-        reinterpret_cast<const VkBufferCreateInfo *>(&buffer_create_info),
-        &allocation_create_info,
-        &index_buffer_handle,
-        &index_buffer_allocation_handle,
-        nullptr);
-    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateBuffer");
-    m_index_buffer = vk::UniqueBuffer(index_buffer_handle, m_device.get());
-    m_index_buffer_allocation =
-        Unique_allocation(index_buffer_allocation_handle, m_allocator.get());
+    m_index_buffer = Unique_buffer(
+        m_allocator.get(), buffer_create_info, allocation_create_info, nullptr);
 
     std::memcpy(staging_buffer_allocation_info.pMappedData,
                 indices.data(),
@@ -1276,58 +1337,51 @@ void Vulkan_renderer::create_geometry_buffers()
     create_index_buffer(indices);
 }
 
-void Vulkan_renderer::create_descriptor_set_layouts()
+void Vulkan_renderer::create_descriptor_set_layout()
 {
-    {
-        constexpr vk::DescriptorSetLayoutBinding
-            descriptor_set_layout_bindings[] {
-                {.binding = 0,
-                 .descriptorType = vk::DescriptorType::eStorageImage,
-                 .descriptorCount = 1,
-                 .stageFlags = vk::ShaderStageFlagBits::eCompute},
-                {.binding = 1,
-                 .descriptorType =
-                     vk::DescriptorType::eAccelerationStructureKHR,
-                 .descriptorCount = 1,
-                 .stageFlags = vk::ShaderStageFlagBits::eCompute},
-                {.binding = 2,
-                 .descriptorType = vk::DescriptorType::eStorageBuffer,
-                 .descriptorCount = 1,
-                 .stageFlags = vk::ShaderStageFlagBits::eCompute},
-                {.binding = 3,
-                 .descriptorType = vk::DescriptorType::eStorageBuffer,
-                 .descriptorCount = 1,
-                 .stageFlags = vk::ShaderStageFlagBits::eCompute}};
+    constexpr vk::DescriptorSetLayoutBinding descriptor_set_layout_bindings[] {
+        {.binding = 0,
+         .descriptorType = vk::DescriptorType::eStorageImage,
+         .descriptorCount = 1,
+         .stageFlags = vk::ShaderStageFlagBits::eCompute},
+        {.binding = 1,
+         .descriptorType = vk::DescriptorType::eAccelerationStructureKHR,
+         .descriptorCount = 1,
+         .stageFlags = vk::ShaderStageFlagBits::eCompute},
+        {.binding = 2,
+         .descriptorType = vk::DescriptorType::eStorageBuffer,
+         .descriptorCount = 1,
+         .stageFlags = vk::ShaderStageFlagBits::eCompute},
+        {.binding = 3,
+         .descriptorType = vk::DescriptorType::eStorageBuffer,
+         .descriptorCount = 1,
+         .stageFlags = vk::ShaderStageFlagBits::eCompute}};
 
-        const vk::DescriptorSetLayoutCreateInfo
-            descriptor_set_layout_create_info {
-                .bindingCount = static_cast<std::uint32_t>(
-                    std::size(descriptor_set_layout_bindings)),
-                .pBindings = descriptor_set_layout_bindings};
+    const vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
+        .bindingCount = static_cast<std::uint32_t>(
+            std::size(descriptor_set_layout_bindings)),
+        .pBindings = descriptor_set_layout_bindings};
 
-        m_storage_image_descriptor_set_layout =
-            m_device->createDescriptorSetLayoutUnique(
-                descriptor_set_layout_create_info);
-    }
+    m_descriptor_set_layout = m_device->createDescriptorSetLayoutUnique(
+        descriptor_set_layout_create_info);
+}
 
-    {
-        constexpr vk::DescriptorSetLayoutBinding
-            descriptor_set_layout_bindings[] {
-                {.binding = 0,
-                 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                 .descriptorCount = 1,
-                 .stageFlags = vk::ShaderStageFlagBits::eFragment}};
+void Vulkan_renderer::create_final_render_descriptor_set_layout()
+{
+    constexpr vk::DescriptorSetLayoutBinding descriptor_set_layout_bindings[] {
+        {.binding = 0,
+         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+         .descriptorCount = 1,
+         .stageFlags = vk::ShaderStageFlagBits::eFragment}};
 
-        const vk::DescriptorSetLayoutCreateInfo
-            descriptor_set_layout_create_info {
-                .bindingCount = static_cast<std::uint32_t>(
-                    std::size(descriptor_set_layout_bindings)),
-                .pBindings = descriptor_set_layout_bindings};
+    const vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
+        .bindingCount = static_cast<std::uint32_t>(
+            std::size(descriptor_set_layout_bindings)),
+        .pBindings = descriptor_set_layout_bindings};
 
-        m_render_target_descriptor_set_layout =
-            m_device->createDescriptorSetLayoutUnique(
-                descriptor_set_layout_create_info);
-    }
+    m_final_render_descriptor_set_layout =
+        m_device->createDescriptorSetLayoutUnique(
+            descriptor_set_layout_create_info);
 }
 
 void Vulkan_renderer::create_descriptor_pool()
@@ -1354,21 +1408,16 @@ void Vulkan_renderer::create_descriptor_pool()
     m_descriptor_pool = m_device->createDescriptorPoolUnique(create_info);
 }
 
-void Vulkan_renderer::create_descriptor_sets()
+void Vulkan_renderer::create_descriptor_set()
 {
-    const vk::DescriptorSetLayout descriptor_set_layouts[] {
-        m_storage_image_descriptor_set_layout.get(),
-        m_render_target_descriptor_set_layout.get()};
-
     const vk::DescriptorSetAllocateInfo descriptor_set_allocate_info {
         .descriptorPool = m_descriptor_pool.get(),
-        .descriptorSetCount = 2,
-        .pSetLayouts = descriptor_set_layouts};
+        .descriptorSetCount = 1,
+        .pSetLayouts = &m_descriptor_set_layout.get()};
 
     const auto sets =
         m_device->allocateDescriptorSets(descriptor_set_allocate_info);
-    m_storage_image_descriptor_set = sets[0];
-    m_render_target_descriptor_set = sets[1];
+    m_descriptor_set = sets.front();
 
     const vk::DescriptorImageInfo storage_image_descriptor_image_info {
         .sampler = VK_NULL_HANDLE,
@@ -1385,38 +1434,54 @@ void Vulkan_renderer::create_descriptor_sets()
         .offset = 0,
         .range = m_index_buffer_size};
 
-    const vk::DescriptorImageInfo render_target_descriptor_image_info {
-        .sampler = m_render_target_sampler.get(),
-        .imageView = m_render_target_image_view.get(),
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
-
     const vk::WriteDescriptorSet descriptor_writes[] {
-        {.dstSet = m_storage_image_descriptor_set,
+        {.dstSet = m_descriptor_set,
          .dstBinding = 0,
          .dstArrayElement = 0,
          .descriptorCount = 1,
          .descriptorType = vk::DescriptorType::eStorageImage,
          .pImageInfo = &storage_image_descriptor_image_info},
-        {.dstSet = m_storage_image_descriptor_set,
+        {.dstSet = m_descriptor_set,
          .dstBinding = 2,
          .dstArrayElement = 0,
          .descriptorCount = 1,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
          .pBufferInfo = &vertex_buffer_descriptor_buffer_info},
-        {.dstSet = m_storage_image_descriptor_set,
+        {.dstSet = m_descriptor_set,
          .dstBinding = 3,
          .dstArrayElement = 0,
          .descriptorCount = 1,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
-         .pBufferInfo = &index_buffer_descriptor_buffer_info},
-        {.dstSet = m_render_target_descriptor_set,
-         .dstBinding = 0,
-         .dstArrayElement = 0,
-         .descriptorCount = 1,
-         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-         .pImageInfo = &render_target_descriptor_image_info}};
+         .pBufferInfo = &index_buffer_descriptor_buffer_info}};
 
     m_device->updateDescriptorSets(descriptor_writes, {});
+}
+
+void Vulkan_renderer::create_final_render_descriptor_set()
+{
+    const vk::DescriptorSetAllocateInfo descriptor_set_allocate_info {
+        .descriptorPool = m_descriptor_pool.get(),
+        .descriptorSetCount = 1,
+        .pSetLayouts = &m_final_render_descriptor_set_layout.get()};
+
+    const auto sets =
+        m_device->allocateDescriptorSets(descriptor_set_allocate_info);
+    m_final_render_descriptor_set = sets.front();
+
+    const vk::DescriptorImageInfo render_target_descriptor_image_info {
+        .sampler = m_render_target_sampler.get(),
+        .imageView = m_render_target_image_view.get(),
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
+
+    const vk::WriteDescriptorSet descriptor_write {
+        .dstSet = m_final_render_descriptor_set,
+        .dstBinding = 0,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+        .pImageInfo = &render_target_descriptor_image_info};
+
+    m_device->updateDescriptorSets(descriptor_write, {});
 }
 
 void Vulkan_renderer::create_pipeline()
@@ -1442,7 +1507,7 @@ void Vulkan_renderer::create_pipeline()
 
     const vk::PipelineLayoutCreateInfo pipeline_layout_create_info {
         .setLayoutCount = 1,
-        .pSetLayouts = &m_storage_image_descriptor_set_layout.get(),
+        .pSetLayouts = &m_descriptor_set_layout.get(),
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &push_constant_range};
 
@@ -1602,13 +1667,9 @@ void Vulkan_renderer::recreate_swapchain()
 
     m_device->waitIdle();
 
-    for (auto &image_view : m_swapchain_image_views)
-    {
-        image_view.reset();
-    }
     m_swapchain_image_views.clear();
     m_swapchain_images.clear();
-    m_swapchain.reset();
+    m_swapchain = {};
     m_swapchain_min_image_count = {};
     m_swapchain_extent = vk::Extent2D {};
     m_swapchain_format = vk::Format::eUndefined;
@@ -1616,4 +1677,105 @@ void Vulkan_renderer::recreate_swapchain()
     create_swapchain(static_cast<std::uint32_t>(width),
                      static_cast<std::uint32_t>(height));
     create_framebuffers();
+}
+
+[[nodiscard]] vk::DeviceAddress
+Vulkan_renderer::get_buffer_device_address(vk::Buffer buffer)
+{
+    const vk::BufferDeviceAddressInfo address_info {.buffer = buffer};
+    return m_device->getBufferAddress(address_info);
+}
+
+void Vulkan_renderer::create_blas()
+{
+    const auto vertex_buffer_address =
+        get_buffer_device_address(m_vertex_buffer.get());
+    const auto index_buffer_address =
+        get_buffer_device_address(m_index_buffer.get());
+
+    const vk::AccelerationStructureGeometryTrianglesDataKHR triangles {
+        .vertexFormat = vk::Format::eR32G32B32Sfloat,
+        .vertexData = {.deviceAddress = vertex_buffer_address},
+        .vertexStride = 3 * sizeof(float),
+        .maxVertex = m_num_vertices - 1,
+        .indexType = vk::IndexType::eUint32,
+        .indexData = {.deviceAddress = index_buffer_address}};
+
+    const vk::AccelerationStructureGeometryKHR geometry {
+        .geometryType = vk::GeometryTypeKHR::eTriangles,
+        .geometry = {.triangles = triangles},
+        .flags = vk::GeometryFlagBitsKHR::eOpaque};
+
+    const vk::AccelerationStructureBuildRangeInfoKHR build_range_info {
+        .primitiveCount = m_num_indices / 3,
+        .primitiveOffset = 0,
+        .firstVertex = 0};
+
+    vk::AccelerationStructureBuildGeometryInfoKHR build_geometry_info {
+        .type = vk::AccelerationStructureTypeKHR::eBottomLevel,
+        .flags = vk::BuildAccelerationStructureFlagBitsKHR ::ePreferFastTrace,
+        .mode = vk::BuildAccelerationStructureModeKHR::eBuild,
+        .geometryCount = 1,
+        .pGeometries = &geometry};
+
+    const auto build_sizes_info =
+        m_device->getAccelerationStructureBuildSizesKHR(
+            vk::AccelerationStructureBuildTypeKHR::eDevice,
+            build_geometry_info,
+            build_range_info.primitiveCount);
+
+    const vk::BufferCreateInfo scratch_buffer_create_info {
+        .size = build_sizes_info.buildScratchSize,
+        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                 vk::BufferUsageFlagBits::eStorageBuffer,
+        .sharingMode = vk::SharingMode::eExclusive};
+
+    VmaAllocationCreateInfo scratch_allocation_create_info {};
+    scratch_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    const Unique_buffer scratch_buffer(m_allocator.get(),
+                                       scratch_buffer_create_info,
+                                       scratch_allocation_create_info,
+                                       nullptr);
+
+    const auto scratch_buffer_address =
+        get_buffer_device_address(scratch_buffer.get());
+
+    const auto command_buffer = begin_one_time_submit_command_buffer();
+
+    const vk::BufferCreateInfo as_buffer_create_info {
+        .size = build_sizes_info.accelerationStructureSize,
+        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                 vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR,
+        .sharingMode = vk::SharingMode::eExclusive};
+
+    VmaAllocationCreateInfo as_allocation_create_info {};
+    scratch_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    const Unique_buffer as_buffer(m_allocator.get(),
+                                  as_buffer_create_info,
+                                  as_allocation_create_info,
+                                  nullptr);
+
+    const vk::AccelerationStructureCreateInfoKHR
+        acceleration_structure_create_info {
+            .buffer = as_buffer.get(),
+            .size = build_sizes_info.accelerationStructureSize,
+            .type = vk::AccelerationStructureTypeKHR::eBottomLevel};
+
+    const auto acceleration_structure =
+        m_device->createAccelerationStructureKHRUnique(
+            acceleration_structure_create_info);
+
+    build_geometry_info.dstAccelerationStructure = acceleration_structure.get();
+    build_geometry_info.scratchData.deviceAddress = scratch_buffer_address;
+
+    command_buffer.buildAccelerationStructuresKHR(build_geometry_info,
+                                                  &build_range_info);
+
+    end_one_time_submit_command_buffer(command_buffer);
+}
+
+void Vulkan_renderer::create_tlas()
+{
 }

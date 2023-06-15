@@ -26,7 +26,7 @@ class Unique_allocator
 public:
     constexpr Unique_allocator() noexcept = default;
 
-    explicit Unique_allocator(VmaAllocator allocator) noexcept;
+    explicit Unique_allocator(const VmaAllocatorCreateInfo &create_info);
 
     ~Unique_allocator() noexcept;
 
@@ -42,7 +42,64 @@ public:
     }
 
 private:
-    VmaAllocator m_allocator {VK_NULL_HANDLE};
+    VmaAllocator m_allocator {};
+};
+
+class Unique_buffer
+{
+public:
+    constexpr Unique_buffer() noexcept = default;
+
+    Unique_buffer(VmaAllocator allocator,
+                  const vk::BufferCreateInfo &buffer_create_info,
+                  const VmaAllocationCreateInfo &allocation_create_info,
+                  VmaAllocationInfo *allocation_info);
+
+    ~Unique_buffer() noexcept;
+
+    Unique_buffer(Unique_buffer &&rhs) noexcept;
+    Unique_buffer &operator=(Unique_buffer &&rhs) noexcept;
+
+    Unique_buffer(const Unique_buffer &) = delete;
+    Unique_buffer &operator=(const Unique_buffer &) = delete;
+
+    [[nodiscard]] constexpr const vk::Buffer &get() const noexcept
+    {
+        return m_buffer;
+    }
+
+private:
+    vk::Buffer m_buffer {};
+    VmaAllocation m_allocation {};
+    VmaAllocator m_allocator {};
+};
+
+class Unique_image
+{
+public:
+    constexpr Unique_image() noexcept = default;
+
+    Unique_image(VmaAllocator allocator,
+                 const vk::ImageCreateInfo &image_create_info,
+                 const VmaAllocationCreateInfo &allocation_create_info);
+
+    ~Unique_image() noexcept;
+
+    Unique_image(Unique_image &&rhs) noexcept;
+    Unique_image &operator=(Unique_image &&rhs) noexcept;
+
+    Unique_image(const Unique_image &) = delete;
+    Unique_image &operator=(const Unique_image &) = delete;
+
+    [[nodiscard]] constexpr const vk::Image &get() const noexcept
+    {
+        return m_image;
+    }
+
+private:
+    vk::Image m_image {};
+    VmaAllocation m_allocation {};
+    VmaAllocator m_allocator {};
 };
 
 class Unique_allocation
@@ -67,8 +124,8 @@ public:
     }
 
 private:
-    VmaAllocation m_allocation {VK_NULL_HANDLE};
-    VmaAllocator m_allocator {VK_NULL_HANDLE};
+    VmaAllocation m_allocation {};
+    VmaAllocator m_allocator {};
 };
 
 struct Queue_family_indices
@@ -96,10 +153,12 @@ public:
     Vulkan_renderer &operator=(const Vulkan_renderer &) = delete;
     Vulkan_renderer &operator=(Vulkan_renderer &&) noexcept = default;
 
-    [[nodiscard]] vk::DescriptorSet get_render_target_descriptor_set();
+    [[nodiscard]] vk::DescriptorSet get_final_render_descriptor_set();
     [[nodiscard]] std::array<VmaBudget, VK_MAX_MEMORY_HEAPS> get_heap_budgets();
     void draw_frame(std::uint32_t rng_seed);
     void resize_framebuffer();
+    void resize_render_target(std::uint32_t render_width,
+                              std::uint32_t render_height);
     void store_to_png(const char *file_name);
 
 private:
@@ -107,6 +166,8 @@ private:
     void create_surface();
     void select_physical_device(std::uint32_t device_extension_count,
                                 const char *const *device_extension_names);
+    [[nodiscard]] Queue_family_indices
+    get_queue_family_indices(vk::PhysicalDevice physical_device);
     void create_device(std::uint32_t device_extension_count,
                        const char *const *device_extension_names);
     void create_allocator(std::uint32_t api_version);
@@ -120,9 +181,11 @@ private:
     void create_vertex_buffer(const std::vector<float> &vertices);
     void create_index_buffer(const std::vector<std::uint32_t> &indices);
     void create_geometry_buffers();
-    void create_descriptor_set_layouts();
+    void create_descriptor_set_layout();
+    void create_final_render_descriptor_set_layout();
     void create_descriptor_pool();
-    void create_descriptor_sets();
+    void create_descriptor_set();
+    void create_final_render_descriptor_set();
     void create_pipeline();
     void create_render_pass();
     void create_framebuffers();
@@ -130,6 +193,10 @@ private:
     void create_synchronization_objects();
     void init_imgui();
     void recreate_swapchain();
+    [[nodiscard]] vk::DeviceAddress
+    get_buffer_device_address(vk::Buffer buffer);
+    void create_blas();
+    void create_tlas();
 
     struct GLFWwindow *m_window {};
 
@@ -161,32 +228,33 @@ private:
 
     vk::UniqueCommandPool m_command_pool {};
 
-    std::uint32_t m_storage_image_width {};
-    std::uint32_t m_storage_image_height {};
-    vk::UniqueImage m_storage_image {};
-    Unique_allocation m_storage_image_allocation {};
+    std::uint32_t m_render_width {};
+    std::uint32_t m_render_height {};
+
+    Unique_image m_storage_image {};
     vk::UniqueImageView m_storage_image_view {};
 
-    vk::UniqueImage m_render_target_image {};
-    Unique_allocation m_render_target_allocation {};
+    Unique_image m_render_target_image {};
     vk::UniqueImageView m_render_target_image_view {};
     vk::UniqueSampler m_render_target_sampler {};
 
+    std::uint32_t m_num_vertices {};
     vk::DeviceSize m_vertex_buffer_size {};
-    vk::UniqueBuffer m_vertex_buffer {};
-    Unique_allocation m_vertex_buffer_allocation {};
+    Unique_buffer m_vertex_buffer {};
 
+    std::uint32_t m_num_indices {};
     vk::DeviceSize m_index_buffer_size {};
-    vk::UniqueBuffer m_index_buffer {};
-    Unique_allocation m_index_buffer_allocation {};
+    Unique_buffer m_index_buffer {};
 
-    vk::UniqueDescriptorSetLayout m_storage_image_descriptor_set_layout {};
-    vk::UniqueDescriptorSetLayout m_render_target_descriptor_set_layout {};
+    vk::UniqueDescriptorSetLayout m_descriptor_set_layout {};
+
+    vk::UniqueDescriptorSetLayout m_final_render_descriptor_set_layout {};
 
     vk::UniqueDescriptorPool m_descriptor_pool {};
 
-    vk::DescriptorSet m_storage_image_descriptor_set {};
-    vk::DescriptorSet m_render_target_descriptor_set {};
+    vk::DescriptorSet m_descriptor_set {};
+
+    vk::DescriptorSet m_final_render_descriptor_set {};
 
     vk::UniquePipelineLayout m_compute_pipeline_layout {};
     vk::UniquePipeline m_compute_pipeline {};
@@ -207,6 +275,8 @@ private:
     std::uint32_t m_current_frame {};
 
     bool m_framebuffer_resized {};
+
+    vk::UniqueAccelerationStructureKHR m_acceleration_structure {};
 };
 
 #endif // VULKAN_RENDERER_HPP
