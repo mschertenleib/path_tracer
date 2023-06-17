@@ -130,7 +130,7 @@ private:
 
 struct Queue_family_indices
 {
-    std::uint32_t graphics_compute;
+    std::uint32_t graphics;
     std::uint32_t present;
 };
 
@@ -181,23 +181,26 @@ private:
     void create_vertex_buffer(const std::vector<float> &vertices);
     void create_index_buffer(const std::vector<std::uint32_t> &indices);
     void create_geometry_buffers();
+    [[nodiscard]] vk::DeviceAddress get_device_address(vk::Buffer buffer);
+    [[nodiscard]] vk::DeviceAddress
+    get_device_address(vk::AccelerationStructureKHR acceleration_structure);
+    void create_blas();
+    void create_tlas();
     void create_descriptor_set_layout();
     void create_final_render_descriptor_set_layout();
     void create_descriptor_pool();
     void create_descriptor_set();
     void create_final_render_descriptor_set();
-    void create_pipeline();
+    [[nodiscard]] vk::UniqueShaderModule
+    create_shader_module(const char *file_name);
+    void create_ray_tracing_pipeline();
+    void create_shader_binding_table();
     void create_render_pass();
     void create_framebuffers();
     void create_command_buffers();
     void create_synchronization_objects();
     void init_imgui();
     void recreate_swapchain();
-    [[nodiscard]] vk::DeviceAddress get_device_address(vk::Buffer buffer);
-    [[nodiscard]] vk::DeviceAddress
-    get_device_address(vk::AccelerationStructureKHR acceleration_structure);
-    void create_blas();
-    void create_tlas();
 
     struct GLFWwindow *m_window {};
 
@@ -212,12 +215,14 @@ private:
         std::numeric_limits<std::uint32_t>::max(),
         std::numeric_limits<std::uint32_t>::max()};
     vk::PhysicalDevice m_physical_device {};
+    vk::PhysicalDeviceRayTracingPipelinePropertiesKHR
+        m_ray_tracing_properties {};
 
     vk::UniqueDevice m_device {};
 
     Unique_allocator m_allocator {};
 
-    vk::Queue m_graphics_compute_queue {};
+    vk::Queue m_graphics_queue {};
     vk::Queue m_present_queue {};
 
     vk::Format m_swapchain_format {vk::Format::eUndefined};
@@ -247,6 +252,9 @@ private:
     vk::DeviceSize m_index_buffer_size {};
     Unique_buffer m_index_buffer {};
 
+    vk::UniqueAccelerationStructureKHR m_blas {};
+    vk::UniqueAccelerationStructureKHR m_tlas {};
+
     vk::UniqueDescriptorSetLayout m_descriptor_set_layout {};
 
     vk::UniqueDescriptorSetLayout m_final_render_descriptor_set_layout {};
@@ -257,8 +265,15 @@ private:
 
     vk::DescriptorSet m_final_render_descriptor_set {};
 
-    vk::UniquePipelineLayout m_compute_pipeline_layout {};
-    vk::UniquePipeline m_compute_pipeline {};
+    std::vector<vk::RayTracingShaderGroupCreateInfoKHR>
+        m_ray_tracing_shader_groups {};
+    vk::UniquePipelineLayout m_ray_tracing_pipeline_layout {};
+    vk::UniquePipeline m_ray_tracing_pipeline {};
+    Unique_buffer m_sbt_buffer;
+    vk::StridedDeviceAddressRegionKHR m_rgen_region {};
+    vk::StridedDeviceAddressRegionKHR m_miss_region {};
+    vk::StridedDeviceAddressRegionKHR m_hit_region {};
+    vk::StridedDeviceAddressRegionKHR m_call_region {};
 
     vk::UniqueRenderPass m_render_pass {};
 
@@ -276,9 +291,6 @@ private:
     std::uint32_t m_current_frame {};
 
     bool m_framebuffer_resized {};
-
-    vk::UniqueAccelerationStructureKHR m_blas {};
-    vk::UniqueAccelerationStructureKHR m_tlas {};
 };
 
 #endif // VULKAN_RENDERER_HPP

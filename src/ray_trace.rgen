@@ -1,22 +1,10 @@
-#version 450
+#version 460
 
-#extension GL_EXT_scalar_block_layout : require
-
-layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+#extension GL_EXT_ray_tracing : require
 
 layout(binding = 0, rgba32f) uniform image2D storage_image;
 
-//layout(binding = 1) uniform accelerationStructureEXT tlas;
-
-layout(binding = 2, scalar) buffer Vertices
-{
-    vec3 vertices[];
-};
-
-layout(binding = 3, scalar) buffer Indices
-{
-    uint indices[];
-};
+layout(binding = 1) uniform accelerationStructureEXT tlas;
 
 layout(push_constant) uniform Push_constants
 {
@@ -45,15 +33,14 @@ void main()
 {
     const uvec2 image_size = imageSize(storage_image);
 
-    if (gl_GlobalInvocationID.x >= image_size.x ||
-    gl_GlobalInvocationID.y >= image_size.y)
+    if (gl_LaunchIDEXT.x >= image_size.x || gl_LaunchIDEXT.y >= image_size.y)
     {
         return;
     }
 
-    const uint pixel_index = gl_GlobalInvocationID.y * image_size.x + gl_GlobalInvocationID.x;
+    const uint pixel_index = gl_LaunchIDEXT.y * image_size.x + gl_LaunchIDEXT.x;
     uint rng_state = hash(rng_seed + pixel_index);
     const vec4 color = vec4(random(rng_state), random(rng_state), random(rng_state), 1.0);
 
-    imageStore(storage_image, ivec2(gl_GlobalInvocationID.xy), color);
+    imageStore(storage_image, ivec2(gl_LaunchIDEXT.xy), color);
 }

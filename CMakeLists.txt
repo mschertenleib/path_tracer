@@ -97,13 +97,13 @@ target_link_libraries(path_tracer PRIVATE
         stb_image
         tiny_obj_loader)
 
-set(SHADERS render.comp)
+set(SHADERS ray_trace.rgen ray_trace.rmiss ray_trace.rchit)
 foreach (SHADER IN LISTS SHADERS)
     set(SRC_SHADER ${CMAKE_SOURCE_DIR}/src/${SHADER})
     set(SPV_SHADER ${CMAKE_BINARY_DIR}/${SHADER}.spv)
     add_custom_command(
             OUTPUT ${SPV_SHADER}
-            COMMAND ${Vulkan_GLSLC_EXECUTABLE} -O ${SRC_SHADER} -o ${SPV_SHADER}
+            COMMAND ${Vulkan_GLSLC_EXECUTABLE} --target-env=vulkan1.3 -O ${SRC_SHADER} -o ${SPV_SHADER}
             DEPENDS ${SRC_SHADER}
             COMMENT "Compiling ${SHADER}")
     list(APPEND SPV_SHADERS ${SPV_SHADER})
