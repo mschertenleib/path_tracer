@@ -193,8 +193,9 @@ private:
     void create_synchronization_objects();
     void init_imgui();
     void recreate_swapchain();
+    [[nodiscard]] vk::DeviceAddress get_device_address(vk::Buffer buffer);
     [[nodiscard]] vk::DeviceAddress
-    get_buffer_device_address(vk::Buffer buffer);
+    get_device_address(vk::AccelerationStructureKHR acceleration_structure);
     void create_blas();
     void create_tlas();
 
@@ -276,7 +277,8 @@ private:
 
     bool m_framebuffer_resized {};
 
-    vk::UniqueAccelerationStructureKHR m_acceleration_structure {};
+    vk::UniqueAccelerationStructureKHR m_blas {};
+    vk::UniqueAccelerationStructureKHR m_tlas {};
 };
 
 #endif // VULKAN_RENDERER_HPP

@@ -1679,19 +1679,25 @@ void Vulkan_renderer::recreate_swapchain()
     create_framebuffers();
 }
 
-[[nodiscard]] vk::DeviceAddress
-Vulkan_renderer::get_buffer_device_address(vk::Buffer buffer)
+vk::DeviceAddress Vulkan_renderer::get_device_address(vk::Buffer buffer)
 {
     const vk::BufferDeviceAddressInfo address_info {.buffer = buffer};
     return m_device->getBufferAddress(address_info);
 }
 
+vk::DeviceAddress Vulkan_renderer::get_device_address(
+    vk::AccelerationStructureKHR acceleration_structure)
+{
+    const vk::AccelerationStructureDeviceAddressInfoKHR address_info {
+        .accelerationStructure = acceleration_structure};
+    return m_device->getAccelerationStructureAddressKHR(address_info);
+}
+
 void Vulkan_renderer::create_blas()
 {
     const auto vertex_buffer_address =
-        get_buffer_device_address(m_vertex_buffer.get());
-    const auto index_buffer_address =
-        get_buffer_device_address(m_index_buffer.get());
+        get_device_address(m_vertex_buffer.get());
+    const auto index_buffer_address = get_device_address(m_index_buffer.get());
 
     const vk::AccelerationStructureGeometryTrianglesDataKHR triangles {
         .vertexFormat = vk::Format::eR32G32B32Sfloat,
@@ -1739,35 +1745,36 @@ void Vulkan_renderer::create_blas()
                                        nullptr);
 
     const auto scratch_buffer_address =
-        get_buffer_device_address(scratch_buffer.get());
+        get_device_address(scratch_buffer.get());
 
     const auto command_buffer = begin_one_time_submit_command_buffer();
 
-    const vk::BufferCreateInfo as_buffer_create_info {
+    const vk::BufferCreateInfo acceleration_structure_buffer_create_info {
         .size = build_sizes_info.accelerationStructureSize,
         .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
                  vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR,
         .sharingMode = vk::SharingMode::eExclusive};
 
-    VmaAllocationCreateInfo as_allocation_create_info {};
-    scratch_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    VmaAllocationCreateInfo acceleration_structure_allocation_create_info {};
+    acceleration_structure_allocation_create_info.usage =
+        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    const Unique_buffer as_buffer(m_allocator.get(),
-                                  as_buffer_create_info,
-                                  as_allocation_create_info,
-                                  nullptr);
+    const Unique_buffer acceleration_structure_buffer(
+        m_allocator.get(),
+        acceleration_structure_buffer_create_info,
+        acceleration_structure_allocation_create_info,
+        nullptr);
 
     const vk::AccelerationStructureCreateInfoKHR
         acceleration_structure_create_info {
-            .buffer = as_buffer.get(),
+            .buffer = acceleration_structure_buffer.get(),
             .size = build_sizes_info.accelerationStructureSize,
             .type = vk::AccelerationStructureTypeKHR::eBottomLevel};
 
-    const auto acceleration_structure =
-        m_device->createAccelerationStructureKHRUnique(
-            acceleration_structure_create_info);
+    m_blas = m_device->createAccelerationStructureKHRUnique(
+        acceleration_structure_create_info);
 
-    build_geometry_info.dstAccelerationStructure = acceleration_structure.get();
+    build_geometry_info.dstAccelerationStructure = m_blas.get();
     build_geometry_info.scratchData.deviceAddress = scratch_buffer_address;
 
     command_buffer.buildAccelerationStructuresKHR(build_geometry_info,
@@ -1778,4 +1785,153 @@ void Vulkan_renderer::create_blas()
 
 void Vulkan_renderer::create_tlas()
 {
+    vk::TransformMatrixKHR transform {};
+    transform.matrix[0][0] = 1.0f;
+    transform.matrix[1][1] = 1.0f;
+    transform.matrix[2][2] = 1.0f;
+
+    const vk::AccelerationStructureInstanceKHR tlas {
+        .transform = transform,
+        .instanceCustomIndex = 0,
+        .mask = 0xFF,
+        .instanceShaderBindingTableRecordOffset = 0,
+        .flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
+        .accelerationStructureReference = get_device_address(m_blas.get())};
+
+    constexpr vk::BufferCreateInfo staging_buffer_create_info {
+        .size = sizeof(vk::AccelerationStructureInstanceKHR),
+        .usage = vk::BufferUsageFlagBits::eTransferSrc,
+        .sharingMode = vk::SharingMode::eExclusive};
+
+    VmaAllocationCreateInfo staging_buffer_allocation_create_info {};
+    staging_buffer_allocation_create_info.flags =
+        VMA_ALLOCATION_CREATE_MAPPED_BIT |
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+    staging_buffer_allocation_create_info.usage =
+        VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+
+    VmaAllocationInfo staging_buffer_allocation_info {};
+    const Unique_buffer staging_buffer(m_allocator.get(),
+                                       staging_buffer_create_info,
+                                       staging_buffer_allocation_create_info,
+                                       &staging_buffer_allocation_info);
+
+    std::memcpy(staging_buffer_allocation_info.pMappedData,
+                &tlas,
+                sizeof(vk::AccelerationStructureInstanceKHR));
+
+    constexpr vk::BufferCreateInfo instance_buffer_create_info {
+        .size = sizeof(vk::AccelerationStructureInstanceKHR),
+        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                 vk::BufferUsageFlagBits::
+                     eAccelerationStructureBuildInputReadOnlyKHR |
+                 vk::BufferUsageFlagBits::eTransferDst,
+        .sharingMode = vk::SharingMode::eExclusive};
+
+    VmaAllocationCreateInfo instance_allocation_create_info {};
+    instance_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    const Unique_buffer instance_buffer(m_allocator.get(),
+                                        instance_buffer_create_info,
+                                        instance_allocation_create_info,
+                                        nullptr);
+
+    const auto command_buffer = begin_one_time_submit_command_buffer();
+
+    constexpr vk::BufferCopy region {
+        .srcOffset = 0,
+        .dstOffset = 0,
+        .size = sizeof(vk::AccelerationStructureInstanceKHR)};
+
+    command_buffer.copyBuffer(
+        staging_buffer.get(), instance_buffer.get(), region);
+
+    constexpr vk::MemoryBarrier barrier {
+        .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+        .dstAccessMask = vk::AccessFlagBits::eAccelerationStructureWriteKHR};
+
+    command_buffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+        {},
+        barrier,
+        {},
+        {});
+
+    const vk::AccelerationStructureGeometryInstancesDataKHR
+        geometry_instances_data {.data = {.deviceAddress = get_device_address(
+                                              instance_buffer.get())}};
+
+    const vk::AccelerationStructureGeometryKHR geometry {
+        .geometryType = vk::GeometryTypeKHR::eInstances,
+        .geometry = {.instances = geometry_instances_data}};
+
+    vk::AccelerationStructureBuildGeometryInfoKHR build_geometry_info {
+        .type = vk::AccelerationStructureTypeKHR::eTopLevel,
+        .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace,
+        .mode = vk::BuildAccelerationStructureModeKHR::eBuild,
+        .geometryCount = 1,
+        .pGeometries = &geometry};
+
+    const auto build_sizes_info =
+        m_device->getAccelerationStructureBuildSizesKHR(
+            vk::AccelerationStructureBuildTypeKHR::eDevice,
+            build_geometry_info,
+            1);
+
+    const vk::BufferCreateInfo acceleration_structure_buffer_create_info {
+        .size = build_sizes_info.accelerationStructureSize,
+        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                 vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR,
+        .sharingMode = vk::SharingMode::eExclusive};
+
+    VmaAllocationCreateInfo acceleration_structure_allocation_create_info {};
+    acceleration_structure_allocation_create_info.usage =
+        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    const Unique_buffer acceleration_structure_buffer(
+        m_allocator.get(),
+        acceleration_structure_buffer_create_info,
+        acceleration_structure_allocation_create_info,
+        nullptr);
+
+    const vk::AccelerationStructureCreateInfoKHR
+        acceleration_structure_create_info {
+            .buffer = acceleration_structure_buffer.get(),
+            .size = build_sizes_info.accelerationStructureSize,
+            .type = vk::AccelerationStructureTypeKHR::eTopLevel};
+
+    m_tlas = m_device->createAccelerationStructureKHRUnique(
+        acceleration_structure_create_info);
+
+    const vk::BufferCreateInfo scratch_buffer_create_info {
+        .size = build_sizes_info.buildScratchSize,
+        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                 vk::BufferUsageFlagBits::eStorageBuffer,
+        .sharingMode = vk::SharingMode::eExclusive};
+
+    VmaAllocationCreateInfo scratch_allocation_create_info {};
+    scratch_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    const Unique_buffer scratch_buffer(m_allocator.get(),
+                                       scratch_buffer_create_info,
+                                       scratch_allocation_create_info,
+                                       nullptr);
+
+    const auto scratch_buffer_address =
+        get_device_address(scratch_buffer.get());
+
+    build_geometry_info.dstAccelerationStructure = m_tlas.get();
+    build_geometry_info.scratchData.deviceAddress = scratch_buffer_address;
+
+    const vk::AccelerationStructureBuildRangeInfoKHR build_range_info {
+        .primitiveCount = 1,
+        .primitiveOffset = 0,
+        .firstVertex = 0,
+        .transformOffset = 0};
+
+    command_buffer.buildAccelerationStructuresKHR(build_geometry_info,
+                                                  &build_range_info);
+
+    end_one_time_submit_command_buffer(command_buffer);
 }
