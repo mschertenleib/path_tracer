@@ -78,8 +78,8 @@ int main()
             glfwGetFramebufferSize(
                 window, &framebuffer_width, &framebuffer_height);
 
-            constexpr std::uint32_t render_width {160};
-            constexpr std::uint32_t render_height {90};
+            constexpr std::uint32_t render_width {1600};
+            constexpr std::uint32_t render_height {900};
 
             Vulkan_renderer renderer(
                 window,

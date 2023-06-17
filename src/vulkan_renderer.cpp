@@ -785,6 +785,7 @@ void Vulkan_renderer::select_physical_device(
             continue;
         }
 
+        // FIXME: put these and the features in create_device in the same place
         const auto features = physical_device.getFeatures2<
             vk::PhysicalDeviceFeatures2,
             vk::PhysicalDeviceVulkan12Features,
@@ -872,6 +873,7 @@ void Vulkan_renderer::create_device(std::uint32_t device_extension_count,
                                              .accelerationStructure = VK_TRUE};
     vk::PhysicalDeviceVulkan12Features vulkan_1_2_features {
         .pNext = &acceleration_structure_features_khr,
+        .scalarBlockLayout = VK_TRUE,
         .bufferDeviceAddress = VK_TRUE};
     const vk::PhysicalDeviceFeatures2 features_2 {.pNext =
                                                       &vulkan_1_2_features};
