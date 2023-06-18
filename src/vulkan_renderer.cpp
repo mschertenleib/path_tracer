@@ -1187,43 +1187,61 @@ void Vulkan_renderer::create_render_target(std::uint32_t width,
     end_one_time_submit_command_buffer(command_buffer);
 }
 
-void Vulkan_renderer::create_vertex_buffer(const std::vector<float> &vertices)
+Unique_buffer Vulkan_renderer::create_buffer(vk::DeviceSize size,
+                                             vk::BufferUsageFlags usage)
 {
-    m_num_vertices = static_cast<std::uint32_t>(vertices.size() / 3);
-    m_vertex_buffer_size = vertices.size() * sizeof(float);
-
-    const vk::BufferCreateInfo staging_buffer_create_info {
-        .size = m_vertex_buffer_size,
-        .usage = vk::BufferUsageFlagBits::eTransferSrc,
-        .sharingMode = vk::SharingMode::eExclusive};
-
-    VmaAllocationCreateInfo staging_buffer_allocation_create_info {};
-    staging_buffer_allocation_create_info.flags =
-        VMA_ALLOCATION_CREATE_MAPPED_BIT |
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-    staging_buffer_allocation_create_info.usage =
-        VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-
-    VmaAllocationInfo staging_buffer_allocation_info {};
-    const Unique_buffer staging_buffer(m_allocator.get(),
-                                       staging_buffer_create_info,
-                                       staging_buffer_allocation_create_info,
-                                       &staging_buffer_allocation_info);
-
     const vk::BufferCreateInfo buffer_create_info {
-        .size = m_vertex_buffer_size,
-        .usage = vk::BufferUsageFlagBits::eStorageBuffer |
-                 vk::BufferUsageFlagBits::eTransferDst |
-                 vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                 vk::BufferUsageFlagBits::
-                     eAccelerationStructureBuildInputReadOnlyKHR,
+        .size = size,
+        .usage = usage,
         .sharingMode = vk::SharingMode::eExclusive};
 
     VmaAllocationCreateInfo allocation_create_info {};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    m_vertex_buffer = Unique_buffer(
-        m_allocator.get(), buffer_create_info, allocation_create_info, nullptr);
+    return {
+        m_allocator.get(), buffer_create_info, allocation_create_info, nullptr};
+}
+
+Unique_buffer
+Vulkan_renderer::create_buffer_mapped(vk::DeviceSize size,
+                                      vk::BufferUsageFlags usage,
+                                      VmaAllocationInfo *allocation_info)
+{
+    const vk::BufferCreateInfo buffer_create_info {
+        .size = size,
+        .usage = usage,
+        .sharingMode = vk::SharingMode::eExclusive};
+
+    VmaAllocationCreateInfo allocation_create_info {};
+    allocation_create_info.flags =
+        VMA_ALLOCATION_CREATE_MAPPED_BIT |
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+    allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+
+    return {m_allocator.get(),
+            buffer_create_info,
+            allocation_create_info,
+            allocation_info};
+}
+
+void Vulkan_renderer::create_vertex_buffer(const std::vector<float> &vertices)
+{
+    m_num_vertices = static_cast<std::uint32_t>(vertices.size() / 3);
+    m_vertex_buffer_size = vertices.size() * sizeof(float);
+
+    VmaAllocationInfo staging_buffer_allocation_info {};
+    const auto staging_buffer =
+        create_buffer_mapped(m_vertex_buffer_size,
+                             vk::BufferUsageFlagBits::eTransferSrc,
+                             &staging_buffer_allocation_info);
+
+    m_vertex_buffer =
+        create_buffer(m_vertex_buffer_size,
+                      vk::BufferUsageFlagBits::eStorageBuffer |
+                          vk::BufferUsageFlagBits::eTransferDst |
+                          vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                          vk::BufferUsageFlagBits::
+                              eAccelerationStructureBuildInputReadOnlyKHR);
 
     std::memcpy(staging_buffer_allocation_info.pMappedData,
                 vertices.data(),
@@ -1246,38 +1264,19 @@ void Vulkan_renderer::create_index_buffer(
     m_num_indices = static_cast<std::uint32_t>(indices.size());
     m_index_buffer_size = indices.size() * sizeof(float);
 
-    const vk::BufferCreateInfo staging_buffer_create_info {
-        .size = m_index_buffer_size,
-        .usage = vk::BufferUsageFlagBits::eTransferSrc,
-        .sharingMode = vk::SharingMode::eExclusive};
-
-    VmaAllocationCreateInfo staging_buffer_allocation_create_info {};
-    staging_buffer_allocation_create_info.flags =
-        VMA_ALLOCATION_CREATE_MAPPED_BIT |
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-    staging_buffer_allocation_create_info.usage =
-        VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-
     VmaAllocationInfo staging_buffer_allocation_info {};
-    const Unique_buffer staging_buffer(m_allocator.get(),
-                                       staging_buffer_create_info,
-                                       staging_buffer_allocation_create_info,
-                                       &staging_buffer_allocation_info);
+    const auto staging_buffer =
+        create_buffer_mapped(m_index_buffer_size,
+                             vk::BufferUsageFlagBits::eTransferSrc,
+                             &staging_buffer_allocation_info);
 
-    const vk::BufferCreateInfo buffer_create_info {
-        .size = m_index_buffer_size,
-        .usage = vk::BufferUsageFlagBits::eStorageBuffer |
-                 vk::BufferUsageFlagBits::eTransferDst |
-                 vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                 vk::BufferUsageFlagBits::
-                     eAccelerationStructureBuildInputReadOnlyKHR,
-        .sharingMode = vk::SharingMode::eExclusive};
-
-    VmaAllocationCreateInfo allocation_create_info {};
-    allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-    m_index_buffer = Unique_buffer(
-        m_allocator.get(), buffer_create_info, allocation_create_info, nullptr);
+    m_index_buffer =
+        create_buffer(m_index_buffer_size,
+                      vk::BufferUsageFlagBits::eStorageBuffer |
+                          vk::BufferUsageFlagBits::eTransferDst |
+                          vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                          vk::BufferUsageFlagBits::
+                              eAccelerationStructureBuildInputReadOnlyKHR);
 
     std::memcpy(staging_buffer_allocation_info.pMappedData,
                 indices.data(),
@@ -1315,7 +1314,7 @@ void Vulkan_renderer::create_geometry_buffers()
         indices[i] = static_cast<std::uint32_t>(obj_indices[i].vertex_index);
     }
 
-    create_vertex_buffer(reader.GetAttrib().GetVertices());
+    create_vertex_buffer(reader.GetAttrib().vertices);
     create_index_buffer(indices);
 }
 
@@ -1370,40 +1369,20 @@ void Vulkan_renderer::create_blas()
             build_geometry_info,
             build_range_info.primitiveCount);
 
-    const vk::BufferCreateInfo scratch_buffer_create_info {
-        .size = build_sizes_info.buildScratchSize,
-        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                 vk::BufferUsageFlagBits::eStorageBuffer,
-        .sharingMode = vk::SharingMode::eExclusive};
-
-    VmaAllocationCreateInfo scratch_allocation_create_info {};
-    scratch_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-    const Unique_buffer scratch_buffer(m_allocator.get(),
-                                       scratch_buffer_create_info,
-                                       scratch_allocation_create_info,
-                                       nullptr);
+    const auto scratch_buffer =
+        create_buffer(build_sizes_info.buildScratchSize,
+                      vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                          vk::BufferUsageFlagBits::eStorageBuffer);
 
     const auto scratch_buffer_address =
         get_device_address(scratch_buffer.get());
 
     const auto command_buffer = begin_one_time_submit_command_buffer();
 
-    const vk::BufferCreateInfo acceleration_structure_buffer_create_info {
-        .size = build_sizes_info.accelerationStructureSize,
-        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                 vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR,
-        .sharingMode = vk::SharingMode::eExclusive};
-
-    VmaAllocationCreateInfo acceleration_structure_allocation_create_info {};
-    acceleration_structure_allocation_create_info.usage =
-        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-    const Unique_buffer acceleration_structure_buffer(
-        m_allocator.get(),
-        acceleration_structure_buffer_create_info,
-        acceleration_structure_allocation_create_info,
-        nullptr);
+    const auto acceleration_structure_buffer = create_buffer(
+        build_sizes_info.accelerationStructureSize,
+        vk::BufferUsageFlagBits::eShaderDeviceAddress |
+            vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR);
 
     const vk::AccelerationStructureCreateInfoKHR
         acceleration_structure_create_info {
@@ -1438,43 +1417,22 @@ void Vulkan_renderer::create_tlas()
         .flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
         .accelerationStructureReference = get_device_address(m_blas.get())};
 
-    constexpr vk::BufferCreateInfo staging_buffer_create_info {
-        .size = sizeof(vk::AccelerationStructureInstanceKHR),
-        .usage = vk::BufferUsageFlagBits::eTransferSrc,
-        .sharingMode = vk::SharingMode::eExclusive};
-
-    VmaAllocationCreateInfo staging_buffer_allocation_create_info {};
-    staging_buffer_allocation_create_info.flags =
-        VMA_ALLOCATION_CREATE_MAPPED_BIT |
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-    staging_buffer_allocation_create_info.usage =
-        VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-
     VmaAllocationInfo staging_buffer_allocation_info {};
-    const Unique_buffer staging_buffer(m_allocator.get(),
-                                       staging_buffer_create_info,
-                                       staging_buffer_allocation_create_info,
-                                       &staging_buffer_allocation_info);
+    const auto staging_buffer =
+        create_buffer_mapped(sizeof(vk::AccelerationStructureInstanceKHR),
+                             vk::BufferUsageFlagBits::eTransferSrc,
+                             &staging_buffer_allocation_info);
 
     std::memcpy(staging_buffer_allocation_info.pMappedData,
                 &tlas,
                 sizeof(vk::AccelerationStructureInstanceKHR));
 
-    constexpr vk::BufferCreateInfo instance_buffer_create_info {
-        .size = sizeof(vk::AccelerationStructureInstanceKHR),
-        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                 vk::BufferUsageFlagBits::
-                     eAccelerationStructureBuildInputReadOnlyKHR |
-                 vk::BufferUsageFlagBits::eTransferDst,
-        .sharingMode = vk::SharingMode::eExclusive};
-
-    VmaAllocationCreateInfo instance_allocation_create_info {};
-    instance_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-    const Unique_buffer instance_buffer(m_allocator.get(),
-                                        instance_buffer_create_info,
-                                        instance_allocation_create_info,
-                                        nullptr);
+    const auto instance_buffer =
+        create_buffer(sizeof(vk::AccelerationStructureInstanceKHR),
+                      vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                          vk::BufferUsageFlagBits::
+                              eAccelerationStructureBuildInputReadOnlyKHR |
+                          vk::BufferUsageFlagBits::eTransferDst);
 
     const auto command_buffer = begin_one_time_submit_command_buffer();
 
@@ -1519,21 +1477,10 @@ void Vulkan_renderer::create_tlas()
             build_geometry_info,
             1);
 
-    const vk::BufferCreateInfo acceleration_structure_buffer_create_info {
-        .size = build_sizes_info.accelerationStructureSize,
-        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                 vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR,
-        .sharingMode = vk::SharingMode::eExclusive};
-
-    VmaAllocationCreateInfo acceleration_structure_allocation_create_info {};
-    acceleration_structure_allocation_create_info.usage =
-        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-    const Unique_buffer acceleration_structure_buffer(
-        m_allocator.get(),
-        acceleration_structure_buffer_create_info,
-        acceleration_structure_allocation_create_info,
-        nullptr);
+    const auto acceleration_structure_buffer = create_buffer(
+        build_sizes_info.accelerationStructureSize,
+        vk::BufferUsageFlagBits::eShaderDeviceAddress |
+            vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR);
 
     const vk::AccelerationStructureCreateInfoKHR
         acceleration_structure_create_info {
@@ -1544,19 +1491,10 @@ void Vulkan_renderer::create_tlas()
     m_tlas = m_device->createAccelerationStructureKHRUnique(
         acceleration_structure_create_info);
 
-    const vk::BufferCreateInfo scratch_buffer_create_info {
-        .size = build_sizes_info.buildScratchSize,
-        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                 vk::BufferUsageFlagBits::eStorageBuffer,
-        .sharingMode = vk::SharingMode::eExclusive};
-
-    VmaAllocationCreateInfo scratch_allocation_create_info {};
-    scratch_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-    const Unique_buffer scratch_buffer(m_allocator.get(),
-                                       scratch_buffer_create_info,
-                                       scratch_allocation_create_info,
-                                       nullptr);
+    const auto scratch_buffer =
+        create_buffer(build_sizes_info.buildScratchSize,
+                      vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                          vk::BufferUsageFlagBits::eStorageBuffer);
 
     const auto scratch_buffer_address =
         get_device_address(scratch_buffer.get());
@@ -1578,28 +1516,23 @@ void Vulkan_renderer::create_tlas()
 
 void Vulkan_renderer::create_descriptor_set_layout()
 {
-    // TODO: remove vk::ShaderStageFlagBits::eCompute
     constexpr vk::DescriptorSetLayoutBinding descriptor_set_layout_bindings[] {
         {.binding = 0,
          .descriptorType = vk::DescriptorType::eStorageImage,
          .descriptorCount = 1,
-         .stageFlags = vk::ShaderStageFlagBits::eCompute |
-                       vk::ShaderStageFlagBits::eRaygenKHR},
+         .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR},
         {.binding = 1,
          .descriptorType = vk::DescriptorType::eAccelerationStructureKHR,
          .descriptorCount = 1,
-         .stageFlags = vk::ShaderStageFlagBits::eCompute |
-                       vk::ShaderStageFlagBits::eRaygenKHR},
+         .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR},
         {.binding = 2,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
          .descriptorCount = 1,
-         .stageFlags = vk::ShaderStageFlagBits::eCompute |
-                       vk::ShaderStageFlagBits::eClosestHitKHR},
+         .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR},
         {.binding = 3,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
          .descriptorCount = 1,
-         .stageFlags = vk::ShaderStageFlagBits::eCompute |
-                       vk::ShaderStageFlagBits::eClosestHitKHR}};
+         .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR}};
 
     const vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
         .bindingCount = static_cast<std::uint32_t>(
@@ -1856,24 +1789,13 @@ void Vulkan_renderer::create_shader_binding_table()
     const auto sbt_size = m_rgen_region.size + m_miss_region.size +
                           m_hit_region.size + m_call_region.size;
 
-    const vk::BufferCreateInfo sbt_buffer_create_info {
-        .size = sbt_size,
-        .usage = vk::BufferUsageFlagBits::eTransferSrc |
-                 vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                 vk::BufferUsageFlagBits::eShaderBindingTableKHR,
-        .sharingMode = vk::SharingMode::eExclusive};
-
-    VmaAllocationCreateInfo sbt_allocation_create_info {};
-    sbt_allocation_create_info.flags =
-        VMA_ALLOCATION_CREATE_MAPPED_BIT |
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-    sbt_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-
     VmaAllocationInfo sbt_allocation_info {};
-    m_sbt_buffer = Unique_buffer(m_allocator.get(),
-                                 sbt_buffer_create_info,
-                                 sbt_allocation_create_info,
-                                 &sbt_allocation_info);
+    m_sbt_buffer = create_buffer_mapped(
+        sbt_size,
+        vk::BufferUsageFlagBits::eTransferSrc |
+            vk::BufferUsageFlagBits::eShaderDeviceAddress |
+            vk::BufferUsageFlagBits::eShaderBindingTableKHR,
+        &sbt_allocation_info);
 
     const auto sbt_address = get_device_address(m_sbt_buffer.get());
     m_rgen_region.deviceAddress = sbt_address;

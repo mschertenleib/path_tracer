@@ -178,6 +178,12 @@ private:
     void end_one_time_submit_command_buffer(vk::CommandBuffer command_buffer);
     void create_storage_image(std::uint32_t width, std::uint32_t height);
     void create_render_target(std::uint32_t width, std::uint32_t height);
+    [[nodiscard]] Unique_buffer create_buffer(vk::DeviceSize size,
+                                              vk::BufferUsageFlags usage);
+    [[nodiscard]] Unique_buffer
+    create_buffer_mapped(vk::DeviceSize size,
+                         vk::BufferUsageFlags usage,
+                         VmaAllocationInfo *allocation_info);
     void create_vertex_buffer(const std::vector<float> &vertices);
     void create_index_buffer(const std::vector<std::uint32_t> &indices);
     void create_geometry_buffers();
