@@ -272,7 +272,9 @@ Vulkan_renderer::Vulkan_renderer(GLFWwindow *window,
                                  std::uint32_t framebuffer_height,
                                  std::uint32_t render_width,
                                  std::uint32_t render_height)
-    : m_window {window}
+    : m_window {window},
+      m_framebuffer_width {framebuffer_width},
+      m_framebuffer_height {framebuffer_height}
 {
     constexpr std::uint32_t api_version {VK_API_VERSION_1_3};
 
@@ -314,11 +316,14 @@ Vulkan_renderer::Vulkan_renderer(GLFWwindow *window,
 
 Vulkan_renderer::~Vulkan_renderer()
 {
-    // This could throw, but at this point there is nothing we can do about it,
-    // so let the runtime call std::terminate()
-    m_device->waitIdle();
+    if (m_device)
+    {
+        // This could throw, but at this point there is nothing we can do about
+        // it, so let the runtime call std::terminate()
+        m_device->waitIdle();
 
-    ImGui_ImplVulkan_Shutdown();
+        ImGui_ImplVulkan_Shutdown();
+    }
 }
 
 vk::DescriptorSet Vulkan_renderer::get_final_render_descriptor_set()
@@ -532,19 +537,22 @@ void Vulkan_renderer::draw_frame(std::uint32_t rng_seed)
     m_current_frame = (m_current_frame + 1) % s_frames_in_flight;
 }
 
-void Vulkan_renderer::resize_framebuffer()
+void Vulkan_renderer::resize_framebuffer(std::uint32_t width,
+                                         std::uint32_t height)
 {
     m_framebuffer_resized = true;
+    m_framebuffer_width = width;
+    m_framebuffer_height = height;
 }
 
-void Vulkan_renderer::resize_render_target(std::uint32_t render_width,
-                                           std::uint32_t render_height)
+void Vulkan_renderer::resize_render_target(std::uint32_t width,
+                                           std::uint32_t height)
 {
     m_render_target_sampler = {};
     m_render_target_image_view = {};
     m_render_target_image = {};
 
-    create_render_target(render_width, render_height);
+    create_render_target(width, height);
 }
 
 void Vulkan_renderer::store_to_png(const char *file_name)

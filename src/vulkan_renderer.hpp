@@ -156,9 +156,8 @@ public:
     [[nodiscard]] vk::DescriptorSet get_final_render_descriptor_set();
     [[nodiscard]] std::array<VmaBudget, VK_MAX_MEMORY_HEAPS> get_heap_budgets();
     void draw_frame(std::uint32_t rng_seed);
-    void resize_framebuffer();
-    void resize_render_target(std::uint32_t render_width,
-                              std::uint32_t render_height);
+    void resize_framebuffer(std::uint32_t width, std::uint32_t height);
+    void resize_render_target(std::uint32_t width, std::uint32_t height);
     void store_to_png(const char *file_name);
 
 private:
@@ -297,6 +296,8 @@ private:
     std::uint32_t m_current_frame {};
 
     bool m_framebuffer_resized {};
+    std::uint32_t m_framebuffer_width {};
+    std::uint32_t m_framebuffer_height {};
 };
 
 #endif // VULKAN_RENDERER_HPP

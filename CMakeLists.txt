@@ -85,6 +85,7 @@ target_include_directories(vk_mem_alloc PUBLIC
 
 add_executable(path_tracer
         src/main.cpp
+        src/application.cpp src/application.hpp
         src/vulkan_renderer.cpp src/vulkan_renderer.hpp)
 target_include_directories(path_tracer PRIVATE
         ${Vulkan_INCLUDE_DIRS})
