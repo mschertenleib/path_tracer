@@ -23,6 +23,10 @@ public:
         return m_window;
     }
 
+    [[nodiscard]] bool is_fullscreen();
+    void set_fullscreen();
+    void set_windowed();
+
 private:
     struct GLFWwindow *m_window {};
 };
@@ -41,6 +45,12 @@ public:
     void run();
 
 private:
+    static void glfw_key_callback(
+        struct GLFWwindow *window, int key, int scancode, int action, int mods);
+    static void glfw_framebuffer_size_callback(struct GLFWwindow *window,
+                                               int width,
+                                               int height);
+
     Unique_window m_window {};
     std::uint32_t m_render_width {};
     std::uint32_t m_render_height {};

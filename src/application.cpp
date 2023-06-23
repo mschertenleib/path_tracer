@@ -26,14 +26,6 @@ void glfw_error_callback(int error, const char *description)
     std::cerr << "GLFW error " << error << ": " << description << '\n';
 }
 
-void glfw_framebuffer_size_callback(GLFWwindow *window, int width, int height)
-{
-    const auto renderer =
-        static_cast<Vulkan_renderer *>(glfwGetWindowUserPointer(window));
-    renderer->resize_framebuffer(static_cast<std::uint32_t>(width),
-                                 static_cast<std::uint32_t>(height));
-}
-
 } // namespace
 
 Unique_window::Unique_window(int width, int height, const char *title)
@@ -106,6 +98,41 @@ Unique_window &Unique_window::operator=(Unique_window &&rhs) noexcept
     return *this;
 }
 
+bool Unique_window::is_fullscreen()
+{
+    return glfwGetWindowMonitor(m_window) != nullptr;
+}
+
+void Unique_window::set_fullscreen()
+{
+    // TODO: ideally use the current monitor, not the primary one
+    const auto monitor = glfwGetPrimaryMonitor();
+    const auto video_mode = glfwGetVideoMode(monitor);
+    glfwSetWindowMonitor(m_window,
+                         monitor,
+                         0,
+                         0,
+                         video_mode->width,
+                         video_mode->height,
+                         GLFW_DONT_CARE);
+}
+
+void Unique_window::set_windowed()
+{
+    // TODO: use previous windowed size, scale must be taken into account
+    const auto monitor = glfwGetPrimaryMonitor();
+    const auto video_mode = glfwGetVideoMode(monitor);
+    constexpr int width {1280};
+    constexpr int height {720};
+    glfwSetWindowMonitor(m_window,
+                         nullptr,
+                         (video_mode->width - width) / 2,
+                         (video_mode->height - height) / 2,
+                         width,
+                         height,
+                         GLFW_DONT_CARE);
+}
+
 Application::Application()
 {
     m_window = Unique_window(1280, 720, "Path Tracer");
@@ -124,7 +151,8 @@ Application::Application()
                                  m_render_width,
                                  m_render_height);
 
-    glfwSetWindowUserPointer(m_window.get(), &m_renderer);
+    glfwSetWindowUserPointer(m_window.get(), this);
+    glfwSetKeyCallback(m_window.get(), glfw_key_callback);
     glfwSetFramebufferSizeCallback(m_window.get(),
                                    glfw_framebuffer_size_callback);
 }
@@ -203,7 +231,10 @@ void Application::run()
                 }
             }
 
-            ImGui::InputText("##", input_text_buffer, sizeof(input_text_buffer));
+            ImGui::Text("Press [F] to toggle fullscreen");
+
+            ImGui::InputText(
+                "##", input_text_buffer, sizeof(input_text_buffer));
             ImGui::SameLine();
             if (ImGui::Button("Store to PNG"))
             {
@@ -220,5 +251,37 @@ void Application::run()
         ImGui::Render();
 
         m_renderer.draw_frame(rng_seed);
+    }
+}
+
+void Application::glfw_framebuffer_size_callback(GLFWwindow *window,
+                                                 int width,
+                                                 int height)
+{
+    const auto app =
+        static_cast<Application *>(glfwGetWindowUserPointer(window));
+    app->m_renderer.resize_framebuffer(static_cast<std::uint32_t>(width),
+                                       static_cast<std::uint32_t>(height));
+}
+
+void Application::glfw_key_callback(GLFWwindow *window,
+                                    int key,
+                                    [[maybe_unused]] int scancode,
+                                    int action,
+                                    [[maybe_unused]] int mods)
+
+{
+    if (action == GLFW_PRESS && key == GLFW_KEY_F)
+    {
+        const auto app =
+            static_cast<Application *>(glfwGetWindowUserPointer(window));
+        if (app->m_window.is_fullscreen())
+        {
+            app->m_window.set_windowed();
+        }
+        else
+        {
+            app->m_window.set_fullscreen();
+        }
     }
 }
