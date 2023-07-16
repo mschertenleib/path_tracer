@@ -178,15 +178,10 @@ private:
 
     vk::UniqueCommandPool m_command_pool {};
 
-    std::uint32_t m_render_width {};
-    std::uint32_t m_render_height {};
-
+    std::uint32_t m_width {};
+    std::uint32_t m_height {};
     Unique_image m_storage_image {};
     vk::UniqueImageView m_storage_image_view {};
-
-    Unique_image m_render_target_image {};
-    vk::UniqueImageView m_render_target_image_view {};
-    vk::UniqueSampler m_render_target_sampler {};
 
     std::uint32_t m_vertex_count {};
     vk::DeviceSize m_vertex_buffer_size {};

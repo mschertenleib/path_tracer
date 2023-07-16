@@ -10,7 +10,7 @@ int main()
         // FIXME: VK_ERROR_DEVICE_LOST depending on render size
         Vulkan_renderer renderer(1280, 720);
         renderer.render();
-        // renderer.store_to_png("image.png");
+        renderer.store_to_png("image.png");
     }
     catch (const std::exception &e)
     {

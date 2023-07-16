@@ -5,7 +5,6 @@
 #include "stb_image_write.h"
 
 #include <array>
-#include <cassert>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -232,7 +231,6 @@ Vulkan_renderer::Vulkan_renderer(std::uint32_t render_width,
     m_queue = m_device->getQueue(m_queue_family_index, 0);
     create_command_pool();
     create_storage_image(render_width, render_height);
-    create_render_target(render_width, render_height);
     create_geometry_buffers();
     create_blas();
     create_tlas();
@@ -269,8 +267,8 @@ void Vulkan_renderer::render()
                                 m_miss_region,
                                 m_hit_region,
                                 m_call_region,
-                                m_render_width,
-                                m_render_height,
+                                m_width,
+                                m_height,
                                 1);
 
     end_one_time_submit_command_buffer(command_buffer);
@@ -278,10 +276,30 @@ void Vulkan_renderer::render()
 
 void Vulkan_renderer::store_to_png(const char *file_name)
 {
+    constexpr auto format = vk::Format::eR8G8B8A8Srgb;
+
+    const vk::ImageCreateInfo image_create_info {
+        .imageType = vk::ImageType::e2D,
+        .format = format,
+        .extent = {m_width, m_height, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = vk::SampleCountFlagBits::e1,
+        .tiling = vk::ImageTiling::eOptimal,
+        .usage = vk::ImageUsageFlagBits::eTransferDst |
+                 vk::ImageUsageFlagBits::eTransferSrc,
+        .sharingMode = vk::SharingMode::eExclusive,
+        .initialLayout = vk::ImageLayout::eUndefined};
+
+    VmaAllocationCreateInfo image_allocation_create_info {};
+    image_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    const auto final_image = Unique_image(
+        m_allocator.get(), image_create_info, image_allocation_create_info);
+
     const vk::BufferCreateInfo staging_buffer_create_info {
-        .size = m_render_width * m_render_height * 4,
-        .usage = vk::BufferUsageFlagBits::eTransferDst,
-        .sharingMode = vk::SharingMode::eExclusive};
+        .size = m_width * m_height * 4,
+        .usage = vk::BufferUsageFlagBits::eTransferDst};
 
     VmaAllocationCreateInfo staging_buffer_allocation_create_info {};
     staging_buffer_allocation_create_info.flags =
@@ -296,69 +314,95 @@ void Vulkan_renderer::store_to_png(const char *file_name)
                                        staging_buffer_allocation_create_info,
                                        &staging_buffer_allocation_info);
 
-    const auto command_buffer = begin_one_time_submit_command_buffer();
+    {
+        const auto command_buffer = begin_one_time_submit_command_buffer();
 
-    vk::ImageMemoryBarrier image_memory_barrier {
-        .srcAccessMask = vk::AccessFlagBits::eShaderRead,
-        .dstAccessMask = vk::AccessFlagBits::eTransferRead,
-        .oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        .newLayout = vk::ImageLayout::eTransferSrcOptimal,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = m_render_target_image.get(),
-        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor,
-                             .baseMipLevel = 0,
-                             .levelCount = 1,
-                             .baseArrayLayer = 0,
-                             .layerCount = 1}};
+        constexpr vk::ImageSubresourceRange subresource_range {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1};
 
-    command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
-                                   vk::PipelineStageFlagBits::eTransfer,
-                                   {},
-                                   {},
-                                   {},
-                                   image_memory_barrier);
+        vk::ImageMemoryBarrier image_memory_barrier {
+            .srcAccessMask = vk::AccessFlagBits::eNone,
+            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::eTransferDstOptimal,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = final_image.get(),
+            .subresourceRange = subresource_range};
 
-    const vk::BufferImageCopy region {
-        .bufferOffset = 0,
-        .bufferImageHeight = m_render_height,
-        .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor,
-                             .mipLevel = 0,
-                             .baseArrayLayer = 0,
-                             .layerCount = 1},
-        .imageOffset = {0, 0, 0},
-        .imageExtent = {m_render_width, m_render_height, 1}};
+        command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                       vk::PipelineStageFlagBits::eTransfer,
+                                       {},
+                                       {},
+                                       {},
+                                       image_memory_barrier);
 
-    command_buffer.copyImageToBuffer(m_render_target_image.get(),
-                                     vk::ImageLayout::eTransferSrcOptimal,
-                                     staging_buffer.get(),
-                                     region);
+        constexpr vk::ImageSubresourceLayers subresource_layers {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1};
 
-    image_memory_barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
-    image_memory_barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-    image_memory_barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
-    image_memory_barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        const std::array offsets {
+            vk::Offset3D {0, 0, 0},
+            vk::Offset3D {static_cast<std::int32_t>(m_width),
+                          static_cast<std::int32_t>(m_height),
+                          1}};
 
-    command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                   vk::PipelineStageFlagBits::eFragmentShader,
-                                   {},
-                                   {},
-                                   {},
-                                   image_memory_barrier);
+        const vk::ImageBlit image_blit {.srcSubresource = subresource_layers,
+                                        .srcOffsets = offsets,
+                                        .dstSubresource = subresource_layers,
+                                        .dstOffsets = offsets};
 
-    end_one_time_submit_command_buffer(command_buffer);
+        command_buffer.blitImage(m_storage_image.get(),
+                                 vk::ImageLayout::eGeneral,
+                                 final_image.get(),
+                                 vk::ImageLayout::eTransferDstOptimal,
+                                 image_blit,
+                                 vk::Filter::eNearest);
+
+        image_memory_barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+        image_memory_barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+        image_memory_barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+        image_memory_barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+
+        command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                       vk::PipelineStageFlagBits::eTransfer,
+                                       {},
+                                       {},
+                                       {},
+                                       image_memory_barrier);
+
+        const vk::BufferImageCopy copy_region {
+            .bufferOffset = 0,
+            .bufferImageHeight = m_height,
+            .imageSubresource = subresource_layers,
+            .imageOffset = {0, 0, 0},
+            .imageExtent = {m_width, m_height, 1}};
+
+        command_buffer.copyImageToBuffer(final_image.get(),
+                                         vk::ImageLayout::eTransferSrcOptimal,
+                                         staging_buffer.get(),
+                                         copy_region);
+
+        end_one_time_submit_command_buffer(command_buffer);
+    }
 
     std::cout << "Writing image to \"" << file_name << "\"..." << std::flush;
     if (!stbi_write_png(file_name,
-                        static_cast<int>(m_render_width),
-                        static_cast<int>(m_render_height),
+                        static_cast<int>(m_width),
+                        static_cast<int>(m_height),
                         4,
                         staging_buffer_allocation_info.pMappedData,
-                        static_cast<int>(m_render_width * 4)))
+                        static_cast<int>(m_width * 4)))
     {
         throw std::runtime_error("Failed to write PNG image");
     }
-    std::cout << " Done\n";
+    std::cout << " Done" << std::endl;
 }
 
 void Vulkan_renderer::create_instance(std::uint32_t api_version)
@@ -463,26 +507,27 @@ void Vulkan_renderer::select_physical_device(
 
     for (const auto physical_device : physical_devices)
     {
+        // Graphics queue
         m_queue_family_index = get_queue_family_index(physical_device);
         if (m_queue_family_index == std::numeric_limits<std::uint32_t>::max())
         {
             continue;
         }
 
+        // Extensions
         const auto extension_properties =
             physical_device.enumerateDeviceExtensionProperties();
-
         bool all_extensions_supported {true};
         for (std::uint32_t i {}; i < device_extension_count; ++i)
         {
             const auto extension_name = device_extension_names[i];
-            if (std::none_of(
-                    extension_properties.begin(),
-                    extension_properties.end(),
-                    [extension_name](const VkExtensionProperties &properties) {
-                        return std::strcmp(properties.extensionName,
-                                           extension_name) == 0;
-                    }))
+            if (std::none_of(extension_properties.begin(),
+                             extension_properties.end(),
+                             [extension_name](
+                                 const vk::ExtensionProperties &properties) {
+                                 return std::strcmp(properties.extensionName,
+                                                    extension_name) == 0;
+                             }))
             {
                 all_extensions_supported = false;
                 break;
@@ -493,19 +538,29 @@ void Vulkan_renderer::select_physical_device(
             continue;
         }
 
+        // Features
         // FIXME: put these and the features in create_device in the same place
         const auto features = physical_device.getFeatures2<
             vk::PhysicalDeviceFeatures2,
             vk::PhysicalDeviceVulkan12Features,
             vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
             vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
-
         if (!features.get<vk::PhysicalDeviceVulkan12Features>()
                  .bufferDeviceAddress ||
             !features.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>()
                  .accelerationStructure ||
             !features.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>()
                  .rayTracingPipeline)
+        {
+            continue;
+        }
+
+        // Storage image format
+        const auto format_properties = physical_device.getFormatProperties(
+            vk::Format::eR32G32B32A32Sfloat);
+        if (!(format_properties.optimalTilingFeatures &
+              (vk::FormatFeatureFlagBits::eStorageImage |
+               vk::FormatFeatureFlagBits::eTransferSrc)))
         {
             continue;
         }
@@ -531,7 +586,8 @@ Vulkan_renderer::get_queue_family_index(vk::PhysicalDevice physical_device)
     for (std::uint32_t i {}; i < static_cast<std::uint32_t>(properties.size());
          ++i)
     {
-        if (properties[i].queueFlags & vk::QueueFlagBits::eGraphics)
+        // Note: vkCmdTraceRaysKHR are executed on compute queues
+        if (properties[i].queueFlags & vk::QueueFlagBits::eCompute)
         {
             return i;
         }
@@ -638,15 +694,15 @@ void Vulkan_renderer::end_one_time_submit_command_buffer(
 void Vulkan_renderer::create_storage_image(std::uint32_t width,
                                            std::uint32_t height)
 {
-    m_render_width = width;
-    m_render_height = height;
+    m_width = width;
+    m_height = height;
 
     constexpr auto format = vk::Format::eR32G32B32A32Sfloat;
 
     const vk::ImageCreateInfo image_create_info {
         .imageType = vk::ImageType::e2D,
         .format = format,
-        .extent = {width, height, 1},
+        .extent = {m_width, m_height, 1},
         .mipLevels = 1,
         .arrayLayers = 1,
         .samples = vk::SampleCountFlagBits::e1,
@@ -662,15 +718,18 @@ void Vulkan_renderer::create_storage_image(std::uint32_t width,
     m_storage_image = Unique_image(
         m_allocator.get(), image_create_info, allocation_create_info);
 
+    constexpr vk::ImageSubresourceRange subresource_range {
+        .aspectMask = vk::ImageAspectFlagBits::eColor,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1};
+
     const vk::ImageViewCreateInfo image_view_create_info {
         .image = m_storage_image.get(),
         .viewType = vk::ImageViewType::e2D,
         .format = format,
-        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor,
-                             .baseMipLevel = 0,
-                             .levelCount = 1,
-                             .baseArrayLayer = 0,
-                             .layerCount = 1}};
+        .subresourceRange = subresource_range};
 
     m_storage_image_view =
         m_device->createImageViewUnique(image_view_create_info);
@@ -679,106 +738,24 @@ void Vulkan_renderer::create_storage_image(std::uint32_t width,
 
     const vk::ImageMemoryBarrier image_memory_barrier {
         .srcAccessMask = vk::AccessFlagBits::eNone,
-        .dstAccessMask =
-            vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite,
+        .dstAccessMask = vk::AccessFlagBits::eShaderRead |
+                         vk::AccessFlagBits::eShaderWrite |
+                         vk::AccessFlagBits::eTransferRead,
         .oldLayout = vk::ImageLayout::eUndefined,
         .newLayout = vk::ImageLayout::eGeneral,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image = m_storage_image.get(),
-        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor,
-                             .baseMipLevel = 0,
-                             .levelCount = 1,
-                             .baseArrayLayer = 0,
-                             .layerCount = 1}};
+        .subresourceRange = subresource_range};
 
     command_buffer.pipelineBarrier(
         vk::PipelineStageFlagBits::eTopOfPipe,
-        vk::PipelineStageFlagBits::eRayTracingShaderKHR,
+        vk::PipelineStageFlagBits::eRayTracingShaderKHR |
+            vk::PipelineStageFlagBits::eTransfer,
         {},
         {},
         {},
         image_memory_barrier);
-
-    end_one_time_submit_command_buffer(command_buffer);
-}
-
-void Vulkan_renderer::create_render_target(std::uint32_t width,
-                                           std::uint32_t height)
-{
-    constexpr auto format = vk::Format::eR8G8B8A8Srgb;
-
-    const vk::ImageCreateInfo image_create_info {
-        .imageType = vk::ImageType::e2D,
-        .format = format,
-        .extent = {width, height, 1},
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = vk::SampleCountFlagBits::e1,
-        .tiling = vk::ImageTiling::eOptimal,
-        .usage = vk::ImageUsageFlagBits::eSampled |
-                 vk::ImageUsageFlagBits::eTransferDst |
-                 vk::ImageUsageFlagBits::eTransferSrc,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .initialLayout = vk::ImageLayout::eUndefined};
-
-    VmaAllocationCreateInfo allocation_create_info {};
-    allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-    m_render_target_image = Unique_image(
-        m_allocator.get(), image_create_info, allocation_create_info);
-
-    const vk::ImageViewCreateInfo image_view_create_info {
-        .image = m_render_target_image.get(),
-        .viewType = vk::ImageViewType::e2D,
-        .format = format,
-        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor,
-                             .baseMipLevel = 0,
-                             .levelCount = 1,
-                             .baseArrayLayer = 0,
-                             .layerCount = 1}};
-
-    m_render_target_image_view =
-        m_device->createImageViewUnique(image_view_create_info);
-
-    constexpr vk::SamplerCreateInfo sampler_create_info {
-        .magFilter = vk::Filter::eNearest,
-        .minFilter = vk::Filter::eNearest,
-        .mipmapMode = vk::SamplerMipmapMode::eNearest,
-        .addressModeU = vk::SamplerAddressMode::eRepeat,
-        .addressModeV = vk::SamplerAddressMode::eRepeat,
-        .addressModeW = vk::SamplerAddressMode::eRepeat,
-        .anisotropyEnable = VK_FALSE,
-        .compareEnable = VK_FALSE,
-        .borderColor = vk::BorderColor::eIntOpaqueBlack,
-        .unnormalizedCoordinates = VK_FALSE};
-
-    m_render_target_sampler =
-        m_device->createSamplerUnique(sampler_create_info);
-
-    const auto command_buffer = begin_one_time_submit_command_buffer();
-
-    const vk::ImageMemoryBarrier memory_barrier {
-        .srcAccessMask = vk::AccessFlagBits::eNone,
-        .dstAccessMask = vk::AccessFlagBits::eShaderRead,
-        .oldLayout = vk::ImageLayout::eUndefined,
-        .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = m_render_target_image.get(),
-        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor,
-                             .baseMipLevel = 0,
-                             .levelCount = 1,
-                             .baseArrayLayer = 0,
-                             .layerCount = 1}};
-
-    command_buffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTopOfPipe,
-        vk::PipelineStageFlagBits::eRayTracingShaderKHR,
-        {},
-        {},
-        {},
-        memory_barrier);
 
     end_one_time_submit_command_buffer(command_buffer);
 }
