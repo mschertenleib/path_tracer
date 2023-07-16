@@ -2,8 +2,6 @@
 
 A path tracer written in C++, using the Vulkan ray tracing extensions.
 
-To run this software, you need a GPU with support for the VK_KHR_ray_tracing_pipeline extension.
-
 ## Build
 
 Prerequisites:
@@ -36,8 +34,6 @@ cmake --build build
 
 ## External libraries
 
-- [GLFW](https://github.com/glfw/glfw)
-- [Dear ImGui](https://github.com/ocornut/imgui)
 - [stb](https://github.com/nothings/stb)
 - [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
 - [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader)

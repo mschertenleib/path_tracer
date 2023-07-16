@@ -46,31 +46,12 @@ endif ()
 find_package(Vulkan REQUIRED)
 
 
-set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-add_subdirectory(external/glfw)
-
-
-add_library(imgui STATIC
-        external/imgui/imgui.cpp external/imgui/imgui.h
-        external/imgui/imgui_internal.h
-        external/imgui/imgui_draw.cpp
-        external/imgui/imgui_tables.cpp
-        external/imgui/imgui_widgets.cpp
-        external/imgui/backends/imgui_impl_glfw.cpp
-        external/imgui/backends/imgui_impl_vulkan.cpp)
-target_include_directories(imgui
-        PRIVATE
-        ${Vulkan_INCLUDE_DIRS}
-        PUBLIC
-        external/imgui
-        external/imgui/backends)
-target_link_libraries(imgui PRIVATE glfw)
-
-
 add_library(stb_image STATIC src/stb_image.cpp)
 target_include_directories(stb_image PUBLIC external/stb)
+
+
+add_library(stb_image_write STATIC src/stb_image_write.cpp)
+target_include_directories(stb_image_write PUBLIC external/stb)
 
 
 add_library(tiny_obj_loader STATIC src/tiny_obj_loader.cpp)
@@ -85,17 +66,14 @@ target_include_directories(vk_mem_alloc PUBLIC
 
 add_executable(path_tracer
         src/main.cpp
-        src/application.cpp src/application.hpp
         src/vulkan_renderer.cpp src/vulkan_renderer.hpp)
-target_include_directories(path_tracer PRIVATE
-        ${Vulkan_INCLUDE_DIRS})
+target_include_directories(path_tracer PRIVATE ${Vulkan_INCLUDE_DIRS})
 target_compile_options(path_tracer PRIVATE ${COMPILE_OPTIONS})
 target_compile_features(path_tracer PRIVATE cxx_std_20)
 target_link_libraries(path_tracer PRIVATE
         vk_mem_alloc
-        glfw
-        imgui
         stb_image
+        stb_image_write
         tiny_obj_loader)
 
 set(SHADERS ray_trace.rgen ray_trace.rmiss ray_trace.rchit)

@@ -7,6 +7,7 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wuseless-cast"
 #pragma GCC diagnostic ignored "-Wshadow"
+#pragma GCC diagnostic ignored "-Wcast-function-type"
 #endif
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #define VULKAN_HPP_NO_SETTERS
@@ -102,50 +103,12 @@ private:
     VmaAllocator m_allocator {};
 };
 
-class Unique_allocation
-{
-public:
-    constexpr Unique_allocation() noexcept = default;
-
-    Unique_allocation(VmaAllocation allocation,
-                      VmaAllocator allocator) noexcept;
-
-    ~Unique_allocation() noexcept;
-
-    Unique_allocation(Unique_allocation &&rhs) noexcept;
-    Unique_allocation &operator=(Unique_allocation &&rhs) noexcept;
-
-    Unique_allocation(const Unique_allocation &) = delete;
-    Unique_allocation &operator=(const Unique_allocation &) = delete;
-
-    [[nodiscard]] constexpr const VmaAllocation &get() const noexcept
-    {
-        return m_allocation;
-    }
-
-private:
-    VmaAllocation m_allocation {};
-    VmaAllocator m_allocator {};
-};
-
-struct Queue_family_indices
-{
-    std::uint32_t graphics;
-    std::uint32_t present;
-};
-
 class Vulkan_renderer
 {
 public:
     constexpr Vulkan_renderer() noexcept = default;
 
-    Vulkan_renderer(struct GLFWwindow *window,
-                    std::uint32_t framebuffer_width,
-                    std::uint32_t framebuffer_height,
-                    std::uint32_t render_width,
-                    std::uint32_t render_height);
-
-    ~Vulkan_renderer();
+    Vulkan_renderer(std::uint32_t render_width, std::uint32_t render_height);
 
     Vulkan_renderer(const Vulkan_renderer &) = delete;
     Vulkan_renderer(Vulkan_renderer &&) noexcept = default;
@@ -153,25 +116,18 @@ public:
     Vulkan_renderer &operator=(const Vulkan_renderer &) = delete;
     Vulkan_renderer &operator=(Vulkan_renderer &&) noexcept = default;
 
-    [[nodiscard]] vk::DescriptorSet get_final_render_descriptor_set();
-    [[nodiscard]] std::array<VmaBudget, VK_MAX_MEMORY_HEAPS> get_heap_budgets();
-    void draw_frame(std::uint32_t rng_seed);
-    void resize_framebuffer(std::uint32_t width, std::uint32_t height);
-    void resize_render_target(std::uint32_t width, std::uint32_t height);
+    void render();
     void store_to_png(const char *file_name);
 
 private:
     void create_instance(std::uint32_t api_version);
-    void create_surface();
     void select_physical_device(std::uint32_t device_extension_count,
                                 const char *const *device_extension_names);
-    [[nodiscard]] Queue_family_indices
-    get_queue_family_indices(vk::PhysicalDevice physical_device);
+    [[nodiscard]] static std::uint32_t
+    get_queue_family_index(vk::PhysicalDevice physical_device);
     void create_device(std::uint32_t device_extension_count,
                        const char *const *device_extension_names);
     void create_allocator(std::uint32_t api_version);
-    void create_swapchain(std::uint32_t framebuffer_width,
-                          std::uint32_t framebuffer_height);
     void create_command_pool();
     [[nodiscard]] vk::CommandBuffer begin_one_time_submit_command_buffer();
     void end_one_time_submit_command_buffer(vk::CommandBuffer command_buffer);
@@ -193,32 +149,22 @@ private:
     void create_blas();
     void create_tlas();
     void create_descriptor_set_layout();
-    void create_final_render_descriptor_set_layout();
     void create_descriptor_pool();
     void create_descriptor_set();
-    void create_final_render_descriptor_set();
     [[nodiscard]] vk::UniqueShaderModule
     create_shader_module(const char *file_name);
     void create_ray_tracing_pipeline();
     void create_shader_binding_table();
-    void create_render_pass();
-    void create_framebuffers();
-    void create_command_buffers();
-    void create_synchronization_objects();
-    void init_imgui();
-    void recreate_swapchain();
 
-    struct GLFWwindow *m_window {};
+    vk::DynamicLoader m_dl {};
 
     vk::UniqueInstance m_instance {};
+
 #ifndef NDEBUG
     vk::UniqueDebugUtilsMessengerEXT m_debug_messenger {};
 #endif
 
-    vk::UniqueSurfaceKHR m_surface {};
-
-    Queue_family_indices m_queue_family_indices {
-        std::numeric_limits<std::uint32_t>::max(),
+    std::uint32_t m_queue_family_index {
         std::numeric_limits<std::uint32_t>::max()};
     vk::PhysicalDevice m_physical_device {};
     vk::PhysicalDeviceRayTracingPipelinePropertiesKHR
@@ -228,15 +174,7 @@ private:
 
     Unique_allocator m_allocator {};
 
-    vk::Queue m_graphics_queue {};
-    vk::Queue m_present_queue {};
-
-    vk::Format m_swapchain_format {vk::Format::eUndefined};
-    vk::Extent2D m_swapchain_extent {};
-    std::uint32_t m_swapchain_min_image_count {};
-    vk::UniqueSwapchainKHR m_swapchain {};
-    std::vector<vk::Image> m_swapchain_images {};
-    std::vector<vk::UniqueImageView> m_swapchain_image_views {};
+    vk::Queue m_queue {};
 
     vk::UniqueCommandPool m_command_pool {};
 
@@ -254,7 +192,6 @@ private:
     vk::DeviceSize m_vertex_buffer_size {};
     Unique_buffer m_vertex_buffer {};
 
-    std::uint32_t m_normals_count {};
     vk::DeviceSize m_normals_buffer_size {};
     Unique_buffer m_normals_buffer {};
 
@@ -267,42 +204,19 @@ private:
 
     vk::UniqueDescriptorSetLayout m_descriptor_set_layout {};
 
-    vk::UniqueDescriptorSetLayout m_final_render_descriptor_set_layout {};
-
     vk::UniqueDescriptorPool m_descriptor_pool {};
 
     vk::DescriptorSet m_descriptor_set {};
-
-    vk::DescriptorSet m_final_render_descriptor_set {};
 
     std::vector<vk::RayTracingShaderGroupCreateInfoKHR>
         m_ray_tracing_shader_groups {};
     vk::UniquePipelineLayout m_ray_tracing_pipeline_layout {};
     vk::UniquePipeline m_ray_tracing_pipeline {};
-    Unique_buffer m_sbt_buffer;
+    Unique_buffer m_sbt_buffer {};
     vk::StridedDeviceAddressRegionKHR m_rgen_region {};
     vk::StridedDeviceAddressRegionKHR m_miss_region {};
     vk::StridedDeviceAddressRegionKHR m_hit_region {};
     vk::StridedDeviceAddressRegionKHR m_call_region {};
-
-    vk::UniqueRenderPass m_render_pass {};
-
-    std::vector<vk::UniqueFramebuffer> m_framebuffers {};
-
-    std::vector<vk::CommandBuffer> m_command_buffers {};
-
-    static constexpr std::uint32_t s_frames_in_flight {2};
-    std::array<vk::UniqueSemaphore, s_frames_in_flight>
-        m_image_available_semaphores {};
-    std::array<vk::UniqueSemaphore, s_frames_in_flight>
-        m_render_finished_semaphores {};
-    std::array<vk::UniqueFence, s_frames_in_flight> m_in_flight_fences {};
-
-    std::uint32_t m_current_frame {};
-
-    bool m_framebuffer_resized {};
-    std::uint32_t m_framebuffer_width {};
-    std::uint32_t m_framebuffer_height {};
 };
 
 #endif // VULKAN_RENDERER_HPP
