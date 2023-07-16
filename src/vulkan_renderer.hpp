@@ -184,6 +184,7 @@ private:
                          vk::BufferUsageFlags usage,
                          VmaAllocationInfo *allocation_info);
     void create_vertex_buffer(const std::vector<float> &vertices);
+    void create_normals_buffer(const std::vector<float> &normals);
     void create_index_buffer(const std::vector<std::uint32_t> &indices);
     void create_geometry_buffers();
     [[nodiscard]] vk::DeviceAddress get_device_address(vk::Buffer buffer);
@@ -249,11 +250,15 @@ private:
     vk::UniqueImageView m_render_target_image_view {};
     vk::UniqueSampler m_render_target_sampler {};
 
-    std::uint32_t m_num_vertices {};
+    std::uint32_t m_vertex_count {};
     vk::DeviceSize m_vertex_buffer_size {};
     Unique_buffer m_vertex_buffer {};
 
-    std::uint32_t m_num_indices {};
+    std::uint32_t m_normals_count {};
+    vk::DeviceSize m_normals_buffer_size {};
+    Unique_buffer m_normals_buffer {};
+
+    std::uint32_t m_index_count {};
     vk::DeviceSize m_index_buffer_size {};
     Unique_buffer m_index_buffer {};
 

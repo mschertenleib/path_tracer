@@ -56,7 +56,7 @@ Unique_window::Unique_window(int width, int height, const char *title)
 
     ImGui::StyleColorsDark();
 
-    if (!ImGui_ImplGlfw_InitForVulkan(m_window, true))
+    if (!ImGui_ImplGlfw_InitForVulkan(m_window, false))
     {
         ImGui::DestroyContext();
         glfwDestroyWindow(m_window);
@@ -114,7 +114,7 @@ void Unique_window::set_fullscreen()
                          0,
                          video_mode->width,
                          video_mode->height,
-                         GLFW_DONT_CARE);
+                         video_mode->refreshRate);
 }
 
 void Unique_window::set_windowed()
@@ -142,8 +142,8 @@ Application::Application()
     glfwGetFramebufferSize(
         m_window.get(), &framebuffer_width, &framebuffer_height);
 
-    m_render_width = 1600;
-    m_render_height = 900;
+    m_render_width = 1920;
+    m_render_height = 1080;
 
     m_renderer = Vulkan_renderer(m_window.get(),
                                  static_cast<std::uint32_t>(framebuffer_width),
@@ -155,6 +155,8 @@ Application::Application()
     glfwSetKeyCallback(m_window.get(), glfw_key_callback);
     glfwSetFramebufferSizeCallback(m_window.get(),
                                    glfw_framebuffer_size_callback);
+
+    ImGui_ImplGlfw_InstallCallbacks(m_window.get());
 }
 
 void Application::run()
@@ -174,7 +176,8 @@ void Application::run()
         ImGui::SetNextWindowPos({0.0f, 0.0f});
         ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, {0.0f, 0.0f, 0.0f, 0.0f});
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0.0f, 0.0f});
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, {0.0f, 0.0f, 0.0f, 1.0f});
         if (ImGui::Begin("Viewport",
                          nullptr,
                          ImGuiWindowFlags_NoDecoration |
@@ -210,7 +213,7 @@ void Application::run()
         }
         ImGui::End();
         ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
+        ImGui::PopStyleVar(2);
 
         if (ImGui::Begin("Settings"))
         {
@@ -224,10 +227,12 @@ void Application::run()
             {
                 if (budgets[i].budget > 0)
                 {
-                    ImGui::Text("  [%llu]: %llu MB / %llu MB",
+                    ImGui::Text("  [%llu]: %llu MB / %llu MB (%.2f%%)",
                                 i,
                                 budgets[i].usage / 1'000'000u,
-                                budgets[i].budget / 1'000'000u);
+                                budgets[i].budget / 1'000'000u,
+                                static_cast<double>(budgets[i].usage) /
+                                    static_cast<double>(budgets[i].budget));
                 }
             }
 
@@ -244,6 +249,18 @@ void Application::run()
             if (ImGui::Button("Change RNG seed"))
             {
                 rng_seed += m_render_width * m_render_height;
+            }
+
+            int render_size[] {static_cast<int>(m_render_width),
+                               static_cast<int>(m_render_height)};
+            if (ImGui::InputInt2("Render size",
+                                 render_size,
+                                 ImGuiInputTextFlags_EnterReturnsTrue))
+            {
+                m_render_width = static_cast<std::uint32_t>(render_size[0]);
+                m_render_height = static_cast<std::uint32_t>(render_size[1]);
+                m_renderer.resize_render_target(m_render_width,
+                                                m_render_height);
             }
         }
         ImGui::End();

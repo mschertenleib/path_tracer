@@ -318,8 +318,6 @@ Vulkan_renderer::~Vulkan_renderer()
 {
     if (m_device)
     {
-        // This could throw, but at this point there is nothing we can do about
-        // it, so let the runtime call std::terminate()
         m_device->waitIdle();
 
         ImGui_ImplVulkan_Shutdown();
@@ -340,6 +338,12 @@ std::array<VmaBudget, VK_MAX_MEMORY_HEAPS> Vulkan_renderer::get_heap_budgets()
 
 void Vulkan_renderer::draw_frame(std::uint32_t rng_seed)
 {
+    if (m_framebuffer_width == 0 || m_framebuffer_height == 0)
+    {
+        glfwWaitEvents();
+        return;
+    }
+
     const auto wait_result =
         m_device->waitForFences(m_in_flight_fences[m_current_frame].get(),
                                 VK_TRUE,
@@ -385,7 +389,8 @@ void Vulkan_renderer::draw_frame(std::uint32_t rng_seed)
     const Push_constants push_constants {.rng_seed = rng_seed};
 
     command_buffer.pushConstants(m_ray_tracing_pipeline_layout.get(),
-                                 vk::ShaderStageFlagBits::eRaygenKHR,
+                                 vk::ShaderStageFlagBits::eRaygenKHR |
+                                     vk::ShaderStageFlagBits::eClosestHitKHR,
                                  0,
                                  sizeof(Push_constants),
                                  &push_constants);
@@ -548,11 +553,36 @@ void Vulkan_renderer::resize_framebuffer(std::uint32_t width,
 void Vulkan_renderer::resize_render_target(std::uint32_t width,
                                            std::uint32_t height)
 {
-    m_render_target_sampler = {};
-    m_render_target_image_view = {};
-    m_render_target_image = {};
+    m_device->waitIdle();
 
+    create_storage_image(width, height);
     create_render_target(width, height);
+
+    const vk::DescriptorImageInfo descriptor_storage_image {
+        .sampler = VK_NULL_HANDLE,
+        .imageView = m_storage_image_view.get(),
+        .imageLayout = vk::ImageLayout::eGeneral};
+
+    const vk::DescriptorImageInfo descriptor_render_target {
+        .sampler = m_render_target_sampler.get(),
+        .imageView = m_render_target_image_view.get(),
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
+
+    const vk::WriteDescriptorSet descriptor_writes[] {
+        {.dstSet = m_descriptor_set,
+         .dstBinding = 0,
+         .dstArrayElement = 0,
+         .descriptorCount = 1,
+         .descriptorType = vk::DescriptorType::eStorageImage,
+         .pImageInfo = &descriptor_storage_image},
+        {.dstSet = m_final_render_descriptor_set,
+         .dstBinding = 0,
+         .dstArrayElement = 0,
+         .descriptorCount = 1,
+         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+         .pImageInfo = &descriptor_render_target}};
+
+    m_device->updateDescriptorSets(descriptor_writes, {});
 }
 
 void Vulkan_renderer::store_to_png(const char *file_name)
@@ -627,6 +657,7 @@ void Vulkan_renderer::store_to_png(const char *file_name)
 
     end_one_time_submit_command_buffer(command_buffer);
 
+    std::cout << "Writing image to \"" << file_name << "\"..." << std::flush;
     if (!stbi_write_png(file_name,
                         static_cast<int>(m_render_width),
                         static_cast<int>(m_render_height),
@@ -636,6 +667,7 @@ void Vulkan_renderer::store_to_png(const char *file_name)
     {
         throw std::runtime_error("Failed to write PNG image");
     }
+    std::cout << " Done\n";
 }
 
 void Vulkan_renderer::create_instance(std::uint32_t api_version)
@@ -834,8 +866,7 @@ Vulkan_renderer::get_queue_family_indices(vk::PhysicalDevice physical_device)
     for (std::uint32_t i {}; i < static_cast<std::uint32_t>(properties.size());
          ++i)
     {
-        if ((properties[i].queueFlags & vk::QueueFlagBits::eGraphics) &&
-            (properties[i].queueFlags & vk::QueueFlagBits::eCompute))
+        if (properties[i].queueFlags & vk::QueueFlagBits::eGraphics)
         {
             indices.graphics = i;
         }
@@ -1106,12 +1137,13 @@ void Vulkan_renderer::create_storage_image(std::uint32_t width,
                              .baseArrayLayer = 0,
                              .layerCount = 1}};
 
-    command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                   vk::PipelineStageFlagBits::eComputeShader,
-                                   {},
-                                   {},
-                                   {},
-                                   image_memory_barrier);
+    command_buffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eRayTracingShaderKHR,
+        {},
+        {},
+        {},
+        image_memory_barrier);
 
     end_one_time_submit_command_buffer(command_buffer);
 }
@@ -1185,12 +1217,13 @@ void Vulkan_renderer::create_render_target(std::uint32_t width,
                              .baseArrayLayer = 0,
                              .layerCount = 1}};
 
-    command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                   vk::PipelineStageFlagBits::eFragmentShader,
-                                   {},
-                                   {},
-                                   {},
-                                   memory_barrier);
+    command_buffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eRayTracingShaderKHR,
+        {},
+        {},
+        {},
+        memory_barrier);
 
     end_one_time_submit_command_buffer(command_buffer);
 }
@@ -1234,7 +1267,7 @@ Vulkan_renderer::create_buffer_mapped(vk::DeviceSize size,
 
 void Vulkan_renderer::create_vertex_buffer(const std::vector<float> &vertices)
 {
-    m_num_vertices = static_cast<std::uint32_t>(vertices.size() / 3);
+    m_vertex_count = static_cast<std::uint32_t>(vertices.size() / 3);
     m_vertex_buffer_size = vertices.size() * sizeof(float);
 
     VmaAllocationInfo staging_buffer_allocation_info {};
@@ -1266,10 +1299,44 @@ void Vulkan_renderer::create_vertex_buffer(const std::vector<float> &vertices)
     end_one_time_submit_command_buffer(command_buffer);
 }
 
+void Vulkan_renderer::create_normals_buffer(const std::vector<float> &normals)
+{
+    m_normals_count = static_cast<std::uint32_t>(normals.size() / 3);
+    m_normals_buffer_size = normals.size() * sizeof(float);
+
+    VmaAllocationInfo staging_buffer_allocation_info {};
+    const auto staging_buffer =
+        create_buffer_mapped(m_normals_buffer_size,
+                             vk::BufferUsageFlagBits::eTransferSrc,
+                             &staging_buffer_allocation_info);
+
+    m_normals_buffer =
+        create_buffer(m_normals_buffer_size,
+                      vk::BufferUsageFlagBits::eStorageBuffer |
+                          vk::BufferUsageFlagBits::eTransferDst |
+                          vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                          vk::BufferUsageFlagBits::
+                              eAccelerationStructureBuildInputReadOnlyKHR);
+
+    std::memcpy(staging_buffer_allocation_info.pMappedData,
+                normals.data(),
+                m_normals_buffer_size);
+
+    const auto command_buffer = begin_one_time_submit_command_buffer();
+
+    const vk::BufferCopy region {
+        .srcOffset = 0, .dstOffset = 0, .size = m_normals_buffer_size};
+
+    command_buffer.copyBuffer(
+        staging_buffer.get(), m_normals_buffer.get(), region);
+
+    end_one_time_submit_command_buffer(command_buffer);
+}
+
 void Vulkan_renderer::create_index_buffer(
     const std::vector<std::uint32_t> &indices)
 {
-    m_num_indices = static_cast<std::uint32_t>(indices.size());
+    m_index_count = static_cast<std::uint32_t>(indices.size());
     m_index_buffer_size = indices.size() * sizeof(float);
 
     VmaAllocationInfo staging_buffer_allocation_info {};
@@ -1315,15 +1382,30 @@ void Vulkan_renderer::create_geometry_buffers()
     {
         throw std::runtime_error("OBJ file contains more than one shape");
     }
-    const auto &obj_indices = shapes.front().mesh.indices;
-    std::vector<std::uint32_t> indices(obj_indices.size());
-    for (std::size_t i {}; i < obj_indices.size(); ++i)
+
+    const auto &indices = shapes.front().mesh.indices;
+
+    std::vector<std::uint32_t> vertex_indices(indices.size());
+    for (std::size_t i {}; i < indices.size(); ++i)
     {
-        indices[i] = static_cast<std::uint32_t>(obj_indices[i].vertex_index);
+        vertex_indices[i] = static_cast<std::uint32_t>(indices[i].vertex_index);
     }
 
-    create_vertex_buffer(reader.GetAttrib().vertices);
-    create_index_buffer(indices);
+    const auto &obj_vertices = reader.GetAttrib().vertices;
+    const auto &obj_normals = reader.GetAttrib().normals;
+    std::vector<float> normals(reader.GetAttrib().vertices.size());
+    for (const auto index : indices)
+    {
+        const auto vertex_index = static_cast<std::size_t>(index.vertex_index);
+        const auto normal_index = static_cast<std::size_t>(index.normal_index);
+        normals[vertex_index * 3 + 0] = obj_normals[normal_index * 3 + 0];
+        normals[vertex_index * 3 + 1] = obj_normals[normal_index * 3 + 1];
+        normals[vertex_index * 3 + 2] = obj_normals[normal_index * 3 + 2];
+    }
+
+    create_vertex_buffer(obj_vertices);
+    create_normals_buffer(normals);
+    create_index_buffer(vertex_indices);
 }
 
 vk::DeviceAddress Vulkan_renderer::get_device_address(vk::Buffer buffer)
@@ -1350,7 +1432,7 @@ void Vulkan_renderer::create_blas()
         .vertexFormat = vk::Format::eR32G32B32Sfloat,
         .vertexData = {.deviceAddress = vertex_buffer_address},
         .vertexStride = 3 * sizeof(float),
-        .maxVertex = m_num_vertices - 1,
+        .maxVertex = m_vertex_count - 1,
         .indexType = vk::IndexType::eUint32,
         .indexData = {.deviceAddress = index_buffer_address}};
 
@@ -1360,7 +1442,7 @@ void Vulkan_renderer::create_blas()
         .flags = vk::GeometryFlagBitsKHR::eOpaque};
 
     const vk::AccelerationStructureBuildRangeInfoKHR build_range_info {
-        .primitiveCount = m_num_indices / 3,
+        .primitiveCount = m_index_count / 3,
         .primitiveOffset = 0,
         .firstVertex = 0};
 
@@ -1540,6 +1622,10 @@ void Vulkan_renderer::create_descriptor_set_layout()
         {.binding = 3,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
          .descriptorCount = 1,
+         .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR},
+        {.binding = 4,
+         .descriptorType = vk::DescriptorType::eStorageBuffer,
+         .descriptorCount = 1,
          .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR}};
 
     const vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
@@ -1619,6 +1705,11 @@ void Vulkan_renderer::create_descriptor_set()
         .offset = 0,
         .range = m_vertex_buffer_size};
 
+    const vk::DescriptorBufferInfo descriptor_normals_buffer {
+        .buffer = m_normals_buffer.get(),
+        .offset = 0,
+        .range = m_normals_buffer_size};
+
     const vk::DescriptorBufferInfo descriptor_index_buffer {
         .buffer = m_index_buffer.get(),
         .offset = 0,
@@ -1648,7 +1739,13 @@ void Vulkan_renderer::create_descriptor_set()
          .dstArrayElement = 0,
          .descriptorCount = 1,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
-         .pBufferInfo = &descriptor_index_buffer}};
+         .pBufferInfo = &descriptor_index_buffer},
+        {.dstSet = m_descriptor_set,
+         .dstBinding = 4,
+         .dstArrayElement = 0,
+         .descriptorCount = 1,
+         .descriptorType = vk::DescriptorType::eStorageBuffer,
+         .pBufferInfo = &descriptor_normals_buffer}};
 
     m_device->updateDescriptorSets(descriptor_writes, {});
 }
@@ -1664,7 +1761,7 @@ void Vulkan_renderer::create_final_render_descriptor_set()
         m_device->allocateDescriptorSets(descriptor_set_allocate_info);
     m_final_render_descriptor_set = sets.front();
 
-    const vk::DescriptorImageInfo render_target_descriptor_image_info {
+    const vk::DescriptorImageInfo descriptor_render_target {
         .sampler = m_render_target_sampler.get(),
         .imageView = m_render_target_image_view.get(),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
@@ -1675,7 +1772,7 @@ void Vulkan_renderer::create_final_render_descriptor_set()
         .dstArrayElement = 0,
         .descriptorCount = 1,
         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-        .pImageInfo = &render_target_descriptor_image_info};
+        .pImageInfo = &descriptor_render_target};
 
     m_device->updateDescriptorSets(descriptor_write, {});
 }
@@ -1731,7 +1828,8 @@ void Vulkan_renderer::create_ray_tracing_pipeline()
     m_ray_tracing_shader_groups.push_back(group);
 
     constexpr vk::PushConstantRange push_constant_range {
-        .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR,
+        .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR |
+                      vk::ShaderStageFlagBits::eClosestHitKHR,
         .offset = 0,
         .size = sizeof(Push_constants)};
 
@@ -1968,16 +2066,6 @@ void Vulkan_renderer::init_imgui()
 
 void Vulkan_renderer::recreate_swapchain()
 {
-    // FIXME
-    int width {};
-    int height {};
-    glfwGetFramebufferSize(m_window, &width, &height);
-    while (width == 0 || height == 0)
-    {
-        glfwWaitEvents();
-        glfwGetFramebufferSize(m_window, &width, &height);
-    }
-
     m_device->waitIdle();
 
     m_swapchain_image_views.clear();
@@ -1987,7 +2075,6 @@ void Vulkan_renderer::recreate_swapchain()
     m_swapchain_extent = vk::Extent2D {};
     m_swapchain_format = vk::Format::eUndefined;
 
-    create_swapchain(static_cast<std::uint32_t>(width),
-                     static_cast<std::uint32_t>(height));
+    create_swapchain(m_framebuffer_width, m_framebuffer_height);
     create_framebuffers();
 }
