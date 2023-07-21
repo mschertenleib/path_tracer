@@ -36,7 +36,6 @@ cmake --build build
 
 - [stb_image](https://github.com/nothings/stb)
 - [stb_image_write](https://github.com/nothings/stb)
-- [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
 - [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader)
 
 ## References

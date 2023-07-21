@@ -1,8 +1,6 @@
 #ifndef VULKAN_RENDERER_HPP
 #define VULKAN_RENDERER_HPP
 
-#include "vk_mem_alloc.h"
-
 #ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wuseless-cast"
@@ -22,85 +20,16 @@
 #include <limits>
 #include <vector>
 
-class Unique_allocator
+struct Unique_buffer
 {
-public:
-    constexpr Unique_allocator() noexcept = default;
-
-    explicit Unique_allocator(const VmaAllocatorCreateInfo &create_info);
-
-    ~Unique_allocator() noexcept;
-
-    Unique_allocator(Unique_allocator &&rhs) noexcept;
-    Unique_allocator &operator=(Unique_allocator &&rhs) noexcept;
-
-    Unique_allocator(const Unique_allocator &) = delete;
-    Unique_allocator &operator=(const Unique_allocator &) = delete;
-
-    [[nodiscard]] constexpr const VmaAllocator &get() const noexcept
-    {
-        return m_allocator;
-    }
-
-private:
-    VmaAllocator m_allocator {};
+    vk::UniqueBuffer buffer;
+    vk::UniqueDeviceMemory memory;
 };
 
-class Unique_buffer
+struct Unique_image
 {
-public:
-    constexpr Unique_buffer() noexcept = default;
-
-    Unique_buffer(VmaAllocator allocator,
-                  const vk::BufferCreateInfo &buffer_create_info,
-                  const VmaAllocationCreateInfo &allocation_create_info,
-                  VmaAllocationInfo *allocation_info);
-
-    ~Unique_buffer() noexcept;
-
-    Unique_buffer(Unique_buffer &&rhs) noexcept;
-    Unique_buffer &operator=(Unique_buffer &&rhs) noexcept;
-
-    Unique_buffer(const Unique_buffer &) = delete;
-    Unique_buffer &operator=(const Unique_buffer &) = delete;
-
-    [[nodiscard]] constexpr const vk::Buffer &get() const noexcept
-    {
-        return m_buffer;
-    }
-
-private:
-    vk::Buffer m_buffer {};
-    VmaAllocation m_allocation {};
-    VmaAllocator m_allocator {};
-};
-
-class Unique_image
-{
-public:
-    constexpr Unique_image() noexcept = default;
-
-    Unique_image(VmaAllocator allocator,
-                 const vk::ImageCreateInfo &image_create_info,
-                 const VmaAllocationCreateInfo &allocation_create_info);
-
-    ~Unique_image() noexcept;
-
-    Unique_image(Unique_image &&rhs) noexcept;
-    Unique_image &operator=(Unique_image &&rhs) noexcept;
-
-    Unique_image(const Unique_image &) = delete;
-    Unique_image &operator=(const Unique_image &) = delete;
-
-    [[nodiscard]] constexpr const vk::Image &get() const noexcept
-    {
-        return m_image;
-    }
-
-private:
-    vk::Image m_image {};
-    VmaAllocation m_allocation {};
-    VmaAllocator m_allocator {};
+    vk::UniqueImage image;
+    vk::UniqueDeviceMemory memory;
 };
 
 class Vulkan_renderer
@@ -127,18 +56,19 @@ private:
     get_queue_family_index(vk::PhysicalDevice physical_device);
     void create_device(std::uint32_t device_extension_count,
                        const char *const *device_extension_names);
-    void create_allocator(std::uint32_t api_version);
     void create_command_pool();
     [[nodiscard]] vk::CommandBuffer begin_one_time_submit_command_buffer();
     void end_one_time_submit_command_buffer(vk::CommandBuffer command_buffer);
+    [[nodiscard]] std::uint32_t
+    find_memory_type(std::uint32_t type_filter,
+                     vk::MemoryPropertyFlags properties);
     void create_storage_image(std::uint32_t width, std::uint32_t height);
-    void create_render_target(std::uint32_t width, std::uint32_t height);
-    [[nodiscard]] Unique_buffer create_buffer(vk::DeviceSize size,
-                                              vk::BufferUsageFlags usage);
     [[nodiscard]] Unique_buffer
-    create_buffer_mapped(vk::DeviceSize size,
-                         vk::BufferUsageFlags usage,
-                         VmaAllocationInfo *allocation_info);
+    create_buffer(vk::DeviceSize size,
+                  vk::BufferUsageFlags usage,
+                  vk::MemoryPropertyFlags properties);
+    [[nodiscard]] Unique_buffer create_device_local_buffer_from_data(
+        vk::DeviceSize size, vk::BufferUsageFlags usage, const void *data);
     void create_vertex_buffer(const std::vector<float> &vertices);
     void create_normals_buffer(const std::vector<float> &normals);
     void create_index_buffer(const std::vector<std::uint32_t> &indices);
@@ -172,8 +102,6 @@ private:
 
     vk::UniqueDevice m_device {};
 
-    Unique_allocator m_allocator {};
-
     vk::Queue m_queue {};
 
     vk::UniqueCommandPool m_command_pool {};
@@ -194,7 +122,9 @@ private:
     vk::DeviceSize m_index_buffer_size {};
     Unique_buffer m_index_buffer {};
 
+    Unique_buffer m_blas_buffer {};
     vk::UniqueAccelerationStructureKHR m_blas {};
+    Unique_buffer m_tlas_buffer {};
     vk::UniqueAccelerationStructureKHR m_tlas {};
 
     vk::UniqueDescriptorSetLayout m_descriptor_set_layout {};

@@ -58,12 +58,6 @@ add_library(tiny_obj_loader STATIC src/tiny_obj_loader.cpp)
 target_include_directories(tiny_obj_loader PUBLIC external)
 
 
-add_library(vk_mem_alloc STATIC src/vk_mem_alloc.cpp)
-target_include_directories(vk_mem_alloc PUBLIC
-        ${Vulkan_INCLUDE_DIRS}
-        external/VulkanMemoryAllocator/include)
-
-
 add_executable(path_tracer
         src/main.cpp
         src/vulkan_renderer.cpp src/vulkan_renderer.hpp)
@@ -71,7 +65,6 @@ target_include_directories(path_tracer PRIVATE ${Vulkan_INCLUDE_DIRS})
 target_compile_options(path_tracer PRIVATE ${COMPILE_OPTIONS})
 target_compile_features(path_tracer PRIVATE cxx_std_20)
 target_link_libraries(path_tracer PRIVATE
-        vk_mem_alloc
         stb_image
         stb_image_write
         tiny_obj_loader)
