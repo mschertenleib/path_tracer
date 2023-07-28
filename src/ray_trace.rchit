@@ -25,7 +25,7 @@ layout(push_constant) uniform Push_constants
 
 layout(location = 0) rayPayloadInEXT vec3 hit_value;
 
-hitAttributeEXT vec3 attributes;
+hitAttributeEXT vec2 attributes;
 
 uint hash(uint x)
 {

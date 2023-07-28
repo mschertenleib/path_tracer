@@ -1,7 +1,5 @@
 #include "vulkan_renderer.hpp"
 
-#include "tiny_obj_loader.h"
-
 #include "stb_image_write.h"
 
 #include <array>
@@ -21,6 +19,7 @@ struct Push_constants
 {
     std::uint32_t rng_seed;
 };
+static_assert(sizeof(Push_constants) <= 128);
 
 #ifndef NDEBUG
 
@@ -35,6 +34,13 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
 }
 
 #endif
+
+// alignment MUST be a power of 2
+template <std::unsigned_integral U>
+[[nodiscard]] constexpr U align_up(U value, U alignment) noexcept
+{
+    return (value + (alignment - 1)) & ~(alignment - 1);
+}
 
 [[nodiscard]] std::vector<std::uint32_t> read_binary_file(const char *file_name)
 {
@@ -73,13 +79,66 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     return buffer;
 }
 
+[[nodiscard]] std::uint32_t
+get_queue_family_index(vk::PhysicalDevice physical_device)
+{
+    const auto properties = physical_device.getQueueFamilyProperties();
+
+    for (std::uint32_t i {}; i < static_cast<std::uint32_t>(properties.size());
+         ++i)
+    {
+        if (properties[i].queueFlags & vk::QueueFlagBits::eCompute)
+        {
+            return i;
+        }
+    }
+
+    return std::numeric_limits<std::uint32_t>::max();
+}
+
+[[nodiscard]] std::uint32_t find_memory_type(vk::PhysicalDevice physical_device,
+                                             std::uint32_t type_filter,
+                                             vk::MemoryPropertyFlags properties)
+{
+    const auto memory_properties {physical_device.getMemoryProperties()};
+
+    for (std::uint32_t i {}; i < memory_properties.memoryTypeCount; ++i)
+    {
+        if ((type_filter & (1 << i)) &&
+            (memory_properties.memoryTypes[i].propertyFlags & properties) ==
+                properties)
+        {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("Failed to find a suitable memory type");
+}
+
+[[nodiscard]] vk::DeviceAddress get_device_address(vk::Device device,
+                                                   vk::Buffer buffer)
+{
+    const vk::BufferDeviceAddressInfo address_info {.buffer = buffer};
+    return device.getBufferAddress(address_info);
+}
+
+[[nodiscard]] vk::DeviceAddress
+get_device_address(vk::Device device,
+                   vk::AccelerationStructureKHR acceleration_structure)
+{
+    const vk::AccelerationStructureDeviceAddressInfoKHR address_info {
+        .accelerationStructure = acceleration_structure};
+    return device.getAccelerationStructureAddressKHR(address_info);
+}
+
 } // namespace
 
 Vulkan_renderer::Vulkan_renderer(std::uint32_t render_width,
-                                 std::uint32_t render_height)
+                                 std::uint32_t render_height,
+                                 const std::vector<float> &vertices,
+                                 const std::vector<std::uint32_t> &indices,
+                                 const std::vector<float> &normals)
 {
-    constexpr std::uint32_t api_version {VK_API_VERSION_1_3};
-
     constexpr const char *device_extension_names[] {
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
@@ -87,13 +146,13 @@ Vulkan_renderer::Vulkan_renderer(std::uint32_t render_width,
     constexpr auto device_extension_count =
         static_cast<std::uint32_t>(std::size(device_extension_names));
 
-    create_instance(api_version);
+    create_instance();
     select_physical_device(device_extension_count, device_extension_names);
     create_device(device_extension_count, device_extension_names);
     m_queue = m_device->getQueue(m_queue_family_index, 0);
     create_command_pool();
     create_storage_image(render_width, render_height);
-    create_geometry_buffers();
+    create_geometry_buffer(vertices, indices, normals);
     create_blas();
     create_tlas();
     create_descriptor_set_layout();
@@ -150,7 +209,6 @@ void Vulkan_renderer::store_to_png(const char *file_name)
         .tiling = vk::ImageTiling::eOptimal,
         .usage = vk::ImageUsageFlagBits::eTransferDst |
                  vk::ImageUsageFlagBits::eTransferSrc,
-        .sharingMode = vk::SharingMode::eExclusive,
         .initialLayout = vk::ImageLayout::eUndefined};
 
     const auto final_image = m_device->createImageUnique(image_create_info);
@@ -161,7 +219,8 @@ void Vulkan_renderer::store_to_png(const char *file_name)
     const vk::MemoryAllocateInfo allocate_info {
         .allocationSize = memory_requirements.size,
         .memoryTypeIndex =
-            find_memory_type(memory_requirements.memoryTypeBits,
+            find_memory_type(m_physical_device,
+                             memory_requirements.memoryTypeBits,
                              vk::MemoryPropertyFlagBits::eDeviceLocal)};
 
     const auto final_image_memory =
@@ -171,14 +230,14 @@ void Vulkan_renderer::store_to_png(const char *file_name)
 
     const auto staging_buffer_size = m_width * m_height * 4;
 
-    const auto staging_buffer =
+    const auto [staging_buffer, staging_buffer_memory] =
         create_buffer(staging_buffer_size,
                       vk::BufferUsageFlagBits::eTransferDst,
                       vk::MemoryPropertyFlagBits::eHostVisible |
                           vk::MemoryPropertyFlagBits::eHostCoherent);
 
     auto *const mapped_data = m_device->mapMemory(
-        staging_buffer.memory.get(), 0, staging_buffer_size);
+        staging_buffer_memory.get(), 0, staging_buffer_size);
 
     {
         const auto command_buffer = begin_one_time_submit_command_buffer();
@@ -190,7 +249,18 @@ void Vulkan_renderer::store_to_png(const char *file_name)
             .baseArrayLayer = 0,
             .layerCount = 1};
 
-        vk::ImageMemoryBarrier image_memory_barrier {
+        const vk::ImageMemoryBarrier storage_image_memory_barrier {
+            .srcAccessMask = vk::AccessFlagBits::eShaderRead |
+                             vk::AccessFlagBits::eShaderWrite,
+            .dstAccessMask = vk::AccessFlagBits::eTransferRead,
+            .oldLayout = vk::ImageLayout::eGeneral,
+            .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = m_storage_image.get(),
+            .subresourceRange = subresource_range};
+
+        vk::ImageMemoryBarrier final_image_memory_barrier {
             .srcAccessMask = vk::AccessFlagBits::eNone,
             .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
             .oldLayout = vk::ImageLayout::eUndefined,
@@ -200,12 +270,14 @@ void Vulkan_renderer::store_to_png(const char *file_name)
             .image = final_image.get(),
             .subresourceRange = subresource_range};
 
-        command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                       vk::PipelineStageFlagBits::eTransfer,
-                                       {},
-                                       {},
-                                       {},
-                                       image_memory_barrier);
+        command_buffer.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTopOfPipe |
+                vk::PipelineStageFlagBits::eRayTracingShaderKHR,
+            vk::PipelineStageFlagBits::eTransfer,
+            {},
+            {},
+            {},
+            {storage_image_memory_barrier, final_image_memory_barrier});
 
         constexpr vk::ImageSubresourceLayers subresource_layers {
             .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -224,24 +296,28 @@ void Vulkan_renderer::store_to_png(const char *file_name)
                                         .dstSubresource = subresource_layers,
                                         .dstOffsets = offsets};
 
-        command_buffer.blitImage(m_storage_image.image.get(),
-                                 vk::ImageLayout::eGeneral,
+        command_buffer.blitImage(m_storage_image.get(),
+                                 vk::ImageLayout::eTransferSrcOptimal,
                                  final_image.get(),
                                  vk::ImageLayout::eTransferDstOptimal,
                                  image_blit,
                                  vk::Filter::eNearest);
 
-        image_memory_barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-        image_memory_barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
-        image_memory_barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
-        image_memory_barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+        final_image_memory_barrier.srcAccessMask =
+            vk::AccessFlagBits::eTransferWrite;
+        final_image_memory_barrier.dstAccessMask =
+            vk::AccessFlagBits::eTransferRead;
+        final_image_memory_barrier.oldLayout =
+            vk::ImageLayout::eTransferDstOptimal;
+        final_image_memory_barrier.newLayout =
+            vk::ImageLayout::eTransferSrcOptimal;
 
         command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
                                        vk::PipelineStageFlagBits::eTransfer,
                                        {},
                                        {},
                                        {},
-                                       image_memory_barrier);
+                                       final_image_memory_barrier);
 
         const vk::BufferImageCopy copy_region {
             .bufferOffset = 0,
@@ -252,7 +328,7 @@ void Vulkan_renderer::store_to_png(const char *file_name)
 
         command_buffer.copyImageToBuffer(final_image.get(),
                                          vk::ImageLayout::eTransferSrcOptimal,
-                                         staging_buffer.buffer.get(),
+                                         staging_buffer.get(),
                                          copy_region);
 
         end_one_time_submit_command_buffer(command_buffer);
@@ -279,19 +355,21 @@ void Vulkan_renderer::store_to_png(const char *file_name)
               << " ms" << std::endl;
 }
 
-void Vulkan_renderer::create_instance(std::uint32_t api_version)
+void Vulkan_renderer::create_instance()
 {
     VULKAN_HPP_DEFAULT_DISPATCHER.init(
         m_dl.getProcAddress<PFN_vkGetInstanceProcAddr>(
             "vkGetInstanceProcAddr"));
 
-    const vk::ApplicationInfo application_info {.apiVersion = api_version};
+    constexpr vk::ApplicationInfo application_info {.apiVersion =
+                                                        VK_API_VERSION_1_3};
 
 #ifndef NDEBUG
 
-    const auto layer_properties = vk::enumerateInstanceLayerProperties();
+    const auto layer_properties {vk::enumerateInstanceLayerProperties()};
 
-    constexpr auto khronos_validation_layer = "VK_LAYER_KHRONOS_validation";
+    constexpr auto khronos_validation_layer {"VK_LAYER_KHRONOS_validation"};
+
     if (std::none_of(layer_properties.begin(),
                      layer_properties.end(),
                      [](const vk::LayerProperties &properties) {
@@ -299,40 +377,24 @@ void Vulkan_renderer::create_instance(std::uint32_t api_version)
                                             khronos_validation_layer) == 0;
                      }))
     {
-        throw std::runtime_error("Validation layers are not supported");
+        throw std::runtime_error(
+            "VK_LAYER_KHRONOS_validation is not supported");
     }
 
-    std::vector<const char *> required_extensions {
-        VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
+    const auto extension_properties {
+        vk::enumerateInstanceExtensionProperties()};
 
-    std::vector<const char *> unsupported_extensions;
+    constexpr auto debug_utils_extension {VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
 
-    const auto extension_properties =
-        vk::enumerateInstanceExtensionProperties();
-
-    for (const auto extension_name : required_extensions)
+    if (std::none_of(extension_properties.begin(),
+                     extension_properties.end(),
+                     [](const vk::ExtensionProperties &properties) {
+                         return std::strcmp(properties.extensionName,
+                                            debug_utils_extension) == 0;
+                     }))
     {
-        if (std::none_of(
-                extension_properties.begin(),
-                extension_properties.end(),
-                [extension_name](const VkExtensionProperties &properties) {
-                    return std::strcmp(properties.extensionName,
-                                       extension_name) == 0;
-                }))
-        {
-            unsupported_extensions.push_back(extension_name);
-        }
-    }
-
-    if (!unsupported_extensions.empty())
-    {
-        std::ostringstream oss;
-        oss << "The following instance extensions are not supported:";
-        for (const auto extension_name : unsupported_extensions)
-        {
-            oss << "\n    " << extension_name;
-        }
-        throw std::runtime_error(oss.str());
+        throw std::runtime_error(VK_EXT_DEBUG_UTILS_EXTENSION_NAME
+                                 " is not supported");
     }
 
     constexpr vk::DebugUtilsMessengerCreateInfoEXT
@@ -350,9 +412,8 @@ void Vulkan_renderer::create_instance(std::uint32_t api_version)
         .pApplicationInfo = &application_info,
         .enabledLayerCount = 1,
         .ppEnabledLayerNames = &khronos_validation_layer,
-        .enabledExtensionCount =
-            static_cast<std::uint32_t>(required_extensions.size()),
-        .ppEnabledExtensionNames = required_extensions.data()};
+        .enabledExtensionCount = 1,
+        .ppEnabledExtensionNames = &debug_utils_extension};
 
     m_instance = vk::createInstanceUnique(instance_create_info);
 
@@ -381,14 +442,12 @@ void Vulkan_renderer::select_physical_device(
 
     for (const auto physical_device : physical_devices)
     {
-        // Graphics queue
         m_queue_family_index = get_queue_family_index(physical_device);
         if (m_queue_family_index == std::numeric_limits<std::uint32_t>::max())
         {
             continue;
         }
 
-        // Extensions
         const auto extension_properties =
             physical_device.enumerateDeviceExtensionProperties();
         bool all_extensions_supported {true};
@@ -412,7 +471,6 @@ void Vulkan_renderer::select_physical_device(
             continue;
         }
 
-        // Features
         // FIXME: put these and the features in create_device in the same place
         const auto features = physical_device.getFeatures2<
             vk::PhysicalDeviceFeatures2,
@@ -429,7 +487,6 @@ void Vulkan_renderer::select_physical_device(
             continue;
         }
 
-        // Storage image format
         const auto format_properties = physical_device.getFormatProperties(
             vk::Format::eR32G32B32A32Sfloat);
         if (!(format_properties.optimalTilingFeatures &
@@ -450,23 +507,6 @@ void Vulkan_renderer::select_physical_device(
     }
 
     throw std::runtime_error("Failed to find a suitable physical device");
-}
-
-std::uint32_t
-Vulkan_renderer::get_queue_family_index(vk::PhysicalDevice physical_device)
-{
-    const auto properties = physical_device.getQueueFamilyProperties();
-
-    for (std::uint32_t i {}; i < static_cast<std::uint32_t>(properties.size());
-         ++i)
-    {
-        if (properties[i].queueFlags & vk::QueueFlagBits::eCompute)
-        {
-            return i;
-        }
-    }
-
-    return std::numeric_limits<std::uint32_t>::max();
 }
 
 void Vulkan_renderer::create_device(std::uint32_t device_extension_count,
@@ -544,25 +584,6 @@ void Vulkan_renderer::end_one_time_submit_command_buffer(
     m_queue.waitIdle();
 }
 
-std::uint32_t
-Vulkan_renderer::find_memory_type(std::uint32_t type_filter,
-                                  vk::MemoryPropertyFlags properties)
-{
-    const auto memory_properties = m_physical_device.getMemoryProperties();
-
-    for (std::uint32_t i {}; i < memory_properties.memoryTypeCount; ++i)
-    {
-        if ((type_filter & (1 << i)) &&
-            (memory_properties.memoryTypes[i].propertyFlags & properties) ==
-                properties)
-        {
-            return i;
-        }
-    }
-
-    throw std::runtime_error("Failed to find a suitable memory type");
-}
-
 void Vulkan_renderer::create_storage_image(std::uint32_t width,
                                            std::uint32_t height)
 {
@@ -584,21 +605,22 @@ void Vulkan_renderer::create_storage_image(std::uint32_t width,
         .sharingMode = vk::SharingMode::eExclusive,
         .initialLayout = vk::ImageLayout::eUndefined};
 
-    m_storage_image.image = m_device->createImageUnique(image_create_info);
+    m_storage_image = m_device->createImageUnique(image_create_info);
 
     const auto memory_requirements =
-        m_device->getImageMemoryRequirements(m_storage_image.image.get());
+        m_device->getImageMemoryRequirements(m_storage_image.get());
 
     const vk::MemoryAllocateInfo allocate_info {
         .allocationSize = memory_requirements.size,
         .memoryTypeIndex =
-            find_memory_type(memory_requirements.memoryTypeBits,
+            find_memory_type(m_physical_device,
+                             memory_requirements.memoryTypeBits,
                              vk::MemoryPropertyFlagBits::eDeviceLocal)};
 
-    m_storage_image.memory = m_device->allocateMemoryUnique(allocate_info);
+    m_storage_image_memory = m_device->allocateMemoryUnique(allocate_info);
 
     m_device->bindImageMemory(
-        m_storage_image.image.get(), m_storage_image.memory.get(), 0);
+        m_storage_image.get(), m_storage_image_memory.get(), 0);
 
     constexpr vk::ImageSubresourceRange subresource_range {
         .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -608,7 +630,7 @@ void Vulkan_renderer::create_storage_image(std::uint32_t width,
         .layerCount = 1};
 
     const vk::ImageViewCreateInfo image_view_create_info {
-        .image = m_storage_image.image.get(),
+        .image = m_storage_image.get(),
         .viewType = vk::ImageViewType::e2D,
         .format = format,
         .subresourceRange = subresource_range};
@@ -620,20 +642,18 @@ void Vulkan_renderer::create_storage_image(std::uint32_t width,
 
     const vk::ImageMemoryBarrier image_memory_barrier {
         .srcAccessMask = vk::AccessFlagBits::eNone,
-        .dstAccessMask = vk::AccessFlagBits::eShaderRead |
-                         vk::AccessFlagBits::eShaderWrite |
-                         vk::AccessFlagBits::eTransferRead,
+        .dstAccessMask =
+            vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite,
         .oldLayout = vk::ImageLayout::eUndefined,
         .newLayout = vk::ImageLayout::eGeneral,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = m_storage_image.image.get(),
+        .image = m_storage_image.get(),
         .subresourceRange = subresource_range};
 
     command_buffer.pipelineBarrier(
         vk::PipelineStageFlagBits::eTopOfPipe,
-        vk::PipelineStageFlagBits::eRayTracingShaderKHR |
-            vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eRayTracingShaderKHR,
         {},
         {},
         {},
@@ -642,14 +662,18 @@ void Vulkan_renderer::create_storage_image(std::uint32_t width,
     end_one_time_submit_command_buffer(command_buffer);
 }
 
-Unique_buffer Vulkan_renderer::create_buffer(vk::DeviceSize size,
-                                             vk::BufferUsageFlags usage,
-                                             vk::MemoryPropertyFlags properties)
+std::pair<vk::UniqueBuffer, vk::UniqueDeviceMemory>
+Vulkan_renderer::create_buffer(vk::DeviceSize size,
+                               vk::BufferUsageFlags usage,
+                               vk::MemoryPropertyFlags properties)
 {
     const vk::BufferCreateInfo buffer_create_info {.size = size,
                                                    .usage = usage};
 
     auto buffer = m_device->createBufferUnique(buffer_create_info);
+
+    // TODO: use VkMemoryDedicatedRequirements to check if some resources prefer
+    //  or require a dedicated allocation
 
     const auto memory_requirements =
         m_device->getBufferMemoryRequirements(buffer.get());
@@ -659,8 +683,8 @@ Unique_buffer Vulkan_renderer::create_buffer(vk::DeviceSize size,
 
     vk::MemoryAllocateInfo allocate_info {
         .allocationSize = memory_requirements.size,
-        .memoryTypeIndex =
-            find_memory_type(memory_requirements.memoryTypeBits, properties)};
+        .memoryTypeIndex = find_memory_type(
+            m_physical_device, memory_requirements.memoryTypeBits, properties)};
 
     if (usage & vk::BufferUsageFlagBits::eShaderDeviceAddress)
     {
@@ -674,145 +698,77 @@ Unique_buffer Vulkan_renderer::create_buffer(vk::DeviceSize size,
     return {std::move(buffer), std::move(memory)};
 }
 
-Unique_buffer Vulkan_renderer::create_device_local_buffer_from_data(
-    vk::DeviceSize size, vk::BufferUsageFlags usage, const void *data)
+void Vulkan_renderer::create_geometry_buffer(
+    const std::vector<float> &vertices,
+    const std::vector<std::uint32_t> &indices,
+    const std::vector<float> &normals)
 {
-    const auto staging_buffer =
-        create_buffer(size,
+    const auto offset_alignemnt = m_physical_device.getProperties()
+                                      .limits.minStorageBufferOffsetAlignment;
+
+    m_vertex_count = static_cast<std::uint32_t>(vertices.size() / 3);
+    m_index_count = static_cast<std::uint32_t>(indices.size());
+    m_vertex_range_size = vertices.size() * sizeof(float);
+    m_index_range_offset = align_up(m_vertex_range_size, offset_alignemnt);
+    m_index_range_size = indices.size() * sizeof(float);
+    m_normal_range_offset =
+        align_up(m_index_range_offset + m_index_range_size, offset_alignemnt);
+    m_normal_range_size = normals.size() * sizeof(float);
+
+    const auto geometry_buffer_size =
+        m_normal_range_offset + m_normal_range_size;
+
+    const auto [staging_buffer, staging_memory] =
+        create_buffer(geometry_buffer_size,
                       vk::BufferUsageFlagBits::eTransferSrc,
                       vk::MemoryPropertyFlagBits::eHostVisible |
                           vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    auto *const mapped_data =
-        m_device->mapMemory(staging_buffer.memory.get(), 0, size);
+    auto *const mapped_data = static_cast<std::uint8_t *>(
+        m_device->mapMemory(staging_memory.get(), 0, geometry_buffer_size));
 
-    std::memcpy(mapped_data, data, size);
+    std::memcpy(mapped_data, vertices.data(), m_vertex_range_size);
+    std::memcpy(
+        mapped_data + m_index_range_offset, indices.data(), m_index_range_size);
+    std::memcpy(mapped_data + m_normal_range_offset,
+                normals.data(),
+                m_normal_range_size);
 
-    auto buffer =
-        create_buffer(size, usage, vk::MemoryPropertyFlagBits::eDeviceLocal);
+    m_device->unmapMemory(staging_memory.get());
+
+    std::tie(m_geometry_buffer, m_geometry_memory) =
+        create_buffer(geometry_buffer_size,
+                      vk::BufferUsageFlagBits::eStorageBuffer |
+                          vk::BufferUsageFlagBits::eTransferDst |
+                          vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                          vk::BufferUsageFlagBits::
+                              eAccelerationStructureBuildInputReadOnlyKHR,
+                      vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     const auto command_buffer = begin_one_time_submit_command_buffer();
 
-    const vk::BufferCopy region {.srcOffset = 0, .dstOffset = 0, .size = size};
+    const vk::BufferCopy region {
+        .srcOffset = 0, .dstOffset = 0, .size = geometry_buffer_size};
 
     command_buffer.copyBuffer(
-        staging_buffer.buffer.get(), buffer.buffer.get(), region);
+        staging_buffer.get(), m_geometry_buffer.get(), region);
 
     end_one_time_submit_command_buffer(command_buffer);
-
-    return buffer;
-}
-
-void Vulkan_renderer::create_vertex_buffer(const std::vector<float> &vertices)
-{
-    m_vertex_count = static_cast<std::uint32_t>(vertices.size() / 3);
-    m_vertex_buffer_size = vertices.size() * sizeof(float);
-    m_vertex_buffer = create_device_local_buffer_from_data(
-        m_vertex_buffer_size,
-        vk::BufferUsageFlagBits::eStorageBuffer |
-            vk::BufferUsageFlagBits::eTransferDst |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress |
-            vk::BufferUsageFlagBits::
-                eAccelerationStructureBuildInputReadOnlyKHR,
-        vertices.data());
-}
-
-void Vulkan_renderer::create_normals_buffer(const std::vector<float> &normals)
-{
-    m_normals_buffer_size = normals.size() * sizeof(float);
-    m_normals_buffer = create_device_local_buffer_from_data(
-        m_normals_buffer_size,
-        vk::BufferUsageFlagBits::eStorageBuffer |
-            vk::BufferUsageFlagBits::eTransferDst |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress |
-            vk::BufferUsageFlagBits::
-                eAccelerationStructureBuildInputReadOnlyKHR,
-        normals.data());
-}
-
-void Vulkan_renderer::create_index_buffer(
-    const std::vector<std::uint32_t> &indices)
-{
-    m_index_count = static_cast<std::uint32_t>(indices.size());
-    m_index_buffer_size = indices.size() * sizeof(float);
-    m_index_buffer = create_device_local_buffer_from_data(
-        m_index_buffer_size,
-        vk::BufferUsageFlagBits::eStorageBuffer |
-            vk::BufferUsageFlagBits::eTransferDst |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress |
-            vk::BufferUsageFlagBits::
-                eAccelerationStructureBuildInputReadOnlyKHR,
-        indices.data());
-}
-
-void Vulkan_renderer::create_geometry_buffers()
-{
-    tinyobj::ObjReader reader;
-    reader.ParseFromFile("../resources/bunny.obj");
-    if (!reader.Valid())
-    {
-        throw std::runtime_error(reader.Error());
-    }
-
-    const auto &shapes = reader.GetShapes();
-    if (shapes.size() != 1)
-    {
-        throw std::runtime_error("OBJ file contains more than one shape");
-    }
-
-    const auto &indices = shapes.front().mesh.indices;
-
-    std::vector<std::uint32_t> vertex_indices(indices.size());
-    for (std::size_t i {}; i < indices.size(); ++i)
-    {
-        vertex_indices[i] = static_cast<std::uint32_t>(indices[i].vertex_index);
-    }
-
-    const auto &obj_vertices = reader.GetAttrib().vertices;
-    const auto &obj_normals = reader.GetAttrib().normals;
-    std::vector<float> normals(reader.GetAttrib().vertices.size());
-    for (const auto index : indices)
-    {
-        const auto vertex_index = static_cast<std::size_t>(index.vertex_index);
-        const auto normal_index = static_cast<std::size_t>(index.normal_index);
-        normals[vertex_index * 3 + 0] = obj_normals[normal_index * 3 + 0];
-        normals[vertex_index * 3 + 1] = obj_normals[normal_index * 3 + 1];
-        normals[vertex_index * 3 + 2] = obj_normals[normal_index * 3 + 2];
-    }
-
-    create_vertex_buffer(obj_vertices);
-    create_normals_buffer(normals);
-    create_index_buffer(vertex_indices);
-}
-
-vk::DeviceAddress Vulkan_renderer::get_device_address(vk::Buffer buffer)
-{
-    const vk::BufferDeviceAddressInfo address_info {.buffer = buffer};
-    return m_device->getBufferAddress(address_info);
-}
-
-vk::DeviceAddress Vulkan_renderer::get_device_address(
-    vk::AccelerationStructureKHR acceleration_structure)
-{
-    const vk::AccelerationStructureDeviceAddressInfoKHR address_info {
-        .accelerationStructure = acceleration_structure};
-    return m_device->getAccelerationStructureAddressKHR(address_info);
 }
 
 void Vulkan_renderer::create_blas()
 {
-    const auto vertex_buffer_address =
-        get_device_address(m_vertex_buffer.buffer.get());
-    const auto index_buffer_address =
-        get_device_address(m_index_buffer.buffer.get());
+    const auto geometry_buffer_address =
+        get_device_address(m_device.get(), m_geometry_buffer.get());
 
     const vk::AccelerationStructureGeometryTrianglesDataKHR triangles {
         .vertexFormat = vk::Format::eR32G32B32Sfloat,
-        .vertexData = {.deviceAddress = vertex_buffer_address},
+        .vertexData = {.deviceAddress = geometry_buffer_address},
         .vertexStride = 3 * sizeof(float),
         .maxVertex = m_vertex_count - 1,
         .indexType = vk::IndexType::eUint32,
-        .indexData = {.deviceAddress = index_buffer_address}};
+        .indexData = {.deviceAddress =
+                          geometry_buffer_address + m_index_range_offset}};
 
     const vk::AccelerationStructureGeometryKHR geometry {
         .geometryType = vk::GeometryTypeKHR::eTriangles,
@@ -837,18 +793,18 @@ void Vulkan_renderer::create_blas()
             build_geometry_info,
             build_range_info.primitiveCount);
 
-    const auto scratch_buffer =
+    const auto [scratch_buffer, scratch_buffer_memory] =
         create_buffer(build_sizes_info.buildScratchSize,
                       vk::BufferUsageFlagBits::eShaderDeviceAddress |
                           vk::BufferUsageFlagBits::eStorageBuffer,
                       vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     const auto scratch_buffer_address =
-        get_device_address(scratch_buffer.buffer.get());
+        get_device_address(m_device.get(), scratch_buffer.get());
 
     const auto command_buffer = begin_one_time_submit_command_buffer();
 
-    m_blas_buffer = create_buffer(
+    std::tie(m_blas_buffer, m_blas_buffer_memory) = create_buffer(
         build_sizes_info.accelerationStructureSize,
         vk::BufferUsageFlagBits::eShaderDeviceAddress |
             vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR,
@@ -856,7 +812,7 @@ void Vulkan_renderer::create_blas()
 
     const vk::AccelerationStructureCreateInfoKHR
         acceleration_structure_create_info {
-            .buffer = m_blas_buffer.buffer.get(),
+            .buffer = m_blas_buffer.get(),
             .size = build_sizes_info.accelerationStructureSize,
             .type = vk::AccelerationStructureTypeKHR::eBottomLevel};
 
@@ -885,23 +841,24 @@ void Vulkan_renderer::create_tlas()
         .mask = 0xFF,
         .instanceShaderBindingTableRecordOffset = 0,
         .flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
-        .accelerationStructureReference = get_device_address(m_blas.get())};
+        .accelerationStructureReference =
+            get_device_address(m_device.get(), m_blas.get())};
 
-    const auto staging_buffer =
+    const auto [staging_buffer, staging_buffer_memory] =
         create_buffer(sizeof(vk::AccelerationStructureInstanceKHR),
                       vk::BufferUsageFlagBits::eTransferSrc,
                       vk::MemoryPropertyFlagBits::eHostVisible |
                           vk::MemoryPropertyFlagBits::eHostCoherent);
 
     auto *const mapped_data =
-        m_device->mapMemory(staging_buffer.memory.get(),
+        m_device->mapMemory(staging_buffer_memory.get(),
                             0,
                             sizeof(vk::AccelerationStructureInstanceKHR));
 
     std::memcpy(
         mapped_data, &tlas, sizeof(vk::AccelerationStructureInstanceKHR));
 
-    const auto instance_buffer =
+    const auto [instance_buffer, instance_buffer_memory] =
         create_buffer(sizeof(vk::AccelerationStructureInstanceKHR),
                       vk::BufferUsageFlagBits::eShaderDeviceAddress |
                           vk::BufferUsageFlagBits::
@@ -917,7 +874,7 @@ void Vulkan_renderer::create_tlas()
         .size = sizeof(vk::AccelerationStructureInstanceKHR)};
 
     command_buffer.copyBuffer(
-        staging_buffer.buffer.get(), instance_buffer.buffer.get(), region);
+        staging_buffer.get(), instance_buffer.get(), region);
 
     constexpr vk::MemoryBarrier barrier {
         .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
@@ -932,8 +889,9 @@ void Vulkan_renderer::create_tlas()
         {});
 
     const vk::AccelerationStructureGeometryInstancesDataKHR
-        geometry_instances_data {.data = {.deviceAddress = get_device_address(
-                                              instance_buffer.buffer.get())}};
+        geometry_instances_data {
+            .data = {.deviceAddress = get_device_address(
+                         m_device.get(), instance_buffer.get())}};
 
     const vk::AccelerationStructureGeometryKHR geometry {
         .geometryType = vk::GeometryTypeKHR::eInstances,
@@ -952,7 +910,7 @@ void Vulkan_renderer::create_tlas()
             build_geometry_info,
             1);
 
-    m_tlas_buffer = create_buffer(
+    std::tie(m_tlas_buffer, m_tlas_buffer_memory) = create_buffer(
         build_sizes_info.accelerationStructureSize,
         vk::BufferUsageFlagBits::eShaderDeviceAddress |
             vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR,
@@ -960,21 +918,21 @@ void Vulkan_renderer::create_tlas()
 
     const vk::AccelerationStructureCreateInfoKHR
         acceleration_structure_create_info {
-            .buffer = m_tlas_buffer.buffer.get(),
+            .buffer = m_tlas_buffer.get(),
             .size = build_sizes_info.accelerationStructureSize,
             .type = vk::AccelerationStructureTypeKHR::eTopLevel};
 
     m_tlas = m_device->createAccelerationStructureKHRUnique(
         acceleration_structure_create_info);
 
-    const auto scratch_buffer =
+    const auto [scratch_buffer, scratch_buffer_memory] =
         create_buffer(build_sizes_info.buildScratchSize,
                       vk::BufferUsageFlagBits::eShaderDeviceAddress |
                           vk::BufferUsageFlagBits::eStorageBuffer,
                       vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     const auto scratch_buffer_address =
-        get_device_address(scratch_buffer.buffer.get());
+        get_device_address(m_device.get(), scratch_buffer.get());
 
     build_geometry_info.dstAccelerationStructure = m_tlas.get();
     build_geometry_info.scratchData.deviceAddress = scratch_buffer_address;
@@ -1061,20 +1019,20 @@ void Vulkan_renderer::create_descriptor_set()
                                            .pAccelerationStructures =
                                                &m_tlas.get()};
 
-    const vk::DescriptorBufferInfo descriptor_vertex_buffer {
-        .buffer = m_vertex_buffer.buffer.get(),
+    const vk::DescriptorBufferInfo descriptor_vertices {
+        .buffer = m_geometry_buffer.get(),
         .offset = 0,
-        .range = m_vertex_buffer_size};
+        .range = m_vertex_range_size};
 
-    const vk::DescriptorBufferInfo descriptor_normals_buffer {
-        .buffer = m_normals_buffer.buffer.get(),
-        .offset = 0,
-        .range = m_normals_buffer_size};
+    const vk::DescriptorBufferInfo descriptor_indices {
+        .buffer = m_geometry_buffer.get(),
+        .offset = m_index_range_offset,
+        .range = m_index_range_size};
 
-    const vk::DescriptorBufferInfo descriptor_index_buffer {
-        .buffer = m_index_buffer.buffer.get(),
-        .offset = 0,
-        .range = m_index_buffer_size};
+    const vk::DescriptorBufferInfo descriptor_normals {
+        .buffer = m_geometry_buffer.get(),
+        .offset = m_normal_range_offset,
+        .range = m_normal_range_size};
 
     const vk::WriteDescriptorSet descriptor_writes[] {
         {.dstSet = m_descriptor_set,
@@ -1094,19 +1052,19 @@ void Vulkan_renderer::create_descriptor_set()
          .dstArrayElement = 0,
          .descriptorCount = 1,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
-         .pBufferInfo = &descriptor_vertex_buffer},
+         .pBufferInfo = &descriptor_vertices},
         {.dstSet = m_descriptor_set,
          .dstBinding = 3,
          .dstArrayElement = 0,
          .descriptorCount = 1,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
-         .pBufferInfo = &descriptor_index_buffer},
+         .pBufferInfo = &descriptor_indices},
         {.dstSet = m_descriptor_set,
          .dstBinding = 4,
          .dstArrayElement = 0,
          .descriptorCount = 1,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
-         .pBufferInfo = &descriptor_normals_buffer}};
+         .pBufferInfo = &descriptor_normals}};
 
     m_device->updateDescriptorSets(descriptor_writes, {});
 }
@@ -1201,9 +1159,6 @@ void Vulkan_renderer::create_shader_binding_table()
     const std::uint32_t handle_size {
         m_ray_tracing_properties.shaderGroupHandleSize};
 
-    constexpr auto align_up = [](std::uint32_t size, std::uint32_t alignment)
-    { return (size + (alignment - 1)) & ~(alignment - 1); };
-
     const std::uint32_t handle_size_aligned = align_up(
         handle_size, m_ray_tracing_properties.shaderGroupHandleAlignment);
 
@@ -1229,7 +1184,7 @@ void Vulkan_renderer::create_shader_binding_table()
     const auto sbt_size = m_rgen_region.size + m_miss_region.size +
                           m_hit_region.size + m_call_region.size;
 
-    m_sbt_buffer =
+    std::tie(m_sbt_buffer, m_sbt_buffer_memory) =
         create_buffer(sbt_size,
                       vk::BufferUsageFlagBits::eTransferSrc |
                           vk::BufferUsageFlagBits::eShaderDeviceAddress |
@@ -1237,7 +1192,8 @@ void Vulkan_renderer::create_shader_binding_table()
                       vk::MemoryPropertyFlagBits::eHostVisible |
                           vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    const auto sbt_address = get_device_address(m_sbt_buffer.buffer.get());
+    const auto sbt_address =
+        get_device_address(m_device.get(), m_sbt_buffer.get());
     m_rgen_region.deviceAddress = sbt_address;
     m_miss_region.deviceAddress = sbt_address + m_rgen_region.size;
     m_hit_region.deviceAddress =
@@ -1247,7 +1203,7 @@ void Vulkan_renderer::create_shader_binding_table()
     { return handles.data() + i * handle_size; };
 
     const auto sbt_buffer_mapped = static_cast<std::uint8_t *>(
-        m_device->mapMemory(m_sbt_buffer.memory.get(), 0, sbt_size));
+        m_device->mapMemory(m_sbt_buffer_memory.get(), 0, sbt_size));
     std::uint32_t handle_index {};
     std::memcpy(
         sbt_buffer_mapped, get_handle_pointer(handle_index), handle_size);

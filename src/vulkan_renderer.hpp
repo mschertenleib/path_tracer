@@ -18,26 +18,19 @@
 #include <array>
 #include <cstdint>
 #include <limits>
+#include <utility>
 #include <vector>
-
-struct Unique_buffer
-{
-    vk::UniqueBuffer buffer;
-    vk::UniqueDeviceMemory memory;
-};
-
-struct Unique_image
-{
-    vk::UniqueImage image;
-    vk::UniqueDeviceMemory memory;
-};
 
 class Vulkan_renderer
 {
 public:
     constexpr Vulkan_renderer() noexcept = default;
 
-    Vulkan_renderer(std::uint32_t render_width, std::uint32_t render_height);
+    Vulkan_renderer(std::uint32_t render_width,
+                    std::uint32_t render_height,
+                    const std::vector<float> &vertices,
+                    const std::vector<std::uint32_t> &indices,
+                    const std::vector<float> &normals);
 
     Vulkan_renderer(const Vulkan_renderer &) = delete;
     Vulkan_renderer(Vulkan_renderer &&) noexcept = default;
@@ -49,33 +42,22 @@ public:
     void store_to_png(const char *file_name);
 
 private:
-    void create_instance(std::uint32_t api_version);
+    void create_instance();
     void select_physical_device(std::uint32_t device_extension_count,
                                 const char *const *device_extension_names);
-    [[nodiscard]] static std::uint32_t
-    get_queue_family_index(vk::PhysicalDevice physical_device);
     void create_device(std::uint32_t device_extension_count,
                        const char *const *device_extension_names);
     void create_command_pool();
     [[nodiscard]] vk::CommandBuffer begin_one_time_submit_command_buffer();
     void end_one_time_submit_command_buffer(vk::CommandBuffer command_buffer);
-    [[nodiscard]] std::uint32_t
-    find_memory_type(std::uint32_t type_filter,
-                     vk::MemoryPropertyFlags properties);
     void create_storage_image(std::uint32_t width, std::uint32_t height);
-    [[nodiscard]] Unique_buffer
+    [[nodiscard]] std::pair<vk::UniqueBuffer, vk::UniqueDeviceMemory>
     create_buffer(vk::DeviceSize size,
                   vk::BufferUsageFlags usage,
                   vk::MemoryPropertyFlags properties);
-    [[nodiscard]] Unique_buffer create_device_local_buffer_from_data(
-        vk::DeviceSize size, vk::BufferUsageFlags usage, const void *data);
-    void create_vertex_buffer(const std::vector<float> &vertices);
-    void create_normals_buffer(const std::vector<float> &normals);
-    void create_index_buffer(const std::vector<std::uint32_t> &indices);
-    void create_geometry_buffers();
-    [[nodiscard]] vk::DeviceAddress get_device_address(vk::Buffer buffer);
-    [[nodiscard]] vk::DeviceAddress
-    get_device_address(vk::AccelerationStructureKHR acceleration_structure);
+    void create_geometry_buffer(const std::vector<float> &vertices,
+                                const std::vector<std::uint32_t> &indices,
+                                const std::vector<float> &normals);
     void create_blas();
     void create_tlas();
     void create_descriptor_set_layout();
@@ -108,23 +90,25 @@ private:
 
     std::uint32_t m_width {};
     std::uint32_t m_height {};
-    Unique_image m_storage_image {};
+    vk::UniqueImage m_storage_image {};
+    vk::UniqueDeviceMemory m_storage_image_memory {};
     vk::UniqueImageView m_storage_image_view {};
 
     std::uint32_t m_vertex_count {};
-    vk::DeviceSize m_vertex_buffer_size {};
-    Unique_buffer m_vertex_buffer {};
-
-    vk::DeviceSize m_normals_buffer_size {};
-    Unique_buffer m_normals_buffer {};
-
     std::uint32_t m_index_count {};
-    vk::DeviceSize m_index_buffer_size {};
-    Unique_buffer m_index_buffer {};
+    vk::DeviceSize m_vertex_range_size {};
+    vk::DeviceSize m_index_range_offset {};
+    vk::DeviceSize m_index_range_size {};
+    vk::DeviceSize m_normal_range_offset {};
+    vk::DeviceSize m_normal_range_size {};
+    vk::UniqueBuffer m_geometry_buffer {};
+    vk::UniqueDeviceMemory m_geometry_memory {};
 
-    Unique_buffer m_blas_buffer {};
+    vk::UniqueBuffer m_blas_buffer {};
+    vk::UniqueDeviceMemory m_blas_buffer_memory {};
     vk::UniqueAccelerationStructureKHR m_blas {};
-    Unique_buffer m_tlas_buffer {};
+    vk::UniqueBuffer m_tlas_buffer {};
+    vk::UniqueDeviceMemory m_tlas_buffer_memory {};
     vk::UniqueAccelerationStructureKHR m_tlas {};
 
     vk::UniqueDescriptorSetLayout m_descriptor_set_layout {};
@@ -137,7 +121,8 @@ private:
         m_ray_tracing_shader_groups {};
     vk::UniquePipelineLayout m_ray_tracing_pipeline_layout {};
     vk::UniquePipeline m_ray_tracing_pipeline {};
-    Unique_buffer m_sbt_buffer {};
+    vk::UniqueBuffer m_sbt_buffer {};
+    vk::UniqueDeviceMemory m_sbt_buffer_memory {};
     vk::StridedDeviceAddressRegionKHR m_rgen_region {};
     vk::StridedDeviceAddressRegionKHR m_miss_region {};
     vk::StridedDeviceAddressRegionKHR m_hit_region {};

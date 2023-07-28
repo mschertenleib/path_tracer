@@ -46,15 +46,15 @@ endif ()
 find_package(Vulkan REQUIRED)
 
 
-add_library(stb_image STATIC src/stb_image.cpp)
+add_library(stb_image STATIC src/stb_image.cpp external/stb_image.h)
 target_include_directories(stb_image PUBLIC external)
 
 
-add_library(stb_image_write STATIC src/stb_image_write.cpp)
+add_library(stb_image_write STATIC src/stb_image_write.cpp external/stb_image_write.h)
 target_include_directories(stb_image_write PUBLIC external)
 
 
-add_library(tiny_obj_loader STATIC src/tiny_obj_loader.cpp)
+add_library(tiny_obj_loader STATIC src/tiny_obj_loader.cpp external/tiny_obj_loader.h)
 target_include_directories(tiny_obj_loader PUBLIC external)
 
 
