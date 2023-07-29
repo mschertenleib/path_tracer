@@ -54,7 +54,7 @@ template <std::unsigned_integral U>
 
     const auto file_size = std::filesystem::file_size(path);
     const auto buffer_length =
-        (file_size + sizeof(std::uint32_t) - 1u) / sizeof(std::uint32_t);
+        align_up(file_size, sizeof(std::uint32_t)) / sizeof(std::uint32_t);
 
     std::vector<std::uint32_t> buffer(buffer_length);
 
@@ -135,9 +135,7 @@ get_device_address(vk::Device device,
 
 Vulkan_renderer::Vulkan_renderer(std::uint32_t render_width,
                                  std::uint32_t render_height,
-                                 const std::vector<float> &vertices,
-                                 const std::vector<std::uint32_t> &indices,
-                                 const std::vector<float> &normals)
+                                 const Scene &scene)
 {
     constexpr const char *device_extension_names[] {
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
@@ -152,7 +150,10 @@ Vulkan_renderer::Vulkan_renderer(std::uint32_t render_width,
     m_queue = m_device->getQueue(m_queue_family_index, 0);
     create_command_pool();
     create_storage_image(render_width, render_height);
-    create_geometry_buffer(vertices, indices, normals);
+    // FIXME
+    create_geometry_buffer(scene.meshes[0].vertices,
+                           scene.meshes[0].indices,
+                           scene.meshes[0].normals);
     create_blas();
     create_tlas();
     create_descriptor_set_layout();
@@ -471,7 +472,6 @@ void Vulkan_renderer::select_physical_device(
             continue;
         }
 
-        // FIXME: put these and the features in create_device in the same place
         const auto features = physical_device.getFeatures2<
             vk::PhysicalDeviceFeatures2,
             vk::PhysicalDeviceVulkan12Features,
@@ -479,6 +479,8 @@ void Vulkan_renderer::select_physical_device(
             vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
         if (!features.get<vk::PhysicalDeviceVulkan12Features>()
                  .bufferDeviceAddress ||
+            !features.get<vk::PhysicalDeviceVulkan12Features>()
+                 .scalarBlockLayout ||
             !features.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>()
                  .accelerationStructure ||
             !features.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>()
@@ -497,11 +499,13 @@ void Vulkan_renderer::select_physical_device(
         }
 
         m_physical_device = physical_device;
-        m_ray_tracing_properties =
-            m_physical_device
-                .getProperties2<
-                    vk::PhysicalDeviceProperties2,
-                    vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>()
+        const auto properties_chain = m_physical_device.getProperties2<
+            vk::PhysicalDeviceProperties2,
+            vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
+        m_physical_device_properties =
+            properties_chain.get<vk::PhysicalDeviceProperties2>().properties;
+        m_ray_tracing_pipeline_properties =
+            properties_chain
                 .get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
         return;
     }
@@ -518,7 +522,6 @@ void Vulkan_renderer::create_device(std::uint32_t device_extension_count,
         .queueFamilyIndex = m_queue_family_index,
         .queueCount = 1,
         .pQueuePriorities = &queue_priority};
-
     vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
         ray_tracing_pipeline_features {.rayTracingPipeline = VK_TRUE};
     vk::PhysicalDeviceAccelerationStructureFeaturesKHR
@@ -703,8 +706,8 @@ void Vulkan_renderer::create_geometry_buffer(
     const std::vector<std::uint32_t> &indices,
     const std::vector<float> &normals)
 {
-    const auto offset_alignemnt = m_physical_device.getProperties()
-                                      .limits.minStorageBufferOffsetAlignment;
+    const auto offset_alignemnt =
+        m_physical_device_properties.limits.minStorageBufferOffsetAlignment;
 
     m_vertex_count = static_cast<std::uint32_t>(vertices.size() / 3);
     m_index_count = static_cast<std::uint32_t>(indices.size());
@@ -1157,24 +1160,26 @@ void Vulkan_renderer::create_shader_binding_table()
     constexpr std::uint32_t hit_count {1};
     constexpr std::uint32_t handle_count {1 + miss_count + hit_count};
     const std::uint32_t handle_size {
-        m_ray_tracing_properties.shaderGroupHandleSize};
+        m_ray_tracing_pipeline_properties.shaderGroupHandleSize};
 
-    const std::uint32_t handle_size_aligned = align_up(
-        handle_size, m_ray_tracing_properties.shaderGroupHandleAlignment);
+    const std::uint32_t handle_size_aligned =
+        align_up(handle_size,
+                 m_ray_tracing_pipeline_properties.shaderGroupHandleAlignment);
 
-    m_rgen_region.stride = align_up(
-        handle_size_aligned, m_ray_tracing_properties.shaderGroupBaseAlignment);
+    m_rgen_region.stride =
+        align_up(handle_size_aligned,
+                 m_ray_tracing_pipeline_properties.shaderGroupBaseAlignment);
     m_rgen_region.size = m_rgen_region.stride;
 
     m_miss_region.stride = handle_size_aligned;
     m_miss_region.size =
         align_up(miss_count * handle_size_aligned,
-                 m_ray_tracing_properties.shaderGroupBaseAlignment);
+                 m_ray_tracing_pipeline_properties.shaderGroupBaseAlignment);
 
     m_hit_region.stride = handle_size_aligned;
     m_hit_region.size =
         align_up(hit_count * handle_size_aligned,
-                 m_ray_tracing_properties.shaderGroupBaseAlignment);
+                 m_ray_tracing_pipeline_properties.shaderGroupBaseAlignment);
 
     const auto data_size = handle_count * handle_size;
     const auto handles =

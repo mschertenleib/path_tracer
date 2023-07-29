@@ -60,6 +60,7 @@ target_include_directories(tiny_obj_loader PUBLIC external)
 
 add_executable(path_tracer
         src/main.cpp
+        src/geometry.cpp src/geometry.hpp
         src/vulkan_renderer.cpp src/vulkan_renderer.hpp)
 target_include_directories(path_tracer PRIVATE ${Vulkan_INCLUDE_DIRS})
 target_compile_options(path_tracer PRIVATE ${COMPILE_OPTIONS})

@@ -1,6 +1,8 @@
 #ifndef VULKAN_RENDERER_HPP
 #define VULKAN_RENDERER_HPP
 
+#include "geometry.hpp"
+
 #ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wuseless-cast"
@@ -28,9 +30,7 @@ public:
 
     Vulkan_renderer(std::uint32_t render_width,
                     std::uint32_t render_height,
-                    const std::vector<float> &vertices,
-                    const std::vector<std::uint32_t> &indices,
-                    const std::vector<float> &normals);
+                    const Scene &scene);
 
     Vulkan_renderer(const Vulkan_renderer &) = delete;
     Vulkan_renderer(Vulkan_renderer &&) noexcept = default;
@@ -79,8 +79,9 @@ private:
     std::uint32_t m_queue_family_index {
         std::numeric_limits<std::uint32_t>::max()};
     vk::PhysicalDevice m_physical_device {};
+    vk::PhysicalDeviceProperties m_physical_device_properties {};
     vk::PhysicalDeviceRayTracingPipelinePropertiesKHR
-        m_ray_tracing_properties {};
+        m_ray_tracing_pipeline_properties {};
 
     vk::UniqueDevice m_device {};
 
