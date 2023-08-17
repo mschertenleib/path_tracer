@@ -14,7 +14,7 @@ Prerequisites:
 Clone the project:
 
 ```
-git clone --recursive https://github.com/mathieu-schertenleib/path_tracer.git
+git clone --recursive https://github.com/mschertenleib/path_tracer.git
 ```
 
 If the repository was cloned non-recursively, clone the submodules with `git submodule update --init`.
