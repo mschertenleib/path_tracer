@@ -151,6 +151,7 @@ Vulkan_renderer::Vulkan_renderer(std::uint32_t render_width,
     create_command_pool();
     create_storage_image(render_width, render_height);
     // FIXME
+    assert(!scene.meshes.empty());
     create_geometry_buffer(scene.meshes[0].vertices,
                            scene.meshes[0].indices,
                            scene.meshes[0].normals);

@@ -8,10 +8,10 @@ layout(binding = 1) uniform accelerationStructureEXT tlas;
 
 layout(location = 0) rayPayloadEXT vec3 hit_value;
 
-const vec3 position = vec3(-0.5, 1.0, 2.0);
-const vec3 look_at = vec3(0.0, 0.5, 0.0);
+const vec3 position = vec3(-0.07, 0.15, 0.2);
+const vec3 look_at = vec3(0.0, 0.1, 0.0);
 const vec3 up = vec3(0.0, 1.0, 0.0);
-const float vertical_fov = radians(70.0);
+const float vertical_fov = radians(60.0);
 const float aspect_ratio = 16.0 / 9.0;
 
 const vec3 camera_position = position;

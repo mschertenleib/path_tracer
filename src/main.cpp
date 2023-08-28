@@ -4,15 +4,19 @@
 #include <cstdlib>
 #include <iostream>
 
-int main()
+int main(int argc, char *argv[])
 {
     try
     {
-        const auto scene = load_scene("../resources/bunny.obj");
-
+        if (argc != 3)
+        {
+            std::cerr << "Usage: " << argv[0] << " <input.obj> <output.png>\n";
+            return EXIT_FAILURE;
+        }
+        const auto scene = load_scene(argv[1]);
         Vulkan_renderer renderer(1280, 720, scene);
         renderer.render();
-        renderer.store_to_png("image.png");
+        renderer.store_to_png(argv[2]);
     }
     catch (const std::exception &e)
     {

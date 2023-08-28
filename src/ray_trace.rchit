@@ -53,16 +53,26 @@ void main()
     const vec3 v0 = vertices[i0];
     const vec3 v1 = vertices[i1];
     const vec3 v2 = vertices[i2];
-    const vec3 n0 = normals[i0];
-    const vec3 n1 = normals[i1];
-    const vec3 n2 = normals[i2];
+
 
     const vec3 barycentrics = vec3(1.0 - attributes.x - attributes.y, attributes.x, attributes.y);
 
     const vec3 pos = v0 * barycentrics.x + v1 * barycentrics.y + v2 * barycentrics.z;
     const vec3 world_pos = vec3(gl_ObjectToWorldEXT * vec4(pos, 1.0));
 
-    const vec3 normal = n0 * barycentrics.x + n1 * barycentrics.y + n2 * barycentrics.z;
+    // FIXME
+    vec3 normal;
+    if (normals.length() > 0)
+    {
+        const vec3 n0 = normals[i0];
+        const vec3 n1 = normals[i1];
+        const vec3 n2 = normals[i2];
+        normal = n0 * barycentrics.x + n1 * barycentrics.y + n2 * barycentrics.z;
+    }
+    else
+    {
+        normal = cross(v1 - v0, v2 - v0);
+    }
     const vec3 world_normal = normalize(vec3(gl_ObjectToWorldEXT * vec4(normal, 1.0)));
 
     hit_value = (world_normal + vec3(1.0)) * 0.5;

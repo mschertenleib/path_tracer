@@ -6,30 +6,13 @@ A path tracer written in C++, using the Vulkan ray tracing extensions.
 
 Prerequisites:
 
-- A C++20 compiler
-- [git](https://git-scm.com)
-- [CMake](https://cmake.org)
 - [The Vulkan SDK](https://www.lunarg.com/vulkan-sdk)
 
-Clone the project:
-
 ```
-git clone --recursive https://github.com/mschertenleib/path_tracer.git
-```
-
-If the repository was cloned non-recursively, clone the submodules with `git submodule update --init`.
-
-From the project root directory, create a build directory:
-
-```
+git clone https://github.com/mschertenleib/path_tracer.git
 cd path_tracer
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-```
-
-Build the project:
-
-```
-cmake --build build
+cmake --build build --target path_tracer
 ```
 
 ## External libraries
@@ -65,7 +48,9 @@ cmake --build build
 - _A Fast and Robust Method for Avoiding Self-Intersection_
   , https://link.springer.com/content/pdf/10.1007/978-1-4842-4427-2_6.pdf
 - _Ray Tracing Gems II_, https://link.springer.com/book/10.1007/978-1-4842-7185-8
+- https://www.embree.org/papers/2016-HPG-shading.pdf
+- http://www.cs.cmu.edu/afs/cs/academic/class/15869-f11/www/readings/wald08_widebvh.pdf
 
 ## License
 
-This software is released under [MIT License](LICENSE)
+This software is released under [MIT License](LICENSE).

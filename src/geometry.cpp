@@ -27,15 +27,21 @@ Scene load_scene(const char *file_name)
         vertex_indices[i] = static_cast<std::uint32_t>(indices[i].vertex_index);
     }
 
-    const auto &obj_normals = reader.GetAttrib().normals;
-    std::vector<float> normals(reader.GetAttrib().vertices.size());
-    for (const auto index : indices)
+    std::vector<float> normals;
+    if (const auto &obj_normals = reader.GetAttrib().normals;
+        !obj_normals.empty())
     {
-        const auto vertex_index = static_cast<std::size_t>(index.vertex_index);
-        const auto normal_index = static_cast<std::size_t>(index.normal_index);
-        normals[vertex_index * 3 + 0] = obj_normals[normal_index * 3 + 0];
-        normals[vertex_index * 3 + 1] = obj_normals[normal_index * 3 + 1];
-        normals[vertex_index * 3 + 2] = obj_normals[normal_index * 3 + 2];
+        normals.resize(reader.GetAttrib().vertices.size());
+        for (const auto index : indices)
+        {
+            const auto vertex_index =
+                static_cast<std::size_t>(index.vertex_index);
+            const auto normal_index =
+                static_cast<std::size_t>(index.normal_index);
+            normals[vertex_index * 3 + 0] = obj_normals[normal_index * 3 + 0];
+            normals[vertex_index * 3 + 1] = obj_normals[normal_index * 3 + 1];
+            normals[vertex_index * 3 + 2] = obj_normals[normal_index * 3 + 2];
+        }
     }
 
     const Geometry_mesh mesh {.vertices = reader.GetAttrib().vertices,
