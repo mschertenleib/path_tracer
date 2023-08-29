@@ -166,6 +166,9 @@ Vulkan_renderer::Vulkan_renderer(std::uint32_t render_width,
 
 void Vulkan_renderer::render()
 {
+    std::cout << "Rendering... " << std::flush;
+    const auto render_start = std::chrono::steady_clock::now();
+
     const auto command_buffer = begin_one_time_submit_command_buffer();
 
     command_buffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR,
@@ -195,10 +198,20 @@ void Vulkan_renderer::render()
                                 1);
 
     end_one_time_submit_command_buffer(command_buffer);
+
+    const auto render_end = std::chrono::steady_clock::now();
+    std::cout << "took "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(
+                     render_end - render_start)
+                     .count()
+              << " ms" << std::endl;
 }
 
 void Vulkan_renderer::store_to_png(const char *file_name)
 {
+    std::cout << "Writing image to \"" << file_name << "\"... " << std::flush;
+    const auto image_write_start = std::chrono::steady_clock::now();
+
     constexpr auto format = vk::Format::eR8G8B8A8Srgb;
 
     const vk::ImageCreateInfo image_create_info {
@@ -336,8 +349,6 @@ void Vulkan_renderer::store_to_png(const char *file_name)
         end_one_time_submit_command_buffer(command_buffer);
     }
 
-    std::cout << "Writing image to \"" << file_name << "\"... " << std::flush;
-    const auto image_write_start = std::chrono::steady_clock::now();
     const auto write_result = stbi_write_png(file_name,
                                              static_cast<int>(m_width),
                                              static_cast<int>(m_height),
@@ -349,6 +360,7 @@ void Vulkan_renderer::store_to_png(const char *file_name)
         std::cout << std::endl;
         throw std::runtime_error("Failed to write PNG image");
     }
+
     const auto image_write_end = std::chrono::steady_clock::now();
     std::cout << "took "
               << std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1038,7 +1050,7 @@ void Vulkan_renderer::create_descriptor_set()
         .offset = m_normal_range_offset,
         .range = m_normal_range_size};
 
-    const vk::WriteDescriptorSet descriptor_writes[] {
+    const vk::WriteDescriptorSet descriptor_writes[5] {
         {.dstSet = m_descriptor_set,
          .dstBinding = 0,
          .dstArrayElement = 0,
