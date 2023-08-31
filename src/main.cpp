@@ -1,4 +1,5 @@
 #include "simd.hpp"
+#include "vec3.hpp"
 
 #include <cstdlib>
 #include <iostream>

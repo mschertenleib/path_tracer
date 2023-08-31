@@ -48,9 +48,9 @@ void main()
     0,
     0,
     0,
-    origin.xyz,
+    origin,
     0.001,
-    direction.xyz,
+    direction,
     1000.0,
     0);
 

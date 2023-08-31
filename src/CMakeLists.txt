@@ -2,6 +2,7 @@
 add_executable(path_tracer
         main.cpp
         simd.hpp
+        vec3.hpp
 )
 target_compile_features(path_tracer PRIVATE cxx_std_20)
 
