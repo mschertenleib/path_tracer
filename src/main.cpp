@@ -1,5 +1,4 @@
-#include "simd.hpp"
-#include "vec3.hpp"
+#include "geometry.hpp"
 
 #include <cstdlib>
 #include <iostream>

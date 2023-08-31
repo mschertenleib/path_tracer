@@ -1,6 +1,7 @@
 
 add_executable(path_tracer
         main.cpp
+        geometry.cpp geometry.hpp
         simd.hpp
         vec3.hpp
 )

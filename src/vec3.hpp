@@ -13,8 +13,8 @@ struct vec3
     T z;
 };
 
-using vec3f = vec3<float>;
-using pvec3f = vec3<pfloat>;
+using float3 = vec3<float>;
+using pfloat3 = vec3<pfloat>;
 
 template <typename T>
 [[nodiscard]] ALWAYS_INLINE constexpr vec3<T> operator+(const vec3<T> &a)

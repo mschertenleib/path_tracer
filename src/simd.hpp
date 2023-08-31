@@ -26,6 +26,11 @@ struct pmask
     __m256 v;
 };
 
+[[nodiscard]] ALWAYS_INLINE pfloat setzero()
+{
+    return {_mm256_setzero_ps()};
+}
+
 [[nodiscard]] ALWAYS_INLINE pfloat set1(float a)
 {
     return {_mm256_set1_ps(a)};
