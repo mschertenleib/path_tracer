@@ -23,6 +23,7 @@ cmake --build build --target path_tracer
 
 ## References
 
+- https://uops.info/
 - [vk_mini_path_tracer](https://github.com/nvpro-samples/vk_mini_path_tracer)
 - [smallpt](http://www.kevinbeason.com/smallpt)
 - [_Ray Tracing in One Weekend_](https://raytracing.github.io/books/RayTracingInOneWeekend.html)

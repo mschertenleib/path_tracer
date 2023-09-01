@@ -1,22 +1,16 @@
 #ifndef GEOMETRY_HPP
 #define GEOMETRY_HPP
 
-#include "simd.hpp"
-#include "vec3.hpp"
+#include <cstdint>
+#include <vector>
 
-struct Hit_info
+struct Geometry
 {
-    pmask intersected;
-    pfloat t;
-    pfloat u;
-    pfloat v;
+    std::vector<float> vertices;
+    std::vector<std::uint32_t> indices;
+    std::vector<float> normals;
 };
 
-void intersect_triangle(const pfloat3 &ray_origin,
-                        const pfloat3 &ray_direction,
-                        const pfloat3 &vertex_0,
-                        const pfloat3 &vertex_1,
-                        const pfloat3 &vertex_2,
-                        Hit_info &hit_info);
+[[nodiscard]] Geometry load_obj(const char *file_name);
 
 #endif // GEOMETRY_HPP

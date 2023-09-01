@@ -3,8 +3,8 @@ cmake_minimum_required(VERSION 3.19)
 project(path_tracer LANGUAGES CXX)
 
 
+add_subdirectory(src_cpu)
 add_subdirectory(src)
-add_subdirectory(src_vulkan)
 
 
 add_library(stb_image STATIC

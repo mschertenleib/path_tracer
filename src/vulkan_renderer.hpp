@@ -30,7 +30,7 @@ public:
 
     Vulkan_renderer(std::uint32_t render_width,
                     std::uint32_t render_height,
-                    const Scene &scene);
+                    const Geometry &geometry);
 
     Vulkan_renderer(const Vulkan_renderer &) = delete;
     Vulkan_renderer(Vulkan_renderer &&) noexcept = default;

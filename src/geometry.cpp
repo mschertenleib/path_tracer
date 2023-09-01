@@ -1,33 +1,50 @@
 #include "geometry.hpp"
 
-void intersect_triangle(const pfloat3 &ray_origin,
-                        const pfloat3 &ray_direction,
-                        const pfloat3 &vertex_0,
-                        const pfloat3 &vertex_1,
-                        const pfloat3 &vertex_2,
-                        Hit_info &hit_info)
+#include "tiny_obj_loader.h"
+
+#include <stdexcept>
+
+Geometry load_obj(const char *file_name)
 {
-    const pfloat epsilon {set1(1e-7f)};
-    const pfloat zero {setzero()};
-    const pfloat one {set1(1.0f)};
+    tinyobj::ObjReader reader;
+    reader.ParseFromFile(file_name);
+    if (!reader.Valid())
+    {
+        throw std::runtime_error(reader.Error());
+    }
 
-    const pfloat3 edge_1 {vertex_1 - vertex_0};
-    const pfloat3 edge_2 {vertex_2 - vertex_0};
-    const pfloat3 h {cross(ray_direction, edge_2)};
-    const pfloat a {dot(edge_1, h)};
+    const auto &shapes = reader.GetShapes();
+    if (shapes.size() != 1)
+    {
+        throw std::runtime_error("OBJ file contains more than one shape");
+    }
 
-    const pmask is_not_parallel {(a < -epsilon) | (a > epsilon)};
+    const auto &indices = shapes.front().mesh.indices;
 
-    const pfloat f {one / a};
-    const pfloat3 s {ray_origin - vertex_0};
-    const pfloat u {f * dot(s, h)};
-    const pfloat3 q {cross(s, edge_1)};
-    const pfloat v {f * dot(ray_direction, q)};
-    const pfloat t {f * dot(edge_2, q)};
+    std::vector<std::uint32_t> vertex_indices(indices.size());
+    for (std::size_t i {}; i < indices.size(); ++i)
+    {
+        vertex_indices[i] = static_cast<std::uint32_t>(indices[i].vertex_index);
+    }
 
-    hit_info.intersected = is_not_parallel & (u >= zero) & (u <= one) &
-                           (v >= zero) & (u + v <= one) & (t > epsilon);
-    hit_info.t = select(t, hit_info.t, hit_info.intersected);
-    hit_info.u = select(u, hit_info.u, hit_info.intersected);
-    hit_info.v = select(v, hit_info.v, hit_info.intersected);
+    std::vector<float> normals;
+    if (const auto &obj_normals = reader.GetAttrib().normals;
+        !obj_normals.empty())
+    {
+        normals.resize(reader.GetAttrib().vertices.size());
+        for (const auto index : indices)
+        {
+            const auto vertex_index =
+                static_cast<std::size_t>(index.vertex_index);
+            const auto normal_index =
+                static_cast<std::size_t>(index.normal_index);
+            normals[vertex_index * 3 + 0] = obj_normals[normal_index * 3 + 0];
+            normals[vertex_index * 3 + 1] = obj_normals[normal_index * 3 + 1];
+            normals[vertex_index * 3 + 2] = obj_normals[normal_index * 3 + 2];
+        }
+    }
+
+    return Geometry {.vertices = reader.GetAttrib().vertices,
+                     .indices = vertex_indices,
+                     .normals = normals};
 }

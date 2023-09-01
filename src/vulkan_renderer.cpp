@@ -135,7 +135,7 @@ get_device_address(vk::Device device,
 
 Vulkan_renderer::Vulkan_renderer(std::uint32_t render_width,
                                  std::uint32_t render_height,
-                                 const Scene &scene)
+                                 const Geometry &geometry)
 {
     constexpr const char *device_extension_names[] {
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
@@ -150,11 +150,8 @@ Vulkan_renderer::Vulkan_renderer(std::uint32_t render_width,
     m_queue = m_device->getQueue(m_queue_family_index, 0);
     create_command_pool();
     create_storage_image(render_width, render_height);
-    // FIXME
-    assert(!scene.meshes.empty());
-    create_geometry_buffer(scene.meshes[0].vertices,
-                           scene.meshes[0].indices,
-                           scene.meshes[0].normals);
+    create_geometry_buffer(
+        geometry.vertices, geometry.indices, geometry.normals);
     create_blas();
     create_tlas();
     create_descriptor_set_layout();
