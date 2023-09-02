@@ -3,9 +3,6 @@ cmake_minimum_required(VERSION 3.20)
 project(path_tracer LANGUAGES CXX)
 
 
-add_compile_definitions(VK_NO_PROTOTYPES)
-
-
 find_package(Vulkan REQUIRED)
 
 
