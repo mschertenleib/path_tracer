@@ -1,5 +1,5 @@
 #include "geometry.hpp"
-#include "vulkan_renderer.hpp"
+#include "renderer.hpp"
 
 #include <cstdlib>
 #include <iostream>

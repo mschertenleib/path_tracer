@@ -1,5 +1,5 @@
-#ifndef VULKAN_RENDERER_HPP
-#define VULKAN_RENDERER_HPP
+#ifndef RENDERER_HPP
+#define RENDERER_HPP
 
 #include "geometry.hpp"
 
@@ -130,4 +130,4 @@ private:
     vk::StridedDeviceAddressRegionKHR m_call_region {};
 };
 
-#endif // VULKAN_RENDERER_HPP
+#endif // RENDERER_HPP

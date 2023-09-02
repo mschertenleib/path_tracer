@@ -1,4 +1,4 @@
-#include "vulkan_renderer.hpp"
+#include "renderer.hpp"
 
 #include "stb_image_write.h"
 
@@ -1096,11 +1096,9 @@ Vulkan_renderer::create_shader_module(const char *file_name)
 
 void Vulkan_renderer::create_ray_tracing_pipeline()
 {
-    const auto rgen_shader_module = create_shader_module("ray_trace.rgen.spv");
-    const auto rmiss_shader_module =
-        create_shader_module("ray_trace.rmiss.spv");
-    const auto rchit_shader_module =
-        create_shader_module("ray_trace.rchit.spv");
+    const auto rgen_shader_module = create_shader_module("shader.rgen.spv");
+    const auto rmiss_shader_module = create_shader_module("shader.rmiss.spv");
+    const auto rchit_shader_module = create_shader_module("shader.rchit.spv");
 
     const vk::PipelineShaderStageCreateInfo shader_stage_create_infos[] {
         {.stage = vk::ShaderStageFlagBits::eRaygenKHR,
