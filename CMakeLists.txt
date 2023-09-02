@@ -3,6 +3,9 @@ cmake_minimum_required(VERSION 3.20)
 project(path_tracer LANGUAGES CXX)
 
 
+add_compile_definitions(VK_NO_PROTOTYPES)
+
+
 find_package(Vulkan REQUIRED)
 
 
@@ -27,18 +30,26 @@ add_library(tiny_obj_loader STATIC
 target_include_directories(tiny_obj_loader PUBLIC external)
 
 
+add_library(vk_mem_alloc STATIC
+        src/vk_mem_alloc.cpp
+        external/vk_mem_alloc.h
+)
+target_include_directories(vk_mem_alloc PUBLIC external)
+target_link_libraries(vk_mem_alloc PRIVATE Vulkan::Vulkan)
+
+
 add_executable(path_tracer
         src/main.cpp
         src/geometry.cpp src/geometry.hpp
         src/renderer.cpp src/renderer.hpp
 )
 target_compile_features(path_tracer PRIVATE cxx_std_20)
-target_compile_definitions(path_tracer PRIVATE VK_NO_PROTOTYPES)
 target_link_libraries(path_tracer PRIVATE
         Vulkan::Vulkan
         stb_image
         stb_image_write
         tiny_obj_loader
+        vk_mem_alloc
 )
 
 
