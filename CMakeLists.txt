@@ -4,6 +4,7 @@ project(path_tracer LANGUAGES CXX)
 
 
 find_package(Vulkan REQUIRED)
+add_compile_definitions(VK_NO_PROTOTYPES)
 
 
 add_library(stb_image STATIC
@@ -40,9 +41,9 @@ add_executable(path_tracer
         src/geometry.cpp src/geometry.hpp
         src/renderer.cpp src/renderer.hpp
 )
+target_include_directories(path_tracer PRIVATE ${Vulkan_INCLUDE_DIRS})
 target_compile_features(path_tracer PRIVATE cxx_std_20)
 target_link_libraries(path_tracer PRIVATE
-        Vulkan::Vulkan
         stb_image
         stb_image_write
         tiny_obj_loader
