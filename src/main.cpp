@@ -15,11 +15,11 @@ int main(int argc, char *argv[])
             return EXIT_FAILURE;
         }
 
-        Renderer renderer;
-        const auto geometry {load_obj(argv[1])};
-        renderer.load_scene(1280, 720, geometry);
-        renderer.render();
-        renderer.write_to_png(argv[2]);
+        auto renderer = create_renderer();
+        const auto geometry = load_obj(argv[1]);
+        load_scene(renderer, 1280, 720, geometry);
+        render(renderer);
+        write_to_png(renderer, argv[2]);
     }
     catch (const std::exception &e)
     {

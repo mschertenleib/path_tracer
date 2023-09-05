@@ -154,106 +154,79 @@ private:
     VmaAllocation m_allocation {};
 };
 
-class Renderer
+struct Renderer
 {
-public:
-    Renderer();
+    vk::DynamicLoader dl {};
 
-    void load_scene(std::uint32_t render_width,
-                    std::uint32_t render_height,
-                    const struct Geometry &geometry);
-    void render() const;
-    void write_to_png(const char *file_name) const;
-
-private:
-    void create_instance();
-    void select_physical_device(std::uint32_t device_extension_count,
-                                const char *const *device_extension_names);
-    void create_device(std::uint32_t device_extension_count,
-                       const char *const *device_extension_names);
-    void create_command_pool();
-    [[nodiscard]] vk::CommandBuffer
-    begin_one_time_submit_command_buffer() const;
-    void
-    end_one_time_submit_command_buffer(vk::CommandBuffer command_buffer) const;
-    void create_storage_image(std::uint32_t width, std::uint32_t height);
-    [[nodiscard]] std::pair<vk::UniqueBuffer, vk::UniqueDeviceMemory>
-    create_buffer(vk::DeviceSize size,
-                  vk::BufferUsageFlags usage,
-                  vk::MemoryPropertyFlags properties) const;
-    void create_geometry_buffer(const std::vector<float> &vertices,
-                                const std::vector<std::uint32_t> &indices,
-                                const std::vector<float> &normals);
-    void create_blas();
-    void create_tlas();
-    void create_descriptor_set_layout();
-    void create_descriptor_pool();
-    void create_descriptor_set();
-    [[nodiscard]] vk::UniqueShaderModule
-    create_shader_module(const char *file_name) const;
-    void create_ray_tracing_pipeline();
-    void create_shader_binding_table();
-
-    vk::DynamicLoader m_dl {};
-
-    vk::UniqueInstance m_instance {};
+    vk::UniqueInstance instance {};
 
 #ifndef NDEBUG
-    vk::UniqueDebugUtilsMessengerEXT m_debug_messenger {};
+    vk::UniqueDebugUtilsMessengerEXT debug_messenger {};
 #endif
 
-    std::uint32_t m_queue_family_index {
+    std::uint32_t queue_family_index {
         std::numeric_limits<std::uint32_t>::max()};
-    vk::PhysicalDevice m_physical_device {};
-    vk::PhysicalDeviceProperties m_physical_device_properties {};
+    vk::PhysicalDevice physical_device {};
+    vk::PhysicalDeviceProperties physical_device_properties {};
     vk::PhysicalDeviceRayTracingPipelinePropertiesKHR
-        m_ray_tracing_pipeline_properties {};
+        ray_tracing_pipeline_properties {};
 
-    vk::UniqueDevice m_device {};
+    vk::UniqueDevice device {};
 
-    vk::Queue m_queue {};
+    Unique_allocator allocator {};
 
-    vk::UniqueCommandPool m_command_pool {};
+    vk::Queue queue {};
 
-    std::uint32_t m_width {};
-    std::uint32_t m_height {};
-    vk::UniqueImage m_storage_image {};
-    vk::UniqueDeviceMemory m_storage_image_memory {};
-    vk::UniqueImageView m_storage_image_view {};
+    vk::UniqueCommandPool command_pool {};
 
-    std::uint32_t m_vertex_count {};
-    std::uint32_t m_index_count {};
-    vk::DeviceSize m_vertex_range_size {};
-    vk::DeviceSize m_index_range_offset {};
-    vk::DeviceSize m_index_range_size {};
-    vk::DeviceSize m_normal_range_offset {};
-    vk::DeviceSize m_normal_range_size {};
-    vk::UniqueBuffer m_geometry_buffer {};
-    vk::UniqueDeviceMemory m_geometry_memory {};
+    std::uint32_t render_width {};
+    std::uint32_t render_height {};
+    vk::UniqueImage storage_image {};
+    vk::UniqueDeviceMemory storage_image_memory {};
+    vk::UniqueImageView storage_image_view {};
 
-    vk::UniqueBuffer m_blas_buffer {};
-    vk::UniqueDeviceMemory m_blas_buffer_memory {};
-    vk::UniqueAccelerationStructureKHR m_blas {};
-    vk::UniqueBuffer m_tlas_buffer {};
-    vk::UniqueDeviceMemory m_tlas_buffer_memory {};
-    vk::UniqueAccelerationStructureKHR m_tlas {};
+    std::uint32_t vertex_count {};
+    std::uint32_t index_count {};
+    vk::DeviceSize vertex_range_size {};
+    vk::DeviceSize index_range_offset {};
+    vk::DeviceSize index_range_size {};
+    vk::DeviceSize normal_range_offset {};
+    vk::DeviceSize normal_range_size {};
+    vk::UniqueBuffer geometry_buffer {};
+    vk::UniqueDeviceMemory geometry_memory {};
 
-    vk::UniqueDescriptorSetLayout m_descriptor_set_layout {};
+    vk::UniqueBuffer blas_buffer {};
+    vk::UniqueDeviceMemory blas_buffer_memory {};
+    vk::UniqueAccelerationStructureKHR blas {};
+    vk::UniqueBuffer tlas_buffer {};
+    vk::UniqueDeviceMemory tlas_buffer_memory {};
+    vk::UniqueAccelerationStructureKHR tlas {};
 
-    vk::UniqueDescriptorPool m_descriptor_pool {};
-
-    vk::DescriptorSet m_descriptor_set {};
+    vk::UniqueDescriptorSetLayout descriptor_set_layout {};
+    vk::UniqueDescriptorPool descriptor_pool {};
+    vk::DescriptorSet descriptor_set {};
 
     std::vector<vk::RayTracingShaderGroupCreateInfoKHR>
-        m_ray_tracing_shader_groups {};
-    vk::UniquePipelineLayout m_ray_tracing_pipeline_layout {};
-    vk::UniquePipeline m_ray_tracing_pipeline {};
-    vk::UniqueBuffer m_sbt_buffer {};
-    vk::UniqueDeviceMemory m_sbt_buffer_memory {};
-    vk::StridedDeviceAddressRegionKHR m_rgen_region {};
-    vk::StridedDeviceAddressRegionKHR m_miss_region {};
-    vk::StridedDeviceAddressRegionKHR m_hit_region {};
-    vk::StridedDeviceAddressRegionKHR m_call_region {};
+        ray_tracing_shader_groups {};
+    vk::UniquePipelineLayout ray_tracing_pipeline_layout {};
+    vk::UniquePipeline ray_tracing_pipeline {};
+    vk::UniqueBuffer sbt_buffer {};
+    vk::UniqueDeviceMemory sbt_buffer_memory {};
+    vk::StridedDeviceAddressRegionKHR rgen_region {};
+    vk::StridedDeviceAddressRegionKHR miss_region {};
+    vk::StridedDeviceAddressRegionKHR hit_region {};
+    vk::StridedDeviceAddressRegionKHR call_region {};
 };
+
+[[nodiscard]] Renderer create_renderer();
+
+void load_scene(Renderer &r,
+                std::uint32_t render_width,
+                std::uint32_t render_height,
+                const struct Geometry &geometry);
+
+void render(const Renderer &r);
+
+void write_to_png(const Renderer &r, const char *file_name);
 
 #endif // RENDERER_HPP
