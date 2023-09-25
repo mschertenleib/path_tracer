@@ -1097,18 +1097,18 @@ Renderer create_renderer()
     select_physical_device(r, device_extension_count, device_extension_names);
     create_device(r, device_extension_count, device_extension_names);
 
-    const VmaVulkanFunctions vulkan_functions {
-        .vkGetInstanceProcAddr =
-            VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr,
-        .vkGetDeviceProcAddr =
-            VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr};
+    VmaVulkanFunctions vulkan_functions {};
+    vulkan_functions.vkGetInstanceProcAddr =
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr,
+    vulkan_functions.vkGetDeviceProcAddr =
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr;
 
-    const VmaAllocatorCreateInfo allocator_create_info {
-        .physicalDevice = r.physical_device,
-        .device = r.device.get(),
-        .pVulkanFunctions = &vulkan_functions,
-        .instance = r.instance.get(),
-        .vulkanApiVersion = VK_API_VERSION_1_3};
+    VmaAllocatorCreateInfo allocator_create_info {};
+    allocator_create_info.physicalDevice = r.physical_device;
+    allocator_create_info.device = r.device.get();
+    allocator_create_info.pVulkanFunctions = &vulkan_functions;
+    allocator_create_info.instance = r.instance.get();
+    allocator_create_info.vulkanApiVersion = VK_API_VERSION_1_3;
     r.allocator = Unique_allocator(allocator_create_info);
 
     r.queue = r.device->getQueue(r.queue_family_index, 0);
@@ -1170,11 +1170,11 @@ void render(const Renderer &r)
     end_one_time_submit_command_buffer(r, command_buffer);
 
     const auto render_end = std::chrono::steady_clock::now();
-    std::cout << "took "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(
-                     render_end - render_start)
-                     .count()
-              << " ms" << std::endl;
+    std::cout
+        << "took "
+        << std::chrono::duration<double>(render_end - render_start).count() *
+               1000.0
+        << " ms" << std::endl;
 }
 
 void write_to_png(const Renderer &r, const char *file_name)
@@ -1335,8 +1335,9 @@ void write_to_png(const Renderer &r, const char *file_name)
 
     const auto image_write_end = std::chrono::steady_clock::now();
     std::cout << "took "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(
-                     image_write_end - image_write_start)
-                     .count()
+              << std::chrono::duration<double>(image_write_end -
+                                               image_write_start)
+                         .count() *
+                     1000.0
               << " ms" << std::endl;
 }
