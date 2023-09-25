@@ -181,8 +181,7 @@ struct Renderer
 
     std::uint32_t render_width {};
     std::uint32_t render_height {};
-    vk::UniqueImage storage_image {};
-    vk::UniqueDeviceMemory storage_image_memory {};
+    Unique_image storage_image {};
     vk::UniqueImageView storage_image_view {};
 
     std::uint32_t vertex_count {};
@@ -192,14 +191,11 @@ struct Renderer
     vk::DeviceSize index_range_size {};
     vk::DeviceSize normal_range_offset {};
     vk::DeviceSize normal_range_size {};
-    vk::UniqueBuffer geometry_buffer {};
-    vk::UniqueDeviceMemory geometry_memory {};
+    Unique_buffer geometry_buffer {};
 
-    vk::UniqueBuffer blas_buffer {};
-    vk::UniqueDeviceMemory blas_buffer_memory {};
+    Unique_buffer blas_buffer {};
     vk::UniqueAccelerationStructureKHR blas {};
-    vk::UniqueBuffer tlas_buffer {};
-    vk::UniqueDeviceMemory tlas_buffer_memory {};
+    Unique_buffer tlas_buffer {};
     vk::UniqueAccelerationStructureKHR tlas {};
 
     vk::UniqueDescriptorSetLayout descriptor_set_layout {};
@@ -210,8 +206,7 @@ struct Renderer
         ray_tracing_shader_groups {};
     vk::UniquePipelineLayout ray_tracing_pipeline_layout {};
     vk::UniquePipeline ray_tracing_pipeline {};
-    vk::UniqueBuffer sbt_buffer {};
-    vk::UniqueDeviceMemory sbt_buffer_memory {};
+    Unique_buffer sbt_buffer {};
     vk::StridedDeviceAddressRegionKHR rgen_region {};
     vk::StridedDeviceAddressRegionKHR miss_region {};
     vk::StridedDeviceAddressRegionKHR hit_region {};

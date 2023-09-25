@@ -308,22 +308,11 @@ void create_storage_image(Renderer &r,
         .sharingMode = vk::SharingMode::eExclusive,
         .initialLayout = vk::ImageLayout::eUndefined};
 
-    r.storage_image = r.device->createImageUnique(image_create_info);
+    VmaAllocationCreateInfo allocation_create_info {};
+    allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    const auto memory_requirements =
-        r.device->getImageMemoryRequirements(r.storage_image.get());
-
-    const vk::MemoryAllocateInfo allocate_info {
-        .allocationSize = memory_requirements.size,
-        .memoryTypeIndex =
-            find_memory_type(r.physical_device,
-                             memory_requirements.memoryTypeBits,
-                             vk::MemoryPropertyFlagBits::eDeviceLocal)};
-
-    r.storage_image_memory = r.device->allocateMemoryUnique(allocate_info);
-
-    r.device->bindImageMemory(
-        r.storage_image.get(), r.storage_image_memory.get(), 0);
+    r.storage_image = Unique_image(
+        r.allocator.get(), image_create_info, allocation_create_info);
 
     constexpr vk::ImageSubresourceRange subresource_range {
         .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -365,43 +354,6 @@ void create_storage_image(Renderer &r,
     end_one_time_submit_command_buffer(r, command_buffer);
 }
 
-std::pair<vk::UniqueBuffer, vk::UniqueDeviceMemory>
-create_buffer(const Renderer &r,
-              vk::DeviceSize size,
-              vk::BufferUsageFlags usage,
-              vk::MemoryPropertyFlags properties)
-{
-    const vk::BufferCreateInfo buffer_create_info {.size = size,
-                                                   .usage = usage};
-
-    auto buffer = r.device->createBufferUnique(buffer_create_info);
-
-    // TODO: use VkMemoryDedicatedRequirements to check if some resources prefer
-    //  or require a dedicated allocation
-
-    const auto memory_requirements =
-        r.device->getBufferMemoryRequirements(buffer.get());
-
-    constexpr vk::MemoryAllocateFlagsInfo allocate_flags_info {
-        .flags = vk::MemoryAllocateFlagBits::eDeviceAddress};
-
-    vk::MemoryAllocateInfo allocate_info {
-        .allocationSize = memory_requirements.size,
-        .memoryTypeIndex = find_memory_type(
-            r.physical_device, memory_requirements.memoryTypeBits, properties)};
-
-    if (usage & vk::BufferUsageFlagBits::eShaderDeviceAddress)
-    {
-        allocate_info.pNext = &allocate_flags_info;
-    }
-
-    auto memory = r.device->allocateMemoryUnique(allocate_info);
-
-    r.device->bindBufferMemory(buffer.get(), memory.get(), 0);
-
-    return {std::move(buffer), std::move(memory)};
-}
-
 void create_geometry_buffer(Renderer &r,
                             const std::vector<float> &vertices,
                             const std::vector<std::uint32_t> &indices,
@@ -422,15 +374,24 @@ void create_geometry_buffer(Renderer &r,
     const auto geometry_buffer_size =
         r.normal_range_offset + r.normal_range_size;
 
-    const auto [staging_buffer, staging_memory] =
-        create_buffer(r,
-                      geometry_buffer_size,
-                      vk::BufferUsageFlagBits::eTransferSrc,
-                      vk::MemoryPropertyFlagBits::eHostVisible |
-                          vk::MemoryPropertyFlagBits::eHostCoherent);
+    const vk::BufferCreateInfo staging_buffer_create_info {
+        .size = geometry_buffer_size,
+        .usage = vk::BufferUsageFlagBits::eTransferSrc};
 
-    auto *const mapped_data = static_cast<std::uint8_t *>(
-        r.device->mapMemory(staging_memory.get(), 0, geometry_buffer_size));
+    VmaAllocationCreateInfo staging_allocation_create_info {};
+    staging_allocation_create_info.flags =
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+        VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    staging_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+
+    VmaAllocationInfo staging_allocation_info {};
+
+    const auto staging_buffer = Unique_buffer(r.allocator.get(),
+                                              staging_buffer_create_info,
+                                              staging_allocation_create_info,
+                                              &staging_allocation_info);
+    auto *const mapped_data =
+        static_cast<std::uint8_t *>(staging_allocation_info.pMappedData);
 
     std::memcpy(mapped_data, vertices.data(), r.vertex_range_size);
     std::memcpy(
@@ -439,17 +400,19 @@ void create_geometry_buffer(Renderer &r,
                 normals.data(),
                 r.normal_range_size);
 
-    r.device->unmapMemory(staging_memory.get());
+    const vk::BufferCreateInfo buffer_create_info {
+        .size = geometry_buffer_size,
+        .usage = vk::BufferUsageFlagBits::eStorageBuffer |
+                 vk::BufferUsageFlagBits::eTransferDst |
+                 vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                 vk::BufferUsageFlagBits::
+                     eAccelerationStructureBuildInputReadOnlyKHR};
 
-    std::tie(r.geometry_buffer, r.geometry_memory) =
-        create_buffer(r,
-                      geometry_buffer_size,
-                      vk::BufferUsageFlagBits::eStorageBuffer |
-                          vk::BufferUsageFlagBits::eTransferDst |
-                          vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                          vk::BufferUsageFlagBits::
-                              eAccelerationStructureBuildInputReadOnlyKHR,
-                      vk::MemoryPropertyFlagBits::eDeviceLocal);
+    VmaAllocationCreateInfo allocation_create_info {};
+    allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    r.geometry_buffer = Unique_buffer(
+        r.allocator.get(), buffer_create_info, allocation_create_info);
 
     const auto command_buffer = begin_one_time_submit_command_buffer(r);
 
@@ -499,24 +462,34 @@ void create_blas(Renderer &r)
             build_geometry_info,
             build_range_info.primitiveCount);
 
-    const auto [scratch_buffer, scratch_buffer_memory] =
-        create_buffer(r,
-                      build_sizes_info.buildScratchSize,
-                      vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                          vk::BufferUsageFlagBits::eStorageBuffer,
-                      vk::MemoryPropertyFlagBits::eDeviceLocal);
+    const vk::BufferCreateInfo scratch_buffer_create_info {
+        .size = build_sizes_info.buildScratchSize,
+        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                 vk::BufferUsageFlagBits::eStorageBuffer};
+
+    VmaAllocationCreateInfo scratch_allocation_create_info {};
+    scratch_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    const auto scratch_buffer = Unique_buffer(r.allocator.get(),
+                                              scratch_buffer_create_info,
+                                              scratch_allocation_create_info);
 
     const auto scratch_buffer_address =
         get_device_address(r.device.get(), scratch_buffer.get());
 
     const auto command_buffer = begin_one_time_submit_command_buffer(r);
 
-    std::tie(r.blas_buffer, r.blas_buffer_memory) = create_buffer(
-        r,
-        build_sizes_info.accelerationStructureSize,
-        vk::BufferUsageFlagBits::eShaderDeviceAddress |
-            vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR,
-        vk::MemoryPropertyFlagBits::eDeviceLocal);
+    const vk::BufferCreateInfo blas_buffer_create_info {
+        .size = build_sizes_info.accelerationStructureSize,
+        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                 vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR};
+
+    VmaAllocationCreateInfo blas_allocation_create_info {};
+    blas_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    r.blas_buffer = Unique_buffer(r.allocator.get(),
+                                  blas_buffer_create_info,
+                                  blas_allocation_create_info);
 
     const vk::AccelerationStructureCreateInfoKHR
         acceleration_structure_create_info {
@@ -552,29 +525,41 @@ void create_tlas(Renderer &r)
         .accelerationStructureReference =
             get_device_address(r.device.get(), r.blas.get())};
 
-    const auto [staging_buffer, staging_buffer_memory] =
-        create_buffer(r,
-                      sizeof(vk::AccelerationStructureInstanceKHR),
-                      vk::BufferUsageFlagBits::eTransferSrc,
-                      vk::MemoryPropertyFlagBits::eHostVisible |
-                          vk::MemoryPropertyFlagBits::eHostCoherent);
+    const vk::BufferCreateInfo staging_buffer_create_info {
+        .size = sizeof(vk::AccelerationStructureInstanceKHR),
+        .usage = vk::BufferUsageFlagBits::eTransferSrc};
 
+    VmaAllocationCreateInfo staging_allocation_create_info {};
+    staging_allocation_create_info.flags =
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+        VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    staging_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+
+    VmaAllocationInfo staging_allocation_info {};
+
+    const auto staging_buffer = Unique_buffer(r.allocator.get(),
+                                              staging_buffer_create_info,
+                                              staging_allocation_create_info,
+                                              &staging_allocation_info);
     auto *const mapped_data =
-        r.device->mapMemory(staging_buffer_memory.get(),
-                            0,
-                            sizeof(vk::AccelerationStructureInstanceKHR));
+        static_cast<std::uint8_t *>(staging_allocation_info.pMappedData);
 
     std::memcpy(
         mapped_data, &tlas, sizeof(vk::AccelerationStructureInstanceKHR));
 
-    const auto [instance_buffer, instance_buffer_memory] =
-        create_buffer(r,
-                      sizeof(vk::AccelerationStructureInstanceKHR),
-                      vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                          vk::BufferUsageFlagBits::
-                              eAccelerationStructureBuildInputReadOnlyKHR |
-                          vk::BufferUsageFlagBits::eTransferDst,
-                      vk::MemoryPropertyFlagBits::eDeviceLocal);
+    const vk::BufferCreateInfo instance_buffer_create_info {
+        .size = sizeof(vk::AccelerationStructureInstanceKHR),
+        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                 vk::BufferUsageFlagBits::
+                     eAccelerationStructureBuildInputReadOnlyKHR |
+                 vk::BufferUsageFlagBits::eTransferDst};
+
+    VmaAllocationCreateInfo instance_allocation_create_info {};
+    instance_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    const auto instance_buffer = Unique_buffer(r.allocator.get(),
+                                               instance_buffer_create_info,
+                                               instance_allocation_create_info);
 
     const auto command_buffer = begin_one_time_submit_command_buffer(r);
 
@@ -620,12 +605,17 @@ void create_tlas(Renderer &r)
             build_geometry_info,
             1);
 
-    std::tie(r.tlas_buffer, r.tlas_buffer_memory) = create_buffer(
-        r,
-        build_sizes_info.accelerationStructureSize,
-        vk::BufferUsageFlagBits::eShaderDeviceAddress |
-            vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR,
-        vk::MemoryPropertyFlagBits::eDeviceLocal);
+    const vk::BufferCreateInfo tlas_buffer_create_info {
+        .size = build_sizes_info.accelerationStructureSize,
+        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                 vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR};
+
+    VmaAllocationCreateInfo tlas_allocation_create_info {};
+    tlas_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    r.tlas_buffer = Unique_buffer(r.allocator.get(),
+                                  tlas_buffer_create_info,
+                                  tlas_allocation_create_info);
 
     const vk::AccelerationStructureCreateInfoKHR
         acceleration_structure_create_info {
@@ -636,12 +626,17 @@ void create_tlas(Renderer &r)
     r.tlas = r.device->createAccelerationStructureKHRUnique(
         acceleration_structure_create_info);
 
-    const auto [scratch_buffer, scratch_buffer_memory] =
-        create_buffer(r,
-                      build_sizes_info.buildScratchSize,
-                      vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                          vk::BufferUsageFlagBits::eStorageBuffer,
-                      vk::MemoryPropertyFlagBits::eDeviceLocal);
+    const vk::BufferCreateInfo scratch_buffer_create_info {
+        .size = build_sizes_info.buildScratchSize,
+        .usage = vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                 vk::BufferUsageFlagBits::eStorageBuffer};
+
+    VmaAllocationCreateInfo scratch_allocation_create_info {};
+    scratch_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    const auto scratch_buffer = Unique_buffer(r.allocator.get(),
+                                              scratch_buffer_create_info,
+                                              scratch_allocation_create_info);
 
     const auto scratch_buffer_address =
         get_device_address(r.device.get(), scratch_buffer.get());
@@ -898,14 +893,26 @@ void create_shader_binding_table(Renderer &r)
     const auto sbt_size = r.rgen_region.size + r.miss_region.size +
                           r.hit_region.size + r.call_region.size;
 
-    std::tie(r.sbt_buffer, r.sbt_buffer_memory) =
-        create_buffer(r,
-                      sbt_size,
-                      vk::BufferUsageFlagBits::eTransferSrc |
-                          vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                          vk::BufferUsageFlagBits::eShaderBindingTableKHR,
-                      vk::MemoryPropertyFlagBits::eHostVisible |
-                          vk::MemoryPropertyFlagBits::eHostCoherent);
+    const vk::BufferCreateInfo sbt_buffer_create_info {
+        .size = sbt_size,
+        .usage = vk::BufferUsageFlagBits::eTransferSrc |
+                 vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                 vk::BufferUsageFlagBits::eShaderBindingTableKHR};
+
+    VmaAllocationCreateInfo sbt_allocation_create_info {};
+    sbt_allocation_create_info.flags =
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+        VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    sbt_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+
+    VmaAllocationInfo sbt_allocation_info {};
+
+    r.sbt_buffer = Unique_buffer(r.allocator.get(),
+                                 sbt_buffer_create_info,
+                                 sbt_allocation_create_info,
+                                 &sbt_allocation_info);
+    auto *const sbt_buffer_mapped =
+        static_cast<std::uint8_t *>(sbt_allocation_info.pMappedData);
 
     const auto sbt_address =
         get_device_address(r.device.get(), r.sbt_buffer.get());
@@ -917,8 +924,6 @@ void create_shader_binding_table(Renderer &r)
     const auto get_handle_pointer = [&](std::uint32_t i)
     { return handles.data() + i * handle_size; };
 
-    const auto sbt_buffer_mapped = static_cast<std::uint8_t *>(
-        r.device->mapMemory(r.sbt_buffer_memory.get(), 0, sbt_size));
     std::uint32_t handle_index {};
     std::memcpy(
         sbt_buffer_mapped, get_handle_pointer(handle_index), handle_size);
@@ -1104,6 +1109,8 @@ Renderer create_renderer()
         VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr;
 
     VmaAllocatorCreateInfo allocator_create_info {};
+    allocator_create_info.flags =
+        VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
     allocator_create_info.physicalDevice = r.physical_device;
     allocator_create_info.device = r.device.get();
     allocator_create_info.pVulkanFunctions = &vulkan_functions;
@@ -1215,15 +1222,24 @@ void write_to_png(const Renderer &r, const char *file_name)
 
     const auto staging_buffer_size = r.render_width * r.render_height * 4;
 
-    const auto [staging_buffer, staging_buffer_memory] =
-        create_buffer(r,
-                      staging_buffer_size,
-                      vk::BufferUsageFlagBits::eTransferDst,
-                      vk::MemoryPropertyFlagBits::eHostVisible |
-                          vk::MemoryPropertyFlagBits::eHostCoherent);
+    const vk::BufferCreateInfo staging_buffer_create_info {
+        .size = staging_buffer_size,
+        .usage = vk::BufferUsageFlagBits::eTransferDst};
 
-    auto *const mapped_data = r.device->mapMemory(
-        staging_buffer_memory.get(), 0, staging_buffer_size);
+    VmaAllocationCreateInfo staging_allocation_create_info {};
+    staging_allocation_create_info.flags =
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+        VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    staging_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+
+    VmaAllocationInfo staging_allocation_info {};
+
+    const auto staging_buffer = Unique_buffer(r.allocator.get(),
+                                              staging_buffer_create_info,
+                                              staging_allocation_create_info,
+                                              &staging_allocation_info);
+    const auto *const mapped_data =
+        static_cast<std::uint8_t *>(staging_allocation_info.pMappedData);
 
     {
         const auto command_buffer = begin_one_time_submit_command_buffer(r);
