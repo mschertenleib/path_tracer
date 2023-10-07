@@ -11,28 +11,28 @@ add_library(stb_image STATIC
         src/stb_image.cpp
         external/stb_image.h
 )
-target_include_directories(stb_image PUBLIC external)
+target_include_directories(stb_image SYSTEM PUBLIC external)
 
 
 add_library(stb_image_write STATIC
         src/stb_image_write.cpp
         external/stb_image_write.h
 )
-target_include_directories(stb_image_write PUBLIC external)
+target_include_directories(stb_image_write SYSTEM PUBLIC external)
 
 
 add_library(tiny_obj_loader STATIC
         src/tiny_obj_loader.cpp
         external/tiny_obj_loader.h
 )
-target_include_directories(tiny_obj_loader PUBLIC external)
+target_include_directories(tiny_obj_loader SYSTEM PUBLIC external)
 
 
 add_library(vk_mem_alloc STATIC
         src/vk_mem_alloc.cpp
         external/vk_mem_alloc.h
 )
-target_include_directories(vk_mem_alloc PUBLIC external)
+target_include_directories(vk_mem_alloc SYSTEM PUBLIC external)
 target_link_libraries(vk_mem_alloc PRIVATE Vulkan::Vulkan)
 
 
@@ -41,7 +41,7 @@ add_executable(path_tracer
         src/geometry.cpp src/geometry.hpp
         src/renderer.cpp src/renderer.hpp
 )
-target_include_directories(path_tracer PRIVATE ${Vulkan_INCLUDE_DIRS})
+target_include_directories(path_tracer SYSTEM PRIVATE ${Vulkan_INCLUDE_DIRS})
 target_compile_features(path_tracer PRIVATE cxx_std_20)
 target_link_libraries(path_tracer PRIVATE
         stb_image
