@@ -1,29 +1,29 @@
 #version 460
 
-#extension GL_EXT_ray_tracing : require
-#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_ray_tracing: require
+#extension GL_EXT_scalar_block_layout: require
 
-layout(binding = 2, scalar) buffer Vertices
+layout (binding = 2, scalar) buffer Vertices
 {
     vec3 vertices[];
 };
 
-layout(binding = 3, scalar) buffer Indices
+layout (binding = 3, scalar) buffer Indices
 {
     uint indices[];
 };
 
-layout(binding = 4, scalar) buffer Normals
+layout (binding = 4, scalar) buffer Normals
 {
     vec3 normals[];
 };
 
-layout(push_constant) uniform Push_constants
+layout (push_constant) uniform Push_constants
 {
     uint rng_seed;
 };
 
-layout(location = 0) rayPayloadInEXT vec3 hit_value;
+layout (location = 0) rayPayloadInEXT vec3 hit_value;
 
 hitAttributeEXT vec2 attributes;
 

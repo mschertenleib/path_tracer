@@ -8,8 +8,6 @@ Prerequisites:
 
 - [The Vulkan SDK](https://www.lunarg.com/vulkan-sdk)
 
-Dependencies are handled by [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake).
-
 ```
 git clone https://github.com/mschertenleib/path_tracer.git
 cd path_tracer

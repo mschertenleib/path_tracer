@@ -1,12 +1,12 @@
 #version 460
 
-#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_ray_tracing: require
 
-layout(binding = 0, rgba32f) uniform image2D storage_image;
+layout (binding = 0, rgba32f) uniform image2D storage_image;
 
-layout(binding = 1) uniform accelerationStructureEXT tlas;
+layout (binding = 1) uniform accelerationStructureEXT tlas;
 
-layout(location = 0) rayPayloadEXT vec3 hit_value;
+layout (location = 0) rayPayloadEXT vec3 hit_value;
 
 const vec3 position = vec3(-0.07, 0.15, 0.2);
 const vec3 look_at = vec3(0.0, 0.1, 0.0);
@@ -38,21 +38,21 @@ void main()
 
     const vec3 origin = camera_position;
     const vec3 direction = normalize(
-    camera_lower_left_corner +
-    u * camera_horizontal +
-    v * camera_vertical);
+        camera_lower_left_corner +
+        u * camera_horizontal +
+        v * camera_vertical);
 
     traceRayEXT(tlas,
-    gl_RayFlagsOpaqueEXT,
-    0xFF,
-    0,
-    0,
-    0,
-    origin,
-    0.001,
-    direction,
-    1000.0,
-    0);
+                gl_RayFlagsOpaqueEXT,
+                0xFF,
+                0,
+                0,
+                0,
+                origin,
+                0.001,
+                direction,
+                1000.0,
+                0);
 
     const vec4 color = vec4(hit_value, 1.0f);
     imageStore(storage_image, ivec2(gl_LaunchIDEXT.xy), color);
