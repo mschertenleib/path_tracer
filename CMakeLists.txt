@@ -4,50 +4,22 @@ project(path_tracer LANGUAGES CXX)
 
 
 find_package(Vulkan REQUIRED)
-add_compile_definitions(VK_NO_PROTOTYPES)
-
-
-add_library(stb_image STATIC
-        src/stb_image.cpp
-        external/stb_image.h
-)
-target_include_directories(stb_image SYSTEM PUBLIC external)
-
-
-add_library(stb_image_write STATIC
-        src/stb_image_write.cpp
-        external/stb_image_write.h
-)
-target_include_directories(stb_image_write SYSTEM PUBLIC external)
-
-
-add_library(tiny_obj_loader STATIC
-        src/tiny_obj_loader.cpp
-        external/tiny_obj_loader.h
-)
-target_include_directories(tiny_obj_loader SYSTEM PUBLIC external)
-
-
-add_library(vk_mem_alloc STATIC
-        src/vk_mem_alloc.cpp
-        external/vk_mem_alloc.h
-)
-target_include_directories(vk_mem_alloc SYSTEM PUBLIC external)
-target_link_libraries(vk_mem_alloc PRIVATE Vulkan::Vulkan)
 
 
 add_executable(path_tracer
         src/main.cpp
         src/geometry.cpp src/geometry.hpp
         src/renderer.cpp src/renderer.hpp
+        src/stb_image.cpp
+        src/stb_image_write.cpp
+        src/tiny_obj_loader.cpp
+        src/vk_mem_alloc.cpp
 )
-target_include_directories(path_tracer SYSTEM PRIVATE ${Vulkan_INCLUDE_DIRS})
 target_compile_features(path_tracer PRIVATE cxx_std_20)
-target_link_libraries(path_tracer PRIVATE
-        stb_image
-        stb_image_write
-        tiny_obj_loader
-        vk_mem_alloc
+target_compile_definitions(path_tracer PRIVATE VK_NO_PROTOTYPES)
+target_include_directories(path_tracer SYSTEM PRIVATE
+        external
+        ${Vulkan_INCLUDE_DIRS}
 )
 
 
@@ -73,7 +45,7 @@ add_custom_target(shaders ALL DEPENDS ${SPV_SHADERS})
 add_dependencies(path_tracer shaders)
 
 
-set(CLANG_OPTIONS
+set(CLANG_WARNINGS
         -Wfatal-errors
         -Wall
         -Wextra
@@ -88,22 +60,22 @@ set(CLANG_OPTIONS
         -Wnull-dereference
         -Wdouble-promotion
 )
-
-set(GCC_OPTIONS
-        ${CLANG_OPTIONS}
+set(GCC_WARNINGS
+        ${CLANG_WARNINGS}
         -Wmisleading-indentation
         -Wduplicated-cond
         -Wduplicated-branches
         -Wlogical-op
         -Wuseless-cast
 )
-
 if (CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-    target_compile_options(path_tracer PRIVATE ${CLANG_OPTIONS})
+    target_compile_options(path_tracer PRIVATE ${CLANG_WARNINGS})
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(path_tracer PRIVATE ${GCC_OPTIONS})
+    target_compile_options(path_tracer PRIVATE ${GCC_WARNINGS})
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(path_tracer PRIVATE /W4)
 else ()
-    message(WARNING "No compile options set for compiler '${CMAKE_CXX_COMPILER_ID}'")
+    message(WARNING "No warnings set for compiler '${CMAKE_CXX_COMPILER_ID}'")
 endif ()
 
 
