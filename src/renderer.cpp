@@ -98,25 +98,6 @@ get_queue_family_index(vk::PhysicalDevice physical_device)
     return std::numeric_limits<std::uint32_t>::max();
 }
 
-[[nodiscard]] std::uint32_t find_memory_type(vk::PhysicalDevice physical_device,
-                                             std::uint32_t type_filter,
-                                             vk::MemoryPropertyFlags properties)
-{
-    const auto memory_properties {physical_device.getMemoryProperties()};
-
-    for (std::uint32_t i {}; i < memory_properties.memoryTypeCount; ++i)
-    {
-        if ((type_filter & (1 << i)) &&
-            (memory_properties.memoryTypes[i].propertyFlags & properties) ==
-                properties)
-        {
-            return i;
-        }
-    }
-
-    throw std::runtime_error("Failed to find a suitable memory type");
-}
-
 [[nodiscard]] vk::DeviceAddress get_device_address(vk::Device device,
                                                    vk::Buffer buffer)
 {
@@ -1190,22 +1171,11 @@ void write_to_png(const Renderer &r, const char *file_name)
                  vk::ImageUsageFlagBits::eTransferSrc,
         .initialLayout = vk::ImageLayout::eUndefined};
 
-    const auto final_image = r.device->createImageUnique(image_create_info);
+    VmaAllocationCreateInfo allocation_create_info {};
+    allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    const auto memory_requirements =
-        r.device->getImageMemoryRequirements(final_image.get());
-
-    const vk::MemoryAllocateInfo allocate_info {
-        .allocationSize = memory_requirements.size,
-        .memoryTypeIndex =
-            find_memory_type(r.physical_device,
-                             memory_requirements.memoryTypeBits,
-                             vk::MemoryPropertyFlagBits::eDeviceLocal)};
-
-    const auto final_image_memory =
-        r.device->allocateMemoryUnique(allocate_info);
-
-    r.device->bindImageMemory(final_image.get(), final_image_memory.get(), 0);
+    Unique_image final_image(
+        r.allocator.get(), image_create_info, allocation_create_info);
 
     const auto staging_buffer_size = r.render_width * r.render_height * 4;
 
