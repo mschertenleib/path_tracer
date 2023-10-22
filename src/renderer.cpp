@@ -292,7 +292,7 @@ void create_storage_image(Renderer &r,
     VmaAllocationCreateInfo allocation_create_info {};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    r.storage_image = Unique_image(
+    r.storage_image = create_image(
         r.allocator.get(), image_create_info, allocation_create_info);
 
     constexpr vk::ImageSubresourceRange subresource_range {
@@ -367,7 +367,7 @@ void create_geometry_buffer(Renderer &r,
 
     VmaAllocationInfo staging_allocation_info {};
 
-    const auto staging_buffer = Unique_buffer(r.allocator.get(),
+    const auto staging_buffer = create_buffer(r.allocator.get(),
                                               staging_buffer_create_info,
                                               staging_allocation_create_info,
                                               &staging_allocation_info);
@@ -392,7 +392,7 @@ void create_geometry_buffer(Renderer &r,
     VmaAllocationCreateInfo allocation_create_info {};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    r.geometry_buffer = Unique_buffer(
+    r.geometry_buffer = create_buffer(
         r.allocator.get(), buffer_create_info, allocation_create_info);
 
     const auto command_buffer = begin_one_time_submit_command_buffer(r);
@@ -451,7 +451,7 @@ void create_blas(Renderer &r)
     VmaAllocationCreateInfo scratch_allocation_create_info {};
     scratch_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    const auto scratch_buffer = Unique_buffer(r.allocator.get(),
+    const auto scratch_buffer = create_buffer(r.allocator.get(),
                                               scratch_buffer_create_info,
                                               scratch_allocation_create_info);
 
@@ -468,7 +468,7 @@ void create_blas(Renderer &r)
     VmaAllocationCreateInfo blas_allocation_create_info {};
     blas_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    r.blas_buffer = Unique_buffer(r.allocator.get(),
+    r.blas_buffer = create_buffer(r.allocator.get(),
                                   blas_buffer_create_info,
                                   blas_allocation_create_info);
 
@@ -518,7 +518,7 @@ void create_tlas(Renderer &r)
 
     VmaAllocationInfo staging_allocation_info {};
 
-    const auto staging_buffer = Unique_buffer(r.allocator.get(),
+    const auto staging_buffer = create_buffer(r.allocator.get(),
                                               staging_buffer_create_info,
                                               staging_allocation_create_info,
                                               &staging_allocation_info);
@@ -538,7 +538,7 @@ void create_tlas(Renderer &r)
     VmaAllocationCreateInfo instance_allocation_create_info {};
     instance_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    const auto instance_buffer = Unique_buffer(r.allocator.get(),
+    const auto instance_buffer = create_buffer(r.allocator.get(),
                                                instance_buffer_create_info,
                                                instance_allocation_create_info);
 
@@ -594,7 +594,7 @@ void create_tlas(Renderer &r)
     VmaAllocationCreateInfo tlas_allocation_create_info {};
     tlas_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    r.tlas_buffer = Unique_buffer(r.allocator.get(),
+    r.tlas_buffer = create_buffer(r.allocator.get(),
                                   tlas_buffer_create_info,
                                   tlas_allocation_create_info);
 
@@ -615,7 +615,7 @@ void create_tlas(Renderer &r)
     VmaAllocationCreateInfo scratch_allocation_create_info {};
     scratch_allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    const auto scratch_buffer = Unique_buffer(r.allocator.get(),
+    const auto scratch_buffer = create_buffer(r.allocator.get(),
                                               scratch_buffer_create_info,
                                               scratch_allocation_create_info);
 
@@ -888,7 +888,7 @@ void create_shader_binding_table(Renderer &r)
 
     VmaAllocationInfo sbt_allocation_info {};
 
-    r.sbt_buffer = Unique_buffer(r.allocator.get(),
+    r.sbt_buffer = create_buffer(r.allocator.get(),
                                  sbt_buffer_create_info,
                                  sbt_allocation_create_info,
                                  &sbt_allocation_info);
@@ -929,68 +929,68 @@ void create_shader_binding_table(Renderer &r)
 
 } // namespace
 
-Unique_allocator::Unique_allocator(const VmaAllocatorCreateInfo &create_info)
+void Handle_deleter<VmaAllocator>::operator()(
+    VmaAllocator allocator) const noexcept
 {
-    const auto result = vmaCreateAllocator(&create_info, &m_allocator);
+    vmaDestroyAllocator(allocator);
+}
+
+void Handle_deleter<vk::Buffer>::operator()(vk::Buffer buffer) const noexcept
+{
+    vmaDestroyBuffer(allocator, buffer, allocation);
+}
+
+void Handle_deleter<vk::Image>::operator()(vk::Image image) const noexcept
+{
+    vmaDestroyImage(allocator, image, allocation);
+}
+
+Handle<VmaAllocator> create_allocator(const VmaAllocatorCreateInfo &create_info)
+{
+    VmaAllocator allocator {};
+    const auto result = vmaCreateAllocator(&create_info, &allocator);
     vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateAllocator");
+    return Handle<VmaAllocator>(allocator);
 }
 
-Unique_allocator::~Unique_allocator() noexcept
+Handle<vk::Buffer>
+create_buffer(VmaAllocator allocator,
+              const vk::BufferCreateInfo &buffer_create_info,
+              const VmaAllocationCreateInfo &allocation_create_info,
+              VmaAllocationInfo *allocation_info)
 {
-    if (m_allocator)
-    {
-        vmaDestroyAllocator(m_allocator);
-    }
-}
-
-Unique_buffer::Unique_buffer(
-    VmaAllocator allocator,
-    const vk::BufferCreateInfo &buffer_create_info,
-    const VmaAllocationCreateInfo &allocation_create_info,
-    VmaAllocationInfo *allocation_info)
-    : m_allocator {allocator}
-{
+    VkBuffer buffer {};
+    VmaAllocation allocation {};
     const auto result = vmaCreateBuffer(
-        m_allocator,
+        allocator,
         reinterpret_cast<const VkBufferCreateInfo *>(&buffer_create_info),
         &allocation_create_info,
-        reinterpret_cast<VkBuffer *>(&m_buffer),
-        &m_allocation,
+        &buffer,
+        &allocation,
         allocation_info);
     vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateBuffer");
+    return {static_cast<vk::Buffer>(buffer),
+            Handle_deleter<vk::Buffer> {allocator, allocation}};
 }
 
-Unique_buffer::~Unique_buffer() noexcept
+Handle<vk::Image>
+create_image(VmaAllocator allocator,
+             const vk::ImageCreateInfo &image_create_info,
+             const VmaAllocationCreateInfo &allocation_create_info,
+             VmaAllocationInfo *allocation_info)
 {
-    if (m_buffer || m_allocation)
-    {
-        vmaDestroyBuffer(m_allocator, m_buffer, m_allocation);
-    }
-}
-
-Unique_image::Unique_image(
-    VmaAllocator allocator,
-    const vk::ImageCreateInfo &image_create_info,
-    const VmaAllocationCreateInfo &allocation_create_info,
-    VmaAllocationInfo *allocation_info)
-    : m_allocator {allocator}
-{
+    VkImage image {};
+    VmaAllocation allocation {};
     const auto result = vmaCreateImage(
-        m_allocator,
+        allocator,
         reinterpret_cast<const VkImageCreateInfo *>(&image_create_info),
         &allocation_create_info,
-        reinterpret_cast<VkImage *>(&m_image),
-        &m_allocation,
+        &image,
+        &allocation,
         allocation_info);
     vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateImage");
-}
-
-Unique_image::~Unique_image() noexcept
-{
-    if (m_image || m_allocation)
-    {
-        vmaDestroyImage(m_allocator, m_image, m_allocation);
-    }
+    return {static_cast<vk::Image>(image),
+            Handle_deleter<vk::Image> {allocator, allocation}};
 }
 
 Renderer create_renderer()
@@ -1097,7 +1097,7 @@ Renderer create_renderer()
     allocator_create_info.pVulkanFunctions = &vulkan_functions;
     allocator_create_info.instance = r.instance.get();
     allocator_create_info.vulkanApiVersion = VK_API_VERSION_1_3;
-    r.allocator = Unique_allocator(allocator_create_info);
+    r.allocator = create_allocator(allocator_create_info);
 
     r.queue = r.device->getQueue(r.queue_family_index, 0);
     create_command_pool(r);
@@ -1174,7 +1174,7 @@ void write_to_png(const Renderer &r, const char *file_name)
     VmaAllocationCreateInfo allocation_create_info {};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    Unique_image final_image(
+    const auto final_image = create_image(
         r.allocator.get(), image_create_info, allocation_create_info);
 
     const auto staging_buffer_size = r.render_width * r.render_height * 4;
@@ -1191,7 +1191,7 @@ void write_to_png(const Renderer &r, const char *file_name)
 
     VmaAllocationInfo staging_allocation_info {};
 
-    const auto staging_buffer = Unique_buffer(r.allocator.get(),
+    const auto staging_buffer = create_buffer(r.allocator.get(),
                                               staging_buffer_create_info,
                                               staging_allocation_create_info,
                                               &staging_allocation_info);
