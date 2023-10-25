@@ -1,4 +1,4 @@
-#ifndef RENDERER_VULKAN_H_HPP
+#ifndef RENDERER_HPP
 #define RENDERER_HPP
 
 #include "vk_mem_alloc.h"
@@ -186,4 +186,4 @@ void render(const Renderer &r);
 
 void write_to_png(const Renderer &r, const char *file_name);
 
-#endif // RENDERER_VULKAN_H_HPP
+#endif // RENDERER_HPP
