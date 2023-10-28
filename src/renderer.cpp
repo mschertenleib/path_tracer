@@ -23,6 +23,54 @@ struct Push_constants
 };
 static_assert(sizeof(Push_constants) <= 128);
 
+[[nodiscard]] Handle<VmaAllocator>
+create_allocator(const VmaAllocatorCreateInfo &create_info)
+{
+    VmaAllocator allocator {};
+    const auto result = vmaCreateAllocator(&create_info, &allocator);
+    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateAllocator");
+    return Handle<VmaAllocator>(allocator);
+}
+
+[[nodiscard]] Handle<vk::Buffer>
+create_buffer(VmaAllocator allocator,
+              const vk::BufferCreateInfo &buffer_create_info,
+              const VmaAllocationCreateInfo &allocation_create_info,
+              VmaAllocationInfo *allocation_info = nullptr)
+{
+    VkBuffer buffer {};
+    VmaAllocation allocation {};
+    const auto result = vmaCreateBuffer(
+        allocator,
+        reinterpret_cast<const VkBufferCreateInfo *>(&buffer_create_info),
+        &allocation_create_info,
+        &buffer,
+        &allocation,
+        allocation_info);
+    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateBuffer");
+    return {static_cast<vk::Buffer>(buffer),
+            Destructor<vk::Buffer> {allocator, allocation}};
+}
+
+[[nodiscard]] Handle<vk::Image>
+create_image(VmaAllocator allocator,
+             const vk::ImageCreateInfo &image_create_info,
+             const VmaAllocationCreateInfo &allocation_create_info)
+{
+    VkImage image {};
+    VmaAllocation allocation {};
+    const auto result = vmaCreateImage(
+        allocator,
+        reinterpret_cast<const VkImageCreateInfo *>(&image_create_info),
+        &allocation_create_info,
+        &image,
+        &allocation,
+        nullptr);
+    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateImage");
+    return {static_cast<vk::Image>(image),
+            Destructor<vk::Image> {allocator, allocation}};
+}
+
 #ifndef NDEBUG
 
 VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
@@ -929,68 +977,19 @@ void create_shader_binding_table(Renderer &r)
 
 } // namespace
 
-void Handle_deleter<VmaAllocator>::operator()(
-    VmaAllocator allocator) const noexcept
+void Destructor<VmaAllocator>::operator()(VmaAllocator allocator) const noexcept
 {
     vmaDestroyAllocator(allocator);
 }
 
-void Handle_deleter<vk::Buffer>::operator()(vk::Buffer buffer) const noexcept
+void Destructor<vk::Buffer>::operator()(vk::Buffer buffer) const noexcept
 {
     vmaDestroyBuffer(allocator, buffer, allocation);
 }
 
-void Handle_deleter<vk::Image>::operator()(vk::Image image) const noexcept
+void Destructor<vk::Image>::operator()(vk::Image image) const noexcept
 {
     vmaDestroyImage(allocator, image, allocation);
-}
-
-Handle<VmaAllocator> create_allocator(const VmaAllocatorCreateInfo &create_info)
-{
-    VmaAllocator allocator {};
-    const auto result = vmaCreateAllocator(&create_info, &allocator);
-    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateAllocator");
-    return Handle<VmaAllocator>(allocator);
-}
-
-Handle<vk::Buffer>
-create_buffer(VmaAllocator allocator,
-              const vk::BufferCreateInfo &buffer_create_info,
-              const VmaAllocationCreateInfo &allocation_create_info,
-              VmaAllocationInfo *allocation_info)
-{
-    VkBuffer buffer {};
-    VmaAllocation allocation {};
-    const auto result = vmaCreateBuffer(
-        allocator,
-        reinterpret_cast<const VkBufferCreateInfo *>(&buffer_create_info),
-        &allocation_create_info,
-        &buffer,
-        &allocation,
-        allocation_info);
-    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateBuffer");
-    return {static_cast<vk::Buffer>(buffer),
-            Handle_deleter<vk::Buffer> {allocator, allocation}};
-}
-
-Handle<vk::Image>
-create_image(VmaAllocator allocator,
-             const vk::ImageCreateInfo &image_create_info,
-             const VmaAllocationCreateInfo &allocation_create_info,
-             VmaAllocationInfo *allocation_info)
-{
-    VkImage image {};
-    VmaAllocation allocation {};
-    const auto result = vmaCreateImage(
-        allocator,
-        reinterpret_cast<const VkImageCreateInfo *>(&image_create_info),
-        &allocation_create_info,
-        &image,
-        &allocation,
-        allocation_info);
-    vk::resultCheck(static_cast<vk::Result>(result), "vmaCreateImage");
-    return {static_cast<vk::Image>(image),
-            Handle_deleter<vk::Image> {allocator, allocation}};
 }
 
 Renderer create_renderer()

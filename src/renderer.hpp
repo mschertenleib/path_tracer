@@ -15,16 +15,16 @@
 #include <vector>
 
 template <typename T>
-struct Handle_deleter;
+struct Destructor;
 
 template <>
-struct Handle_deleter<VmaAllocator>
+struct Destructor<VmaAllocator>
 {
     void operator()(VmaAllocator allocator) const noexcept;
 };
 
 template <>
-struct Handle_deleter<vk::Buffer>
+struct Destructor<vk::Buffer>
 {
     void operator()(vk::Buffer buffer) const noexcept;
 
@@ -33,7 +33,7 @@ struct Handle_deleter<vk::Buffer>
 };
 
 template <>
-struct Handle_deleter<vk::Image>
+struct Destructor<vk::Image>
 {
     void operator()(vk::Image image) const noexcept;
 
@@ -42,27 +42,27 @@ struct Handle_deleter<vk::Image>
 };
 
 template <typename T>
-class Handle : private Handle_deleter<T>
+class Handle : private Destructor<T>
 {
 public:
-    constexpr Handle() noexcept : Handle_deleter<T>(), m_value()
+    constexpr Handle() noexcept : Destructor<T>(), m_value()
     {
     }
 
     constexpr explicit Handle(T value) noexcept
-        : Handle_deleter<T>(), m_value(value)
+        : Destructor<T>(), m_value(value)
     {
     }
 
-    constexpr Handle(T value, const Handle_deleter<T> &deleter) noexcept
-        : Handle_deleter<T>(deleter), m_value(value)
+    constexpr Handle(T value, const Destructor<T> &destructor) noexcept
+        : Destructor<T>(destructor), m_value(value)
     {
     }
 
     constexpr Handle(const Handle &) = delete;
 
     constexpr Handle(Handle &&other) noexcept
-        : Handle_deleter<T>(std::move(static_cast<Handle_deleter<T> &>(other))),
+        : Destructor<T>(std::move(static_cast<Destructor<T> &>(other))),
           m_value(other.m_value)
     {
         other.m_value = T {};
@@ -85,8 +85,8 @@ public:
             this->operator()(m_value);
         }
 
-        static_cast<Handle_deleter<T> &>(*this) =
-            std::move(static_cast<Handle_deleter<T> &>(other));
+        static_cast<Destructor<T> &>(*this) =
+            std::move(static_cast<Destructor<T> &>(other));
         m_value = other.m_value;
         other.m_value = T {};
         return *this;
@@ -100,21 +100,6 @@ public:
 private:
     T m_value;
 };
-
-[[nodiscard]] Handle<VmaAllocator>
-create_allocator(const VmaAllocatorCreateInfo &create_info);
-
-[[nodiscard]] Handle<vk::Buffer>
-create_buffer(VmaAllocator allocator,
-              const vk::BufferCreateInfo &buffer_create_info,
-              const VmaAllocationCreateInfo &allocation_create_info,
-              VmaAllocationInfo *allocation_info = nullptr);
-
-[[nodiscard]] Handle<vk::Image>
-create_image(VmaAllocator allocator,
-             const vk::ImageCreateInfo &image_create_info,
-             const VmaAllocationCreateInfo &allocation_create_info,
-             VmaAllocationInfo *allocation_info = nullptr);
 
 struct Renderer
 {
@@ -185,5 +170,9 @@ void load_scene(Renderer &r,
 void render(const Renderer &r);
 
 void write_to_png(const Renderer &r, const char *file_name);
+
+// TODO: it might be just better to dump this bloated vulkan.hpp nonsense and
+// just have create/destroy pairs that make sense, having try/catch blocks in
+// higher level functions if necessary
 
 #endif // RENDERER_HPP
