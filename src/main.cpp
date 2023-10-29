@@ -2,9 +2,10 @@
 #include "renderer.hpp"
 
 #include <chrono>
-#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
+
+#include <cstdlib>
 
 namespace
 {

@@ -1,8 +1,9 @@
 #ifndef GEOMETRY_HPP
 #define GEOMETRY_HPP
 
-#include <cstdint>
 #include <vector>
+
+#include <cstdint>
 
 struct Geometry
 {
