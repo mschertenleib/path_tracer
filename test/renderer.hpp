@@ -29,6 +29,14 @@ struct Vulkan_instance_functions
     PFN_vkGetPhysicalDeviceFeatures2 vkGetPhysicalDeviceFeatures2;
     PFN_vkGetPhysicalDeviceFormatProperties vkGetPhysicalDeviceFormatProperties;
     PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2;
+    PFN_vkCreateDevice vkCreateDevice;
+    PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr;
+};
+
+struct Vulkan_device_functions
+{
+    PFN_vkDestroyDevice vkDestroyDevice;
+    PFN_vkGetDeviceQueue vkGetDeviceQueue;
 };
 
 struct Vulkan_instance
@@ -49,11 +57,20 @@ struct Vulkan_physical_device
         ray_tracing_pipeline_properties;
 };
 
+struct Vulkan_device
+{
+    VkDevice device;
+    Vulkan_device_functions functions;
+};
+
 struct Vulkan_context
 {
     Vulkan_global_functions global_functions;
     Vulkan_instance instance;
     Vulkan_physical_device physical_device;
+    Vulkan_device device;
+    VmaAllocator allocator;
+    VkQueue queue;
 };
 
 [[nodiscard]] Vulkan_context
