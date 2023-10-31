@@ -185,6 +185,8 @@ load_device_functions(VkDevice device,
 
     load(functions.vkDestroyDevice, "vkDestroyDevice");
     load(functions.vkGetDeviceQueue, "vkGetDeviceQueue");
+    load(functions.vkCreateCommandPool, "vkCreateCommandPool");
+    load(functions.vkDestroyCommandPool, "vkDestroyCommandPool");
 
     return functions;
 }
@@ -567,6 +569,36 @@ void destroy_device(const Vulkan_device &device)
     }
 }
 
+[[nodiscard]] VkCommandPool
+create_command_pool(const Vulkan_physical_device &physical_device,
+                    const Vulkan_device &device)
+{
+    const VkCommandPoolCreateInfo create_info {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .pNext = {},
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = physical_device.queue_family_index};
+
+    VkCommandPool command_pool {};
+    assert(device.functions.vkCreateCommandPool);
+    const auto result = device.functions.vkCreateCommandPool(
+        device.device, &create_info, nullptr, &command_pool);
+    check_result(result, "vkCreateCommandPool");
+
+    return command_pool;
+}
+
+void destroy_command_pool(const Vulkan_device &device,
+                          VkCommandPool command_pool)
+{
+    if (command_pool)
+    {
+        assert(device.functions.vkDestroyCommandPool);
+        device.functions.vkDestroyCommandPool(
+            device.device, command_pool, nullptr);
+    }
+}
+
 } // namespace
 
 Vulkan_context
@@ -620,6 +652,9 @@ create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
             0,
             &context.queue);
 
+        context.command_pool =
+            create_command_pool(context.physical_device, context.device);
+
         return context;
     }
     catch (...)
@@ -631,6 +666,7 @@ create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
 
 void destroy_vulkan_context(Vulkan_context &context)
 {
+    destroy_command_pool(context.device, context.command_pool);
     vmaDestroyAllocator(context.allocator);
     destroy_device(context.device);
     destroy_instance(context.instance);

@@ -37,6 +37,8 @@ struct Vulkan_device_functions
 {
     PFN_vkDestroyDevice vkDestroyDevice;
     PFN_vkGetDeviceQueue vkGetDeviceQueue;
+    PFN_vkCreateCommandPool  vkCreateCommandPool;
+    PFN_vkDestroyCommandPool  vkDestroyCommandPool;
 };
 
 struct Vulkan_instance
@@ -57,6 +59,7 @@ struct Vulkan_physical_device
         ray_tracing_pipeline_properties;
 };
 
+// FIXME: merge Vulkan_physical_device and Vulkan_device
 struct Vulkan_device
 {
     VkDevice device;
@@ -71,6 +74,7 @@ struct Vulkan_context
     Vulkan_device device;
     VmaAllocator allocator;
     VkQueue queue;
+    VkCommandPool command_pool;
 };
 
 [[nodiscard]] Vulkan_context
