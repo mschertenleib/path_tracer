@@ -94,8 +94,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     case VK_ERROR_COMPRESSION_EXHAUSTED_EXT:
         return "VK_ERROR_COMPRESSION_EXHAUSTED_EXT";
     case VK_RESULT_MAX_ENUM: return "VK_RESULT_MAX_ENUM";
+    default: return nullptr;
     }
-    return "unknown";
 }
 
 inline void check_result(VkResult result, const char *message)
@@ -103,7 +103,16 @@ inline void check_result(VkResult result, const char *message)
     if (result != VK_SUCCESS)
     {
         std::ostringstream oss;
-        oss << message << ": " << result_to_string(result);
+        oss << message << ": ";
+        if (const auto result_string = result_to_string(result);
+            result_string != nullptr)
+        {
+            oss << result_string;
+        }
+        else
+        {
+            oss << static_cast<std::underlying_type_t<VkResult>>(result);
+        }
         throw std::runtime_error(oss.str());
     }
 }
