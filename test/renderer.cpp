@@ -68,20 +68,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     case VK_ERROR_VALIDATION_FAILED_EXT:
         return "VK_ERROR_VALIDATION_FAILED_EXT";
     case VK_ERROR_INVALID_SHADER_NV: return "VK_ERROR_INVALID_SHADER_NV";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-    case VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR:
-        return "VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR";
-    case VK_ERROR_VIDEO_PICTURE_LAYOUT_NOT_SUPPORTED_KHR:
-        return "VK_ERROR_VIDEO_PICTURE_LAYOUT_NOT_SUPPORTED_KHR";
-    case VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR:
-        return "VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR";
-    case VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR:
-        return "VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR";
-    case VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR:
-        return "VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR";
-    case VK_ERROR_VIDEO_STD_VERSION_NOT_SUPPORTED_KHR:
-        return "VK_ERROR_VIDEO_STD_VERSION_NOT_SUPPORTED_KHR";
-#endif
     case VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT:
         return "VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT";
     case VK_ERROR_NOT_PERMITTED_KHR: return "VK_ERROR_NOT_PERMITTED_KHR";
@@ -93,7 +79,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     case VK_OPERATION_NOT_DEFERRED_KHR: return "VK_OPERATION_NOT_DEFERRED_KHR";
     case VK_ERROR_COMPRESSION_EXHAUSTED_EXT:
         return "VK_ERROR_COMPRESSION_EXHAUSTED_EXT";
-    case VK_RESULT_MAX_ENUM: return "VK_RESULT_MAX_ENUM";
     default: return nullptr;
     }
 }
@@ -122,93 +107,26 @@ inline void check_result(VkResult result, const char *message)
     }
 }
 
-[[nodiscard]] Vulkan_global_functions
-load_global_functions(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
+[[nodiscard]] Vulkan_instance
+create_instance(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
 {
+    Vulkan_instance instance {};
+
     assert(vkGetInstanceProcAddr);
+    instance.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
 
-    Vulkan_global_functions functions {};
-    functions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
-
-    const auto load = [=]<typename F>(F &f, const char *name)
+    const auto load_global_function =
+        [vkGetInstanceProcAddr]<typename F>(F &f, const char *name)
     {
         f = reinterpret_cast<F>(vkGetInstanceProcAddr(nullptr, name));
         assert(f);
     };
 
-    load(functions.vkEnumerateInstanceLayerProperties,
-         "vkEnumerateInstanceLayerProperties");
-    load(functions.vkEnumerateInstanceExtensionProperties,
-         "vkEnumerateInstanceExtensionProperties");
-    load(functions.vkCreateInstance, "vkCreateInstance");
-
-    return functions;
-}
-
-[[nodiscard]] Vulkan_instance_functions
-load_instance_functions(VkInstance instance,
-                        PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
-{
-    assert(instance);
-    assert(vkGetInstanceProcAddr);
-
-    Vulkan_instance_functions functions {};
-
-    const auto load = [=]<typename F>(F &f, const char *name)
-    {
-        f = reinterpret_cast<F>(vkGetInstanceProcAddr(instance, name));
-        assert(f);
-    };
-
-    load(functions.vkDestroyInstance, "vkDestroyInstance");
-    load(functions.vkCreateDebugUtilsMessengerEXT,
-         "vkCreateDebugUtilsMessengerEXT");
-    load(functions.vkDestroyDebugUtilsMessengerEXT,
-         "vkDestroyDebugUtilsMessengerEXT");
-    load(functions.vkEnumeratePhysicalDevices, "vkEnumeratePhysicalDevices");
-    load(functions.vkGetPhysicalDeviceQueueFamilyProperties,
-         "vkGetPhysicalDeviceQueueFamilyProperties");
-    load(functions.vkEnumerateDeviceExtensionProperties,
-         "vkEnumerateDeviceExtensionProperties");
-    load(functions.vkGetPhysicalDeviceFeatures2,
-         "vkGetPhysicalDeviceFeatures2");
-    load(functions.vkGetPhysicalDeviceFormatProperties,
-         "vkGetPhysicalDeviceFormatProperties");
-    load(functions.vkGetPhysicalDeviceProperties2,
-         "vkGetPhysicalDeviceProperties2");
-    load(functions.vkCreateDevice, "vkCreateDevice");
-    load(functions.vkGetDeviceProcAddr, "vkGetDeviceProcAddr");
-
-    return functions;
-}
-
-[[nodiscard]] Vulkan_device_functions
-load_device_functions(VkDevice device,
-                      PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr)
-{
-    assert(device);
-    assert(vkGetDeviceProcAddr);
-
-    Vulkan_device_functions functions {};
-
-    const auto load = [=]<typename F>(F &f, const char *name)
-    {
-        f = reinterpret_cast<F>(vkGetDeviceProcAddr(device, name));
-        assert(f);
-    };
-
-    load(functions.vkDestroyDevice, "vkDestroyDevice");
-    load(functions.vkGetDeviceQueue, "vkGetDeviceQueue");
-    load(functions.vkCreateCommandPool, "vkCreateCommandPool");
-    load(functions.vkDestroyCommandPool, "vkDestroyCommandPool");
-
-    return functions;
-}
-
-[[nodiscard]] Vulkan_instance
-create_instance(const Vulkan_global_functions &global_functions)
-{
-    Vulkan_instance instance {};
+    load_global_function(instance.vkEnumerateInstanceLayerProperties,
+                         "vkEnumerateInstanceLayerProperties");
+    load_global_function(instance.vkEnumerateInstanceExtensionProperties,
+                         "vkEnumerateInstanceExtensionProperties");
+    load_global_function(instance.vkCreateInstance, "vkCreateInstance");
 
     constexpr VkApplicationInfo application_info {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -219,15 +137,17 @@ create_instance(const Vulkan_global_functions &global_functions)
         .engineVersion = {},
         .apiVersion = VK_API_VERSION_1_3};
 
+    VkResult result;
+
 #ifndef NDEBUG
 
-    assert(global_functions.vkEnumerateInstanceLayerProperties);
+    assert(instance.vkEnumerateInstanceLayerProperties);
     std::uint32_t layer_property_count {};
-    auto result = global_functions.vkEnumerateInstanceLayerProperties(
-        &layer_property_count, nullptr);
+    result = instance.vkEnumerateInstanceLayerProperties(&layer_property_count,
+                                                         nullptr);
     check_result(result, "vkEnumerateInstanceLayerProperties");
     std::vector<VkLayerProperties> layer_properties(layer_property_count);
-    result = global_functions.vkEnumerateInstanceLayerProperties(
+    result = instance.vkEnumerateInstanceLayerProperties(
         &layer_property_count, layer_properties.data());
     check_result(result, "vkEnumerateInstanceLayerProperties");
 
@@ -243,14 +163,14 @@ create_instance(const Vulkan_global_functions &global_functions)
             "VK_LAYER_KHRONOS_validation is not supported");
     }
 
-    assert(global_functions.vkEnumerateInstanceExtensionProperties);
+    assert(instance.vkEnumerateInstanceExtensionProperties);
     std::uint32_t extension_property_count {};
-    result = global_functions.vkEnumerateInstanceExtensionProperties(
+    result = instance.vkEnumerateInstanceExtensionProperties(
         nullptr, &extension_property_count, nullptr);
     check_result(result, "vkEnumerateInstanceExtensionProperties");
     std::vector<VkExtensionProperties> extension_properties(
         extension_property_count);
-    result = global_functions.vkEnumerateInstanceExtensionProperties(
+    result = instance.vkEnumerateInstanceExtensionProperties(
         nullptr, &extension_property_count, extension_properties.data());
     check_result(result, "vkEnumerateInstanceExtensionProperties");
 
@@ -289,30 +209,6 @@ create_instance(const Vulkan_global_functions &global_functions)
         .enabledExtensionCount = 1,
         .ppEnabledExtensionNames = &debug_utils_extension};
 
-    assert(global_functions.vkCreateInstance);
-    result = global_functions.vkCreateInstance(
-        &instance_create_info, nullptr, &instance.instance);
-    check_result(result, "vkCreateInstance");
-
-    instance.functions = load_instance_functions(
-        instance.instance, global_functions.vkGetInstanceProcAddr);
-
-    try
-    {
-        result = instance.functions.vkCreateDebugUtilsMessengerEXT(
-            instance.instance,
-            &debug_utils_messenger_create_info,
-            nullptr,
-            &instance.debug_messenger);
-        check_result(result, "vkCreateDebugUtilsMessengerEXT");
-    }
-    catch (...)
-    {
-        assert(instance.functions.vkDestroyInstance);
-        instance.functions.vkDestroyInstance(instance.instance, nullptr);
-        throw;
-    }
-
 #else
 
     const VkInstanceCreateInfo instance_create_info {
@@ -325,12 +221,56 @@ create_instance(const Vulkan_global_functions &global_functions)
         .enabledExtensionCount = {},
         .ppEnabledExtensionNames = {}};
 
-    const auto result = global_functions.vkCreateInstance(
+#endif
+
+    assert(instance.vkCreateInstance);
+    result = instance.vkCreateInstance(
         &instance_create_info, nullptr, &instance.instance);
     check_result(result, "vkCreateInstance");
 
-    instance.functions = load_instance_functions(
-        instance.instance, global_functions.vkGetInstanceProcAddr);
+    const auto load_instance_function = [&]<typename F>(F &f, const char *name)
+    {
+        f = reinterpret_cast<F>(vkGetInstanceProcAddr(instance.instance, name));
+        assert(f);
+    };
+
+    load_instance_function(instance.vkDestroyInstance, "vkDestroyInstance");
+    load_instance_function(instance.vkCreateDebugUtilsMessengerEXT,
+                           "vkCreateDebugUtilsMessengerEXT");
+    load_instance_function(instance.vkDestroyDebugUtilsMessengerEXT,
+                           "vkDestroyDebugUtilsMessengerEXT");
+    load_instance_function(instance.vkEnumeratePhysicalDevices,
+                           "vkEnumeratePhysicalDevices");
+    load_instance_function(instance.vkGetPhysicalDeviceQueueFamilyProperties,
+                           "vkGetPhysicalDeviceQueueFamilyProperties");
+    load_instance_function(instance.vkEnumerateDeviceExtensionProperties,
+                           "vkEnumerateDeviceExtensionProperties");
+    load_instance_function(instance.vkGetPhysicalDeviceFeatures2,
+                           "vkGetPhysicalDeviceFeatures2");
+    load_instance_function(instance.vkGetPhysicalDeviceFormatProperties,
+                           "vkGetPhysicalDeviceFormatProperties");
+    load_instance_function(instance.vkGetPhysicalDeviceProperties2,
+                           "vkGetPhysicalDeviceProperties2");
+    load_instance_function(instance.vkCreateDevice, "vkCreateDevice");
+    load_instance_function(instance.vkGetDeviceProcAddr, "vkGetDeviceProcAddr");
+
+#ifndef NDEBUG
+
+    try
+    {
+        result = instance.vkCreateDebugUtilsMessengerEXT(
+            instance.instance,
+            &debug_utils_messenger_create_info,
+            nullptr,
+            &instance.debug_messenger);
+        check_result(result, "vkCreateDebugUtilsMessengerEXT");
+    }
+    catch (...)
+    {
+        assert(instance.vkDestroyInstance);
+        instance.vkDestroyInstance(instance.instance, nullptr);
+        throw;
+    }
 
 #endif
 
@@ -342,13 +282,13 @@ void destroy_instance(const Vulkan_instance &instance)
     if (instance.instance)
     {
 #ifndef NDEBUG
-        assert(instance.functions.vkDestroyDebugUtilsMessengerEXT);
-        instance.functions.vkDestroyDebugUtilsMessengerEXT(
+        assert(instance.vkDestroyDebugUtilsMessengerEXT);
+        instance.vkDestroyDebugUtilsMessengerEXT(
             instance.instance, instance.debug_messenger, nullptr);
 #endif
 
-        assert(instance.functions.vkDestroyInstance);
-        instance.functions.vkDestroyInstance(instance.instance, nullptr);
+        assert(instance.vkDestroyInstance);
+        instance.vkDestroyInstance(instance.instance, nullptr);
     }
 }
 
@@ -356,13 +296,13 @@ void destroy_instance(const Vulkan_instance &instance)
 get_queue_family_index(const Vulkan_instance &instance,
                        VkPhysicalDevice physical_device)
 {
-    assert(instance.functions.vkGetPhysicalDeviceQueueFamilyProperties);
+    assert(instance.vkGetPhysicalDeviceQueueFamilyProperties);
     std::uint32_t queue_family_property_count {};
-    instance.functions.vkGetPhysicalDeviceQueueFamilyProperties(
+    instance.vkGetPhysicalDeviceQueueFamilyProperties(
         physical_device, &queue_family_property_count, nullptr);
     std::vector<VkQueueFamilyProperties> queue_family_properties(
         queue_family_property_count);
-    instance.functions.vkGetPhysicalDeviceQueueFamilyProperties(
+    instance.vkGetPhysicalDeviceQueueFamilyProperties(
         physical_device,
         &queue_family_property_count,
         queue_family_properties.data());
@@ -395,14 +335,14 @@ get_queue_family_index(const Vulkan_instance &instance,
         message << "- No queue family supports compute operations\n";
     }
 
-    assert(instance.functions.vkEnumerateDeviceExtensionProperties);
+    assert(instance.vkEnumerateDeviceExtensionProperties);
     std::uint32_t extension_property_count {};
-    auto result = instance.functions.vkEnumerateDeviceExtensionProperties(
+    auto result = instance.vkEnumerateDeviceExtensionProperties(
         physical_device, nullptr, &extension_property_count, nullptr);
     check_result(result, "vkEnumerateDeviceExtensionProperties");
     std::vector<VkExtensionProperties> extension_properties(
         extension_property_count);
-    result = instance.functions.vkEnumerateDeviceExtensionProperties(
+    result = instance.vkEnumerateDeviceExtensionProperties(
         physical_device,
         nullptr,
         &extension_property_count,
@@ -446,9 +386,8 @@ get_queue_family_index(const Vulkan_instance &instance,
     features_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     features_2.pNext = &vulkan_1_2_features;
 
-    assert(instance.functions.vkGetPhysicalDeviceFeatures2);
-    instance.functions.vkGetPhysicalDeviceFeatures2(physical_device,
-                                                    &features_2);
+    assert(instance.vkGetPhysicalDeviceFeatures2);
+    instance.vkGetPhysicalDeviceFeatures2(physical_device, &features_2);
 
     if (!vulkan_1_2_features.bufferDeviceAddress)
     {
@@ -476,9 +415,9 @@ get_queue_family_index(const Vulkan_instance &instance,
         message << "- The device feature rayTracingPipeline is not supported\n";
     }
 
-    assert(instance.functions.vkGetPhysicalDeviceFormatProperties);
+    assert(instance.vkGetPhysicalDeviceFormatProperties);
     VkFormatProperties format_properties {};
-    instance.functions.vkGetPhysicalDeviceFormatProperties(
+    instance.vkGetPhysicalDeviceFormatProperties(
         physical_device, VK_FORMAT_R32G32B32A32_SFLOAT, &format_properties);
     if (!(format_properties.optimalTilingFeatures &
           VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) ||
@@ -493,18 +432,20 @@ get_queue_family_index(const Vulkan_instance &instance,
     return suitable;
 }
 
-[[nodiscard]] Vulkan_physical_device
-select_physical_device(const Vulkan_instance &instance,
-                       std::uint32_t device_extension_count,
-                       const char *const *device_extension_names)
+[[nodiscard]] Vulkan_device
+create_device(const Vulkan_instance &instance,
+              std::uint32_t device_extension_count,
+              const char *const *device_extension_names)
 {
-    assert(instance.functions.vkEnumeratePhysicalDevices);
+    Vulkan_device device {};
+
+    assert(instance.vkEnumeratePhysicalDevices);
     std::uint32_t physical_device_count {};
-    auto result = instance.functions.vkEnumeratePhysicalDevices(
+    auto result = instance.vkEnumeratePhysicalDevices(
         instance.instance, &physical_device_count, nullptr);
     check_result(result, "vkEnumeratePhysicalDevices");
     std::vector<VkPhysicalDevice> physical_devices(physical_device_count);
-    result = instance.functions.vkEnumeratePhysicalDevices(
+    result = instance.vkEnumeratePhysicalDevices(
         instance.instance, &physical_device_count, physical_devices.data());
     check_result(result, "vkEnumeratePhysicalDevices");
 
@@ -529,17 +470,22 @@ select_physical_device(const Vulkan_instance &instance,
             properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
             properties_2.pNext = &ray_tracing_pipeline_properties;
 
-            assert(instance.functions.vkGetPhysicalDeviceProperties2);
-            instance.functions.vkGetPhysicalDeviceProperties2(
-                physical_devices[i], &properties_2);
+            assert(instance.vkGetPhysicalDeviceProperties2);
+            instance.vkGetPhysicalDeviceProperties2(physical_devices[i],
+                                                    &properties_2);
 
             // TODO: it might be useful to not return immediately, if one wants
             // to know why a subsequent device is not suitable
-            return {.physical_device = physical_devices[i],
-                    .queue_family_index = queue_family_index,
-                    .properties = properties_2.properties,
-                    .ray_tracing_pipeline_properties =
-                        ray_tracing_pipeline_properties};
+
+            std::cout << "Physical device: "
+                      << properties_2.properties.deviceName << '\n';
+
+            device.physical_device = physical_devices[i];
+            device.queue_family_index = queue_family_index;
+            device.properties = properties_2.properties;
+            device.ray_tracing_pipeline_properties =
+                ray_tracing_pipeline_properties;
+            break;
         }
         else
         {
@@ -547,24 +493,17 @@ select_physical_device(const Vulkan_instance &instance,
             std::cerr << message.str();
         }
     }
-
-    throw std::runtime_error("Failed to find a suitable physical device");
-}
-
-[[nodiscard]] Vulkan_device
-create_device(const Vulkan_instance &instance,
-              const Vulkan_physical_device &physical_device,
-              std::uint32_t device_extension_count,
-              const char *const *device_extension_names)
-{
-    Vulkan_device device {};
+    if (!device.physical_device)
+    {
+        throw std::runtime_error("Failed to find a suitable physical device");
+    }
 
     constexpr float queue_priority {1.0f};
     const VkDeviceQueueCreateInfo queue_create_info {
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .pNext = {},
         .flags = {},
-        .queueFamilyIndex = physical_device.queue_family_index,
+        .queueFamilyIndex = device.queue_family_index,
         .queueCount = 1,
         .pQueuePriorities = &queue_priority};
 
@@ -605,16 +544,22 @@ create_device(const Vulkan_instance &instance,
         .ppEnabledExtensionNames = device_extension_names,
         .pEnabledFeatures = {}};
 
-    assert(instance.functions.vkCreateDevice);
-    const auto result =
-        instance.functions.vkCreateDevice(physical_device.physical_device,
-                                          &device_create_info,
-                                          nullptr,
-                                          &device.device);
+    assert(instance.vkCreateDevice);
+    result = instance.vkCreateDevice(
+        device.physical_device, &device_create_info, nullptr, &device.device);
     check_result(result, "vkCreateDevice");
 
-    device.functions = load_device_functions(
-        device.device, instance.functions.vkGetDeviceProcAddr);
+    assert(instance.vkGetDeviceProcAddr);
+    const auto load = [&]<typename F>(F &f, const char *name)
+    {
+        f = reinterpret_cast<F>(
+            instance.vkGetDeviceProcAddr(device.device, name));
+        assert(f);
+    };
+    load(device.vkDestroyDevice, "vkDestroyDevice");
+    load(device.vkGetDeviceQueue, "vkGetDeviceQueue");
+    load(device.vkCreateCommandPool, "vkCreateCommandPool");
+    load(device.vkDestroyCommandPool, "vkDestroyCommandPool");
 
     return device;
 }
@@ -623,24 +568,22 @@ void destroy_device(const Vulkan_device &device)
 {
     if (device.device)
     {
-        assert(device.functions.vkDestroyDevice);
-        device.functions.vkDestroyDevice(device.device, nullptr);
+        assert(device.vkDestroyDevice);
+        device.vkDestroyDevice(device.device, nullptr);
     }
 }
 
-[[nodiscard]] VkCommandPool
-create_command_pool(const Vulkan_physical_device &physical_device,
-                    const Vulkan_device &device)
+[[nodiscard]] VkCommandPool create_command_pool(const Vulkan_device &device)
 {
     const VkCommandPoolCreateInfo create_info {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .pNext = {},
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex = physical_device.queue_family_index};
+        .queueFamilyIndex = device.queue_family_index};
 
     VkCommandPool command_pool {};
-    assert(device.functions.vkCreateCommandPool);
-    const auto result = device.functions.vkCreateCommandPool(
+    assert(device.vkCreateCommandPool);
+    const auto result = device.vkCreateCommandPool(
         device.device, &create_info, nullptr, &command_pool);
     check_result(result, "vkCreateCommandPool");
 
@@ -652,9 +595,8 @@ void destroy_command_pool(const Vulkan_device &device,
 {
     if (command_pool)
     {
-        assert(device.functions.vkDestroyCommandPool);
-        device.functions.vkDestroyCommandPool(
-            device.device, command_pool, nullptr);
+        assert(device.vkDestroyCommandPool);
+        device.vkDestroyCommandPool(device.device, command_pool, nullptr);
     }
 }
 
@@ -666,9 +608,7 @@ create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
     Vulkan_context context {};
     try
     {
-        context.global_functions = load_global_functions(vkGetInstanceProcAddr);
-
-        context.instance = create_instance(context.global_functions);
+        context.instance = create_instance(vkGetInstanceProcAddr);
 
         constexpr const char *device_extension_names[] {
             VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
@@ -677,25 +617,19 @@ create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
         constexpr auto device_extension_count =
             static_cast<std::uint32_t>(std::size(device_extension_names));
 
-        context.physical_device = select_physical_device(
+        context.device = create_device(
             context.instance, device_extension_count, device_extension_names);
-
-        context.device = create_device(context.instance,
-                                       context.physical_device,
-                                       device_extension_count,
-                                       device_extension_names);
 
         VmaVulkanFunctions vulkan_functions {};
         vulkan_functions.vkGetInstanceProcAddr =
-            context.global_functions.vkGetInstanceProcAddr,
+            context.instance.vkGetInstanceProcAddr,
         vulkan_functions.vkGetDeviceProcAddr =
-            context.instance.functions.vkGetDeviceProcAddr;
+            context.instance.vkGetDeviceProcAddr;
 
         VmaAllocatorCreateInfo allocator_create_info {};
         allocator_create_info.flags =
             VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-        allocator_create_info.physicalDevice =
-            context.physical_device.physical_device;
+        allocator_create_info.physicalDevice = context.device.physical_device;
         allocator_create_info.device = context.device.device;
         allocator_create_info.pVulkanFunctions = &vulkan_functions;
         allocator_create_info.instance = context.instance.instance;
@@ -704,15 +638,13 @@ create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
             vmaCreateAllocator(&allocator_create_info, &context.allocator);
         check_result(result, "vmaCreateAllocator");
 
-        assert(context.device.functions.vkGetDeviceQueue);
-        context.device.functions.vkGetDeviceQueue(
-            context.device.device,
-            context.physical_device.queue_family_index,
-            0,
-            &context.queue);
+        assert(context.device.vkGetDeviceQueue);
+        context.device.vkGetDeviceQueue(context.device.device,
+                                        context.device.queue_family_index,
+                                        0,
+                                        &context.queue);
 
-        context.command_pool =
-            create_command_pool(context.physical_device, context.device);
+        context.command_pool = create_command_pool(context.device);
 
         return context;
     }
