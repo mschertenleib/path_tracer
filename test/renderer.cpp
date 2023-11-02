@@ -98,21 +98,26 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     }
 }
 
+void print_result(std::ostringstream &oss, VkResult result)
+{
+    if (const auto result_string = result_to_string(result);
+        result_string != nullptr)
+    {
+        oss << result_string;
+    }
+    else
+    {
+        oss << static_cast<std::underlying_type_t<VkResult>>(result);
+    }
+}
+
 inline void check_result(VkResult result, const char *message)
 {
     if (result != VK_SUCCESS)
     {
         std::ostringstream oss;
         oss << message << ": ";
-        if (const auto result_string = result_to_string(result);
-            result_string != nullptr)
-        {
-            oss << result_string;
-        }
-        else
-        {
-            oss << static_cast<std::underlying_type_t<VkResult>>(result);
-        }
+        print_result(oss, result);
         throw std::runtime_error(oss.str());
     }
 }
@@ -364,13 +369,128 @@ get_queue_family_index(const Vulkan_instance &instance,
 
     for (std::uint32_t i {0}; i < queue_family_property_count; ++i)
     {
-        if (queue_family_properties[i].queueFlags & VK_QUEUE_COMPUTE_BIT)
+        if ((queue_family_properties[i].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
+            (queue_family_properties[i].queueCount > 0))
         {
             return i;
         }
     }
 
     return std::numeric_limits<std::uint32_t>::max();
+}
+
+[[nodiscard]] bool is_device_suitable(const Vulkan_instance &instance,
+                                      VkPhysicalDevice physical_device,
+                                      std::uint32_t device_extension_count,
+                                      const char *const *device_extension_names,
+                                      std::ostringstream &message)
+{
+    bool suitable {true};
+
+    const auto queue_family_index =
+        get_queue_family_index(instance, physical_device);
+    if (queue_family_index == std::numeric_limits<std::uint32_t>::max())
+    {
+        suitable = false;
+        message << "- No queue family supports compute operations\n";
+    }
+
+    assert(instance.functions.vkEnumerateDeviceExtensionProperties);
+    std::uint32_t extension_property_count {};
+    auto result = instance.functions.vkEnumerateDeviceExtensionProperties(
+        physical_device, nullptr, &extension_property_count, nullptr);
+    check_result(result, "vkEnumerateDeviceExtensionProperties");
+    std::vector<VkExtensionProperties> extension_properties(
+        extension_property_count);
+    result = instance.functions.vkEnumerateDeviceExtensionProperties(
+        physical_device,
+        nullptr,
+        &extension_property_count,
+        extension_properties.data());
+    check_result(result, "vkEnumerateDeviceExtensionProperties");
+
+    for (std::uint32_t i {}; i < device_extension_count; ++i)
+    {
+        const auto extension_name = device_extension_names[i];
+        if (std::none_of(
+                extension_properties.begin(),
+                extension_properties.end(),
+                [extension_name](const VkExtensionProperties &properties) {
+                    return std::strcmp(properties.extensionName,
+                                       extension_name) == 0;
+                }))
+        {
+            suitable = false;
+            message << "- The device extension " << extension_name
+                    << " is not supported\n";
+        }
+    }
+
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR
+        ray_tracing_pipeline_features {};
+    ray_tracing_pipeline_features.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR
+        acceleration_structure_features {};
+    acceleration_structure_features.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    acceleration_structure_features.pNext = &ray_tracing_pipeline_features;
+
+    VkPhysicalDeviceVulkan12Features vulkan_1_2_features {};
+    vulkan_1_2_features.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    vulkan_1_2_features.pNext = &acceleration_structure_features;
+
+    VkPhysicalDeviceFeatures2 features_2 {};
+    features_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features_2.pNext = &vulkan_1_2_features;
+
+    assert(instance.functions.vkGetPhysicalDeviceFeatures2);
+    instance.functions.vkGetPhysicalDeviceFeatures2(physical_device,
+                                                    &features_2);
+
+    if (!vulkan_1_2_features.bufferDeviceAddress)
+    {
+        suitable = false;
+        message
+            << "- The device feature bufferDeviceAddress is not supported\n";
+    }
+
+    if (!vulkan_1_2_features.scalarBlockLayout)
+    {
+        suitable = false;
+        message << "- The device feature scalarBlockLayout is not supported\n";
+    }
+
+    if (!acceleration_structure_features.accelerationStructure)
+    {
+        suitable = false;
+        message
+            << "- The device feature accelerationStructure is not supported\n";
+    }
+
+    if (!ray_tracing_pipeline_features.rayTracingPipeline)
+    {
+        suitable = false;
+        message << "- The device feature rayTracingPipeline is not supported\n";
+    }
+
+    assert(instance.functions.vkGetPhysicalDeviceFormatProperties);
+    VkFormatProperties format_properties {};
+    instance.functions.vkGetPhysicalDeviceFormatProperties(
+        physical_device, VK_FORMAT_R32G32B32A32_SFLOAT, &format_properties);
+    if (!(format_properties.optimalTilingFeatures &
+          VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) ||
+        !(format_properties.optimalTilingFeatures &
+          VK_FORMAT_FEATURE_TRANSFER_SRC_BIT))
+    {
+        suitable = false;
+        message << "- VK_FORMAT_R32G32B32A32_SFLOAT not supported for storage "
+                   "images\n";
+    }
+
+    return suitable;
 }
 
 [[nodiscard]] Vulkan_physical_device
@@ -388,114 +508,44 @@ select_physical_device(const Vulkan_instance &instance,
         instance.instance, &physical_device_count, physical_devices.data());
     check_result(result, "vkEnumeratePhysicalDevices");
 
-    for (const auto available_device : physical_devices)
+    for (std::uint32_t i {0}; i < physical_device_count; ++i)
     {
-        const auto queue_family_index =
-            get_queue_family_index(instance, available_device);
-        if (queue_family_index == std::numeric_limits<std::uint32_t>::max())
+        std::ostringstream message;
+        if (is_device_suitable(instance,
+                               physical_devices[i],
+                               device_extension_count,
+                               device_extension_names,
+                               message))
         {
-            continue;
+            const auto queue_family_index =
+                get_queue_family_index(instance, physical_devices[i]);
+
+            VkPhysicalDeviceRayTracingPipelinePropertiesKHR
+                ray_tracing_pipeline_properties {};
+            ray_tracing_pipeline_properties.sType =
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+
+            VkPhysicalDeviceProperties2 properties_2 {};
+            properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+            properties_2.pNext = &ray_tracing_pipeline_properties;
+
+            assert(instance.functions.vkGetPhysicalDeviceProperties2);
+            instance.functions.vkGetPhysicalDeviceProperties2(
+                physical_devices[i], &properties_2);
+
+            // TODO: it might be useful to not return immediately, if one wants
+            // to know why a subsequent device is not suitable
+            return {.physical_device = physical_devices[i],
+                    .queue_family_index = queue_family_index,
+                    .properties = properties_2.properties,
+                    .ray_tracing_pipeline_properties =
+                        ray_tracing_pipeline_properties};
         }
-
-        assert(instance.functions.vkEnumerateDeviceExtensionProperties);
-        std::uint32_t extension_property_count {};
-        result = instance.functions.vkEnumerateDeviceExtensionProperties(
-            available_device, nullptr, &extension_property_count, nullptr);
-        check_result(result, "vkEnumerateDeviceExtensionProperties");
-        std::vector<VkExtensionProperties> extension_properties(
-            extension_property_count);
-        result = instance.functions.vkEnumerateDeviceExtensionProperties(
-            available_device,
-            nullptr,
-            &extension_property_count,
-            extension_properties.data());
-        check_result(result, "vkEnumerateDeviceExtensionProperties");
-
-        bool all_extensions_supported {true};
-        for (std::uint32_t i {}; i < device_extension_count; ++i)
+        else
         {
-            const auto extension_name = device_extension_names[i];
-            if (std::none_of(
-                    extension_properties.begin(),
-                    extension_properties.end(),
-                    [extension_name](const VkExtensionProperties &properties) {
-                        return std::strcmp(properties.extensionName,
-                                           extension_name) == 0;
-                    }))
-            {
-                all_extensions_supported = false;
-                break;
-            }
+            std::cerr << "Physical device " << i << " is not suitable:\n";
+            std::cerr << message.str();
         }
-        if (!all_extensions_supported)
-        {
-            continue;
-        }
-
-        VkPhysicalDeviceRayTracingPipelineFeaturesKHR
-            ray_tracing_pipeline_features {};
-        ray_tracing_pipeline_features.sType =
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
-
-        VkPhysicalDeviceAccelerationStructureFeaturesKHR
-            acceleration_structure_features {};
-        acceleration_structure_features.sType =
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
-        acceleration_structure_features.pNext = &ray_tracing_pipeline_features;
-
-        VkPhysicalDeviceVulkan12Features vulkan_1_2_features {};
-        vulkan_1_2_features.sType =
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-        vulkan_1_2_features.pNext = &acceleration_structure_features;
-
-        VkPhysicalDeviceFeatures2 features_2 {};
-        features_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        features_2.pNext = &vulkan_1_2_features;
-
-        assert(instance.functions.vkGetPhysicalDeviceFeatures2);
-        instance.functions.vkGetPhysicalDeviceFeatures2(available_device,
-                                                        &features_2);
-
-        if (!vulkan_1_2_features.bufferDeviceAddress ||
-            !vulkan_1_2_features.scalarBlockLayout ||
-            !acceleration_structure_features.accelerationStructure ||
-            !ray_tracing_pipeline_features.rayTracingPipeline)
-        {
-            continue;
-        }
-
-        assert(instance.functions.vkGetPhysicalDeviceFormatProperties);
-        VkFormatProperties format_properties {};
-        instance.functions.vkGetPhysicalDeviceFormatProperties(
-            available_device,
-            VK_FORMAT_R32G32B32A32_SFLOAT,
-            &format_properties);
-        if (!(format_properties.optimalTilingFeatures &
-              VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) ||
-            !(format_properties.optimalTilingFeatures &
-              VK_FORMAT_FEATURE_TRANSFER_SRC_BIT))
-        {
-            continue;
-        }
-
-        VkPhysicalDeviceRayTracingPipelinePropertiesKHR
-            ray_tracing_pipeline_properties {};
-        ray_tracing_pipeline_properties.sType =
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
-
-        VkPhysicalDeviceProperties2 properties_2 {};
-        properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-        properties_2.pNext = &ray_tracing_pipeline_properties;
-
-        assert(instance.functions.vkGetPhysicalDeviceProperties2);
-        instance.functions.vkGetPhysicalDeviceProperties2(available_device,
-                                                          &properties_2);
-
-        return {.physical_device = available_device,
-                .queue_family_index = queue_family_index,
-                .properties = properties_2.properties,
-                .ray_tracing_pipeline_properties =
-                    ray_tracing_pipeline_properties};
     }
 
     throw std::runtime_error("Failed to find a suitable physical device");
