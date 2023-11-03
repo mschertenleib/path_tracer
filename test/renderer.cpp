@@ -1,4 +1,5 @@
 #include "renderer.hpp"
+#include "utility.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -235,10 +236,12 @@ create_instance(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
     };
 
     load_instance_function(instance.vkDestroyInstance, "vkDestroyInstance");
+#ifndef NDEBUG
     load_instance_function(instance.vkCreateDebugUtilsMessengerEXT,
                            "vkCreateDebugUtilsMessengerEXT");
     load_instance_function(instance.vkDestroyDebugUtilsMessengerEXT,
                            "vkDestroyDebugUtilsMessengerEXT");
+#endif
     load_instance_function(instance.vkEnumeratePhysicalDevices,
                            "vkEnumeratePhysicalDevices");
     load_instance_function(instance.vkGetPhysicalDeviceQueueFamilyProperties,
@@ -256,21 +259,19 @@ create_instance(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
 
 #ifndef NDEBUG
 
-    try
-    {
-        result = instance.vkCreateDebugUtilsMessengerEXT(
-            instance.instance,
-            &debug_utils_messenger_create_info,
-            nullptr,
-            &instance.debug_messenger);
-        check_result(result, "vkCreateDebugUtilsMessengerEXT");
-    }
-    catch (...)
-    {
-        assert(instance.vkDestroyInstance);
-        instance.vkDestroyInstance(instance.instance, nullptr);
-        throw;
-    }
+    SCOPE_FAIL(
+        [&]
+        {
+            assert(instance.vkDestroyInstance);
+            instance.vkDestroyInstance(instance.instance, nullptr);
+        });
+
+    result = instance.vkCreateDebugUtilsMessengerEXT(
+        instance.instance,
+        &debug_utils_messenger_create_info,
+        nullptr,
+        &instance.debug_messenger);
+    check_result(result, "vkCreateDebugUtilsMessengerEXT");
 
 #endif
 
@@ -432,10 +433,7 @@ get_queue_family_index(const Vulkan_instance &instance,
     return suitable;
 }
 
-[[nodiscard]] Vulkan_device
-create_device(const Vulkan_instance &instance,
-              std::uint32_t device_extension_count,
-              const char *const *device_extension_names)
+[[nodiscard]] Vulkan_device create_device(const Vulkan_instance &instance)
 {
     Vulkan_device device {};
 
@@ -448,6 +446,13 @@ create_device(const Vulkan_instance &instance,
     result = instance.vkEnumeratePhysicalDevices(
         instance.instance, &physical_device_count, physical_devices.data());
     check_result(result, "vkEnumeratePhysicalDevices");
+
+    constexpr const char *device_extension_names[] {
+        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+        VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME};
+    constexpr auto device_extension_count =
+        static_cast<std::uint32_t>(std::size(device_extension_names));
 
     std::uint32_t selected_device_index {};
     for (std::uint32_t i {0}; i < physical_device_count; ++i)
@@ -636,20 +641,19 @@ begin_one_time_submit_command_buffer(const Vulkan_context &context)
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
         .pInheritanceInfo = {}};
 
-    try
-    {
-        assert(context.device.vkBeginCommandBuffer);
-        result =
-            context.device.vkBeginCommandBuffer(command_buffer, &begin_info);
-        check_result(result, "vkBeginCommandBuffer");
-    }
-    catch (...)
-    {
-        assert(context.device.vkFreeCommandBuffers);
-        context.device.vkFreeCommandBuffers(
-            context.device.device, context.command_pool, 1, &command_buffer);
-        throw;
-    }
+    SCOPE_FAIL(
+        [&]
+        {
+            assert(context.device.vkFreeCommandBuffers);
+            context.device.vkFreeCommandBuffers(context.device.device,
+                                                context.command_pool,
+                                                1,
+                                                &command_buffer);
+        });
+
+    assert(context.device.vkBeginCommandBuffer);
+    result = context.device.vkBeginCommandBuffer(command_buffer, &begin_info);
+    check_result(result, "vkBeginCommandBuffer");
 
     return command_buffer;
 }
@@ -657,7 +661,15 @@ begin_one_time_submit_command_buffer(const Vulkan_context &context)
 void end_one_time_submit_command_buffer(const Vulkan_context &context,
                                         VkCommandBuffer command_buffer)
 {
-    // FIXME: proper error handling here
+    SCOPE_EXIT(
+        [&]
+        {
+            assert(context.device.vkFreeCommandBuffers);
+            context.device.vkFreeCommandBuffers(context.device.device,
+                                                context.command_pool,
+                                                1,
+                                                &command_buffer);
+        });
 
     assert(context.device.vkEndCommandBuffer);
     auto result = context.device.vkEndCommandBuffer(command_buffer);
@@ -681,10 +693,6 @@ void end_one_time_submit_command_buffer(const Vulkan_context &context,
     assert(context.device.vkQueueWaitIdle);
     result = context.device.vkQueueWaitIdle(context.queue);
     check_result(result, "vkQueueWaitIdle");
-
-    assert(context.device.vkFreeCommandBuffers);
-    context.device.vkFreeCommandBuffers(
-        context.device.device, context.command_pool, 1, &command_buffer);
 }
 
 Vulkan_image create_render_target(const Vulkan_context &context,
@@ -710,8 +718,8 @@ Vulkan_image create_render_target(const Vulkan_context &context,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .queueFamilyIndexCount = 0,
-        .pQueueFamilyIndices = nullptr,
+        .queueFamilyIndexCount = {},
+        .pQueueFamilyIndices = {},
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
 
     VmaAllocationCreateInfo allocation_create_info {};
@@ -803,53 +811,39 @@ Vulkan_context
 create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
 {
     Vulkan_context context {};
-    try
-    {
-        context.instance = create_instance(vkGetInstanceProcAddr);
 
-        constexpr const char *device_extension_names[] {
-            VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-            VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-            VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME};
-        constexpr auto device_extension_count =
-            static_cast<std::uint32_t>(std::size(device_extension_names));
+    SCOPE_FAIL([&] { destroy_vulkan_context(context); });
 
-        context.device = create_device(
-            context.instance, device_extension_count, device_extension_names);
+    context.instance = create_instance(vkGetInstanceProcAddr);
 
-        VmaVulkanFunctions vulkan_functions {};
-        vulkan_functions.vkGetInstanceProcAddr =
-            context.instance.vkGetInstanceProcAddr,
-        vulkan_functions.vkGetDeviceProcAddr =
-            context.instance.vkGetDeviceProcAddr;
+    context.device = create_device(context.instance);
 
-        VmaAllocatorCreateInfo allocator_create_info {};
-        allocator_create_info.flags =
-            VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-        allocator_create_info.physicalDevice = context.device.physical_device;
-        allocator_create_info.device = context.device.device;
-        allocator_create_info.pVulkanFunctions = &vulkan_functions;
-        allocator_create_info.instance = context.instance.instance;
-        allocator_create_info.vulkanApiVersion = VK_API_VERSION_1_3;
-        const auto result =
-            vmaCreateAllocator(&allocator_create_info, &context.allocator);
-        check_result(result, "vmaCreateAllocator");
+    VmaVulkanFunctions vulkan_functions {};
+    vulkan_functions.vkGetInstanceProcAddr =
+        context.instance.vkGetInstanceProcAddr,
+    vulkan_functions.vkGetDeviceProcAddr = context.instance.vkGetDeviceProcAddr;
 
-        assert(context.device.vkGetDeviceQueue);
-        context.device.vkGetDeviceQueue(context.device.device,
-                                        context.device.queue_family_index,
-                                        0,
-                                        &context.queue);
+    VmaAllocatorCreateInfo allocator_create_info {};
+    allocator_create_info.flags =
+        VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    allocator_create_info.physicalDevice = context.device.physical_device;
+    allocator_create_info.device = context.device.device;
+    allocator_create_info.pVulkanFunctions = &vulkan_functions;
+    allocator_create_info.instance = context.instance.instance;
+    allocator_create_info.vulkanApiVersion = VK_API_VERSION_1_3;
+    const auto result =
+        vmaCreateAllocator(&allocator_create_info, &context.allocator);
+    check_result(result, "vmaCreateAllocator");
 
-        context.command_pool = create_command_pool(context.device);
+    assert(context.device.vkGetDeviceQueue);
+    context.device.vkGetDeviceQueue(context.device.device,
+                                    context.device.queue_family_index,
+                                    0,
+                                    &context.queue);
 
-        return context;
-    }
-    catch (...)
-    {
-        destroy_vulkan_context(context);
-        throw;
-    }
+    context.command_pool = create_command_pool(context.device);
+
+    return context;
 }
 
 void destroy_vulkan_context(Vulkan_context &context)

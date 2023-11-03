@@ -9,35 +9,35 @@
 #include <cstdint>
 
 template <typename EF>
-class Scope_guard
+class Scope_exit
 {
 public:
     template <typename F>
         requires(std::is_constructible_v<EF, F> &&
                  !std::is_lvalue_reference_v<F>)
-    explicit Scope_guard(F &&f) : m_exit_fun(std::forward<F>(f))
+    explicit Scope_exit(F &&f) : m_f(std::forward<F>(f))
     {
     }
 
     template <typename F>
         requires(std::is_constructible_v<EF, F> &&
                  std::is_lvalue_reference_v<F>)
-    explicit Scope_guard(F &&f) : m_exit_fun(f)
+    explicit Scope_exit(F &&f) : m_f(f)
     {
     }
 
-    ~Scope_guard() noexcept
+    ~Scope_exit() noexcept
     {
-        m_exit_fun();
+        m_f();
     }
 
-    Scope_guard(const Scope_guard &) = delete;
-    Scope_guard(Scope_guard &&) = delete;
-    Scope_guard &operator=(const Scope_guard &) = delete;
-    Scope_guard &operator=(Scope_guard &&) = delete;
+    Scope_exit(const Scope_exit &) = delete;
+    Scope_exit(Scope_exit &&) = delete;
+    Scope_exit &operator=(const Scope_exit &) = delete;
+    Scope_exit &operator=(Scope_exit &&) = delete;
 
 private:
-    EF m_exit_fun;
+    EF m_f;
 };
 
 // alignment MUST be a power of 2

@@ -19,8 +19,10 @@ struct Vulkan_instance
         vkEnumerateInstanceExtensionProperties;
     PFN_vkCreateInstance vkCreateInstance;
     PFN_vkDestroyInstance vkDestroyInstance;
+#ifndef NDEBUG
     PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
     PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT;
+#endif
     PFN_vkEnumeratePhysicalDevices vkEnumeratePhysicalDevices;
     PFN_vkGetPhysicalDeviceQueueFamilyProperties
         vkGetPhysicalDeviceQueueFamilyProperties;

@@ -2,48 +2,82 @@
 #define UTILITY_HPP
 
 #include <concepts>
-#include <type_traits>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
+#include <cassert>
 #include <cstdint>
 
-template <typename EF>
-class Scope_guard
+template <typename F>
+class Scope_exit
 {
 public:
-    template <typename F>
-        requires(std::is_constructible_v<EF, F> &&
-                 !std::is_lvalue_reference_v<F>)
-    explicit Scope_guard(F &&f) : m_exit_fun(std::forward<F>(f))
+    explicit Scope_exit(F &&f) : m_f(std::move(f))
     {
     }
 
-    template <typename F>
-        requires(std::is_constructible_v<EF, F> &&
-                 std::is_lvalue_reference_v<F>)
-    explicit Scope_guard(F &&f) : m_exit_fun(f)
+    explicit Scope_exit(F &f) : m_f(f)
     {
     }
 
-    ~Scope_guard() noexcept
+    ~Scope_exit() noexcept
     {
-        m_exit_fun();
+        m_f();
     }
 
-    Scope_guard(const Scope_guard &) = delete;
-    Scope_guard(Scope_guard &&) = delete;
-    Scope_guard &operator=(const Scope_guard &) = delete;
-    Scope_guard &operator=(Scope_guard &&) = delete;
+    Scope_exit(const Scope_exit &) = delete;
+    Scope_exit(Scope_exit &&) = delete;
+    Scope_exit &operator=(const Scope_exit &) = delete;
+    Scope_exit &operator=(Scope_exit &&) = delete;
 
 private:
-    EF m_exit_fun;
+    F m_f;
 };
+
+template <typename F>
+class Scope_fail
+{
+public:
+    explicit Scope_fail(F &&f)
+        : m_exception_count(std::uncaught_exceptions()), m_f(std::move(f))
+    {
+    }
+
+    explicit Scope_fail(F &f)
+        : m_exception_count(std::uncaught_exceptions()), m_f(f)
+    {
+    }
+
+    ~Scope_fail() noexcept
+    {
+        if (std::uncaught_exceptions() > m_exception_count)
+        {
+            m_f();
+        }
+    }
+
+    Scope_fail(const Scope_fail &) = delete;
+    Scope_fail(Scope_fail &&) = delete;
+    Scope_fail &operator=(const Scope_fail &) = delete;
+    Scope_fail &operator=(Scope_fail &&) = delete;
+
+private:
+    int m_exception_count;
+    F m_f;
+};
+
+#define CONCATENATE_IMPL(s1, s2) s1##s2
+#define CONCATENATE(s1, s2)      CONCATENATE_IMPL(s1, s2)
+
+#define SCOPE_EXIT(f) const Scope_exit CONCATENATE(scope_exit_, __LINE__)(f)
+#define SCOPE_FAIL(f) const Scope_fail CONCATENATE(scope_fail_, __LINE__)(f)
 
 // alignment MUST be a power of 2
 template <std::unsigned_integral U>
 [[nodiscard]] constexpr U align_up(U value, U alignment) noexcept
 {
+    assert((alignment & (alignment - 1)) == 0);
     return (value + (alignment - 1)) & ~(alignment - 1);
 }
 
