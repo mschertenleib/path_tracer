@@ -449,15 +449,9 @@ create_device(const Vulkan_instance &instance,
         instance.instance, &physical_device_count, physical_devices.data());
     check_result(result, "vkEnumeratePhysicalDevices");
 
+    std::uint32_t selected_device_index {};
     for (std::uint32_t i {0}; i < physical_device_count; ++i)
     {
-        std::ostringstream message;
-        const auto is_suitable = is_device_suitable(instance,
-                                                    physical_devices[i],
-                                                    device_extension_count,
-                                                    device_extension_names,
-                                                    message);
-
         VkPhysicalDeviceRayTracingPipelinePropertiesKHR
             ray_tracing_pipeline_properties {};
         ray_tracing_pipeline_properties.sType =
@@ -471,14 +465,21 @@ create_device(const Vulkan_instance &instance,
         instance.vkGetPhysicalDeviceProperties2(physical_devices[i],
                                                 &properties_2);
 
-        if (is_suitable)
+        std::cout << "Physical device " << i << ": "
+                  << properties_2.properties.deviceName;
+
+        std::ostringstream message;
+        if (is_device_suitable(instance,
+                               physical_devices[i],
+                               device_extension_count,
+                               device_extension_names,
+                               message))
         {
-            std::cout << "Physical device \""
-                      << properties_2.properties.deviceName
-                      << "\" is suitable\n";
+            std::cout << ": suitable\n";
 
             if (!device.physical_device)
             {
+                selected_device_index = i;
                 device.physical_device = physical_devices[i];
                 device.queue_family_index =
                     get_queue_family_index(instance, physical_devices[i]);
@@ -489,13 +490,15 @@ create_device(const Vulkan_instance &instance,
         }
         else
         {
-            std::cerr << "Physical device \""
-                      << properties_2.properties.deviceName
-                      << "\" is not suitable:\n";
-            std::cerr << message.str();
+            std::cout << ": not suitable:\n" << message.str();
         }
     }
-    if (!device.physical_device)
+    if (device.physical_device)
+    {
+        std::cout << "Selected physical device " << selected_device_index
+                  << ": " << device.properties.deviceName << '\n';
+    }
+    else
     {
         throw std::runtime_error("Failed to find a suitable physical device");
     }
