@@ -95,8 +95,12 @@ endif ()
 
 add_executable(path_tracer_test
         test/main.cpp
+        test/geometry.cpp test/geometry.hpp
         test/renderer.cpp test/renderer.hpp
         test/utility.cpp test/utility.hpp
+        test/stb_image.cpp
+        test/stb_image_write.cpp
+        test/tiny_obj_loader.cpp
         test/vk_mem_alloc.cpp
 )
 target_compile_features(path_tracer_test PRIVATE cxx_std_20)

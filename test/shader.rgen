@@ -1,0 +1,59 @@
+#version 460
+
+#extension GL_EXT_ray_tracing: require
+
+layout (binding = 0, rgba32f) uniform image2D storage_image;
+
+layout (binding = 1) uniform accelerationStructureEXT tlas;
+
+layout (location = 0) rayPayloadEXT vec3 hit_value;
+
+const vec3 position = vec3(-0.07, 0.15, 0.2);
+const vec3 look_at = vec3(0.0, 0.1, 0.0);
+const vec3 up = vec3(0.0, 1.0, 0.0);
+const float vertical_fov = radians(60.0);
+const float aspect_ratio = 16.0 / 9.0;
+
+const vec3 camera_position = position;
+const vec3 camera_local_z = normalize(position - look_at);
+const vec3 camera_local_x = normalize(cross(up, camera_local_z));
+const vec3 camera_local_y = cross(camera_local_z, camera_local_x);
+const float viewport_height = 2.0 * tan(vertical_fov / 2.0);
+const float viewport_width = aspect_ratio * viewport_height;
+const vec3 camera_horizontal = viewport_width * camera_local_x;
+const vec3 camera_vertical = viewport_height * camera_local_y;
+const vec3 camera_lower_left_corner = -camera_horizontal / 2.0 - camera_vertical / 2.0 - camera_local_z;
+
+void main()
+{
+    const uvec2 image_size = imageSize(storage_image);
+
+    if (gl_LaunchIDEXT.x >= image_size.x || gl_LaunchIDEXT.y >= image_size.y)
+    {
+        return;
+    }
+
+    const float u = (float(gl_LaunchIDEXT.x) + 0.5) / float(image_size.x);
+    const float v = (float(image_size.y - 1 - gl_LaunchIDEXT.y) + 0.5) / float(image_size.y);
+
+    const vec3 origin = camera_position;
+    const vec3 direction = normalize(
+        camera_lower_left_corner +
+        u * camera_horizontal +
+        v * camera_vertical);
+
+    traceRayEXT(tlas,
+                gl_RayFlagsOpaqueEXT,
+                0xFF,
+                0,
+                0,
+                0,
+                origin,
+                0.001,
+                direction,
+                1000.0,
+                0);
+
+    const vec4 color = vec4(hit_value, 1.0f);
+    imageStore(storage_image, ivec2(gl_LaunchIDEXT.xy), color);
+}

@@ -733,7 +733,9 @@ Vulkan_image create_render_target(const Vulkan_context &context,
                                  nullptr);
     check_result(result, "vmaCreateImage");
 
-    // FIXME: proper error handling in case the subsequent code throws
+    SCOPE_FAIL(
+        [&]
+        { vmaDestroyImage(context.allocator, image.image, image.allocation); });
 
     constexpr VkImageSubresourceRange subresource_range {
         .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -759,6 +761,14 @@ Vulkan_image create_render_target(const Vulkan_context &context,
     result = context.device.vkCreateImageView(
         context.device.device, &image_view_create_info, nullptr, &image.view);
     check_result(result, "vkCreateImageView");
+
+    SCOPE_FAIL(
+        [&]
+        {
+            assert(context.device.vkDestroyImageView);
+            context.device.vkDestroyImageView(
+                context.device.device, image.view, nullptr);
+        });
 
     const auto command_buffer = begin_one_time_submit_command_buffer(context);
 
@@ -848,9 +858,27 @@ create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
 
 void destroy_vulkan_context(Vulkan_context &context)
 {
+    destroy_render_target(context, context.storage_image);
     destroy_command_pool(context.device, context.command_pool);
     vmaDestroyAllocator(context.allocator);
     destroy_device(context.device);
     destroy_instance(context.instance);
     context = {};
+}
+
+void load_scene(Vulkan_context &context,
+                std::uint32_t render_width,
+                std::uint32_t render_height,
+                const struct Geometry &geometry)
+{
+    context.storage_image =
+        create_render_target(context, render_width, render_height);
+}
+
+void render(const Vulkan_context &context)
+{
+}
+
+void write_to_png(const Vulkan_context &context, const char *file_name)
+{
 }

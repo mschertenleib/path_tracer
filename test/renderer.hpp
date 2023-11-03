@@ -82,4 +82,13 @@ create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr);
 
 void destroy_vulkan_context(Vulkan_context &context);
 
+void load_scene(Vulkan_context &context,
+                std::uint32_t render_width,
+                std::uint32_t render_height,
+                const struct Geometry &geometry);
+
+void render(const Vulkan_context &context);
+
+void write_to_png(const Vulkan_context &context, const char *file_name);
+
 #endif // RENDERER_HPP
