@@ -1,4 +1,5 @@
 #include "renderer.hpp"
+#include "geometry.hpp"
 #include "utility.hpp"
 
 #include <algorithm>
@@ -561,6 +562,7 @@ get_queue_family_index(const Vulkan_instance &instance,
     load(device.vkQueueSubmit, "vkQueueSubmit");
     load(device.vkQueueWaitIdle, "vkQueueWaitIdle");
     load(device.vkCmdPipelineBarrier, "vkCmdPipelineBarrier");
+    load(device.vkCmdCopyBuffer, "vkCmdCopyBuffer");
 
     return device;
 }
@@ -571,6 +573,29 @@ void destroy_device(const Vulkan_device &device)
     {
         device.vkDestroyDevice(device.device, nullptr);
     }
+}
+
+[[nodiscard]] VmaAllocator create_allocator(const Vulkan_instance &instance,
+                                            const Vulkan_device &device)
+{
+    VmaVulkanFunctions vulkan_functions {};
+    vulkan_functions.vkGetInstanceProcAddr = instance.vkGetInstanceProcAddr,
+    vulkan_functions.vkGetDeviceProcAddr = instance.vkGetDeviceProcAddr;
+
+    VmaAllocatorCreateInfo allocator_create_info {};
+    allocator_create_info.flags =
+        VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    allocator_create_info.physicalDevice = device.physical_device;
+    allocator_create_info.device = device.device;
+    allocator_create_info.pVulkanFunctions = &vulkan_functions;
+    allocator_create_info.instance = instance.instance;
+    allocator_create_info.vulkanApiVersion = VK_API_VERSION_1_3;
+
+    VmaAllocator allocator {};
+    const auto result = vmaCreateAllocator(&allocator_create_info, &allocator);
+    check_result(result, "vmaCreateAllocator");
+
+    return allocator;
 }
 
 [[nodiscard]] VkCommandPool create_command_pool(const Vulkan_device &device)
@@ -667,15 +692,15 @@ void end_one_time_submit_command_buffer(const Vulkan_context &context,
     check_result(result, "vkQueueWaitIdle");
 }
 
-Vulkan_image create_render_target(const Vulkan_context &context,
-                                  std::uint32_t width,
-                                  std::uint32_t height)
+[[nodiscard]] Vulkan_image create_image(VmaAllocator allocator,
+                                        std::uint32_t width,
+                                        std::uint32_t height,
+                                        VkFormat format,
+                                        VkImageUsageFlags usage)
 {
     Vulkan_image image {};
     image.width = width;
     image.height = height;
-
-    constexpr auto format = VK_FORMAT_R32G32B32A32_SFLOAT;
 
     const VkImageCreateInfo image_create_info {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -688,7 +713,7 @@ Vulkan_image create_render_target(const Vulkan_context &context,
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+        .usage = usage,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .queueFamilyIndexCount = {},
         .pQueueFamilyIndices = {},
@@ -697,18 +722,66 @@ Vulkan_image create_render_target(const Vulkan_context &context,
     VmaAllocationCreateInfo allocation_create_info {};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    auto result = vmaCreateImage(context.allocator,
-                                 &image_create_info,
-                                 &allocation_create_info,
-                                 &image.image,
-                                 &image.allocation,
-                                 nullptr);
+    const auto result = vmaCreateImage(allocator,
+                                       &image_create_info,
+                                       &allocation_create_info,
+                                       &image.image,
+                                       &image.allocation,
+                                       nullptr);
     check_result(result, "vmaCreateImage");
 
-    SCOPE_FAIL(
-        [&]
-        { vmaDestroyImage(context.allocator, image.image, image.allocation); });
+    return image;
+}
 
+void destroy_image(VmaAllocator allocator, const Vulkan_image &image)
+{
+    vmaDestroyImage(allocator, image.image, image.allocation);
+}
+
+void transition_image_layout(const Vulkan_device &device,
+                             VkCommandBuffer command_buffer,
+                             VkImage image,
+                             VkAccessFlags src_access,
+                             VkAccessFlags dst_access,
+                             VkImageLayout old_layout,
+                             VkImageLayout new_layout,
+                             VkPipelineStageFlags src_stage,
+                             VkPipelineStageFlags dst_stage)
+{
+    constexpr VkImageSubresourceRange subresource_range {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1};
+
+    const VkImageMemoryBarrier image_memory_barrier {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = {},
+        .srcAccessMask = src_access,
+        .dstAccessMask = dst_access,
+        .oldLayout = old_layout,
+        .newLayout = new_layout,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = subresource_range};
+
+    device.vkCmdPipelineBarrier(command_buffer,
+                                src_stage,
+                                dst_stage,
+                                {},
+                                0,
+                                nullptr,
+                                0,
+                                nullptr,
+                                1,
+                                &image_memory_barrier);
+}
+
+[[nodiscard]] VkImageView
+create_image_view(const Vulkan_device &device, VkImage image, VkFormat format)
+{
     constexpr VkImageSubresourceRange subresource_range {
         .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
         .baseMipLevel = 0,
@@ -720,7 +793,7 @@ Vulkan_image create_render_target(const Vulkan_context &context,
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .pNext = {},
         .flags = {},
-        .image = image.image,
+        .image = image,
         .viewType = VK_IMAGE_VIEW_TYPE_2D,
         .format = format,
         .components = {VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -729,58 +802,133 @@ Vulkan_image create_render_target(const Vulkan_context &context,
                        VK_COMPONENT_SWIZZLE_IDENTITY},
         .subresourceRange = subresource_range};
 
-    result = context.device.vkCreateImageView(
-        context.device.device, &image_view_create_info, nullptr, &image.view);
+    VkImageView image_view {};
+    const auto result = device.vkCreateImageView(
+        device.device, &image_view_create_info, nullptr, &image_view);
     check_result(result, "vkCreateImageView");
 
-    SCOPE_FAIL(
-        [&]
-        {
-            context.device.vkDestroyImageView(
-                context.device.device, image.view, nullptr);
-        });
-
-    const auto command_buffer = begin_one_time_submit_command_buffer(context);
-
-    const VkImageMemoryBarrier image_memory_barrier {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .pNext = {},
-        .srcAccessMask = VK_ACCESS_NONE,
-        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = image.image,
-        .subresourceRange = subresource_range};
-
-    context.device.vkCmdPipelineBarrier(
-        command_buffer,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-        {},
-        0,
-        nullptr,
-        0,
-        nullptr,
-        1,
-        &image_memory_barrier);
-
-    end_one_time_submit_command_buffer(context, command_buffer);
-
-    return image;
+    return image_view;
 }
 
-void destroy_render_target(const Vulkan_context &context,
-                           const Vulkan_image &image)
+void destroy_image_view(const Vulkan_device &device, VkImageView image_view)
 {
-    if (image.image)
+    if (image_view)
     {
-        context.device.vkDestroyImageView(
-            context.device.device, image.view, nullptr);
-
-        vmaDestroyImage(context.allocator, image.image, image.allocation);
+        device.vkDestroyImageView(device.device, image_view, nullptr);
     }
+}
+
+[[nodiscard]] Vulkan_buffer
+create_buffer(VmaAllocator allocator,
+              VkDeviceSize size,
+              VkBufferUsageFlags usage,
+              VmaAllocationCreateFlags allocation_flags,
+              VmaMemoryUsage memory_usage,
+              VmaAllocationInfo *allocation_info)
+{
+    Vulkan_buffer buffer {};
+    buffer.size = size;
+
+    const VkBufferCreateInfo buffer_create_info {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = {},
+        .flags = {},
+        .size = size,
+        .usage = usage,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = {},
+        .pQueueFamilyIndices = {}};
+
+    VmaAllocationCreateInfo allocation_create_info {};
+    allocation_create_info.flags = allocation_flags;
+    allocation_create_info.usage = memory_usage;
+
+    const auto result = vmaCreateBuffer(allocator,
+                                        &buffer_create_info,
+                                        &allocation_create_info,
+                                        &buffer.buffer,
+                                        &buffer.allocation,
+                                        allocation_info);
+    check_result(result, "vmaCreateBuffer");
+
+    return buffer;
+}
+
+void destroy_buffer(VmaAllocator allocator, const Vulkan_buffer &buffer)
+{
+    vmaDestroyBuffer(allocator, buffer.buffer, buffer.allocation);
+}
+
+template <typename T>
+[[nodiscard]] Vulkan_buffer
+create_buffer_from_host_data(const Vulkan_device &device,
+                             VmaAllocator allocator,
+                             VkCommandBuffer command_buffer,
+                             VkBufferUsageFlags usage,
+                             VmaMemoryUsage memory_usage,
+                             const std::vector<T> &data)
+{
+    const auto size = data.size() * sizeof(T);
+
+    VmaAllocationInfo staging_allocation_info {};
+    const auto staging_buffer =
+        create_buffer(allocator,
+                      size,
+                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                          VMA_ALLOCATION_CREATE_MAPPED_BIT,
+                      VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+                      &staging_allocation_info);
+    SCOPE_EXIT([&] { destroy_buffer(allocator, staging_buffer); });
+
+    auto *const mapped_data =
+        static_cast<std::uint8_t *>(staging_allocation_info.pMappedData);
+
+    std::memcpy(mapped_data, data.data(), size);
+
+    const auto buffer =
+        create_buffer(allocator, size, usage, {}, memory_usage, nullptr);
+
+    const VkBufferCopy region {.srcOffset = 0, .dstOffset = 0, .size = size};
+
+    device.vkCmdCopyBuffer(
+        command_buffer, staging_buffer.buffer, buffer.buffer, 1, &region);
+
+    return buffer;
+}
+
+[[nodiscard]] Vulkan_buffer
+create_vertex_buffer(const Vulkan_device &device,
+                     VmaAllocator allocator,
+                     VkCommandBuffer command_buffer,
+                     const std::vector<float> &vertices)
+{
+    return create_buffer_from_host_data(
+        device,
+        allocator,
+        command_buffer,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+            VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+        vertices);
+}
+
+[[nodiscard]] Vulkan_buffer
+create_index_buffer(const Vulkan_device &device,
+                    VmaAllocator allocator,
+                    VkCommandBuffer command_buffer,
+                    const std::vector<std::uint32_t> &indices)
+{
+    return create_buffer_from_host_data(
+        device,
+        allocator,
+        command_buffer,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+            VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+        indices);
 }
 
 } // namespace
@@ -796,22 +944,7 @@ create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
 
     context.device = create_device(context.instance);
 
-    VmaVulkanFunctions vulkan_functions {};
-    vulkan_functions.vkGetInstanceProcAddr =
-        context.instance.vkGetInstanceProcAddr,
-    vulkan_functions.vkGetDeviceProcAddr = context.instance.vkGetDeviceProcAddr;
-
-    VmaAllocatorCreateInfo allocator_create_info {};
-    allocator_create_info.flags =
-        VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-    allocator_create_info.physicalDevice = context.device.physical_device;
-    allocator_create_info.device = context.device.device;
-    allocator_create_info.pVulkanFunctions = &vulkan_functions;
-    allocator_create_info.instance = context.instance.instance;
-    allocator_create_info.vulkanApiVersion = VK_API_VERSION_1_3;
-    const auto result =
-        vmaCreateAllocator(&allocator_create_info, &context.allocator);
-    check_result(result, "vmaCreateAllocator");
+    context.allocator = create_allocator(context.instance, context.device);
 
     context.device.vkGetDeviceQueue(context.device.device,
                                     context.device.queue_family_index,
@@ -825,7 +958,6 @@ create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
 
 void destroy_vulkan_context(Vulkan_context &context)
 {
-    destroy_render_target(context, context.storage_image);
     destroy_command_pool(context.device, context.command_pool);
     vmaDestroyAllocator(context.allocator);
     destroy_device(context.device);
@@ -838,8 +970,48 @@ void load_scene(Vulkan_context &context,
                 std::uint32_t render_height,
                 const struct Geometry &geometry)
 {
-    context.storage_image =
-        create_render_target(context, render_width, render_height);
+    SCOPE_FAIL([&] { destroy_scene_resources(context); });
+
+    constexpr auto image_format = VK_FORMAT_R32G32B32A32_SFLOAT;
+
+    context.storage_image = create_image(context.allocator,
+                                         render_width,
+                                         render_height,
+                                         image_format,
+                                         VK_IMAGE_USAGE_STORAGE_BIT |
+                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+
+    context.storage_image_view = create_image_view(
+        context.device, context.storage_image.image, image_format);
+
+    const auto command_buffer = begin_one_time_submit_command_buffer(context);
+
+    transition_image_layout(context.device,
+                            command_buffer,
+                            context.storage_image.image,
+                            VK_ACCESS_NONE,
+                            VK_ACCESS_SHADER_READ_BIT |
+                                VK_ACCESS_SHADER_WRITE_BIT,
+                            VK_IMAGE_LAYOUT_UNDEFINED,
+                            VK_IMAGE_LAYOUT_GENERAL,
+                            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+
+    context.vertex_buffer = create_vertex_buffer(
+        context.device, context.allocator, command_buffer, geometry.vertices);
+
+    context.index_buffer = create_index_buffer(
+        context.device, context.allocator, command_buffer, geometry.indices);
+
+    end_one_time_submit_command_buffer(context, command_buffer);
+}
+
+void destroy_scene_resources(const Vulkan_context &context)
+{
+    destroy_buffer(context.allocator, context.index_buffer);
+    destroy_buffer(context.allocator, context.vertex_buffer);
+    destroy_image_view(context.device, context.storage_image_view);
+    destroy_image(context.allocator, context.storage_image);
 }
 
 void render(const Vulkan_context &context)

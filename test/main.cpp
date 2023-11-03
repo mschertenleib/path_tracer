@@ -34,6 +34,7 @@ int main(int argc, char *argv[])
         const auto geometry = load_obj(argv[1]);
 
         load_scene(context, 1280, 720, geometry);
+        SCOPE_EXIT([&] { destroy_scene_resources(context); });
 
         render(context);
 

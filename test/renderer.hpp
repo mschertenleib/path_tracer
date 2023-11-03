@@ -56,6 +56,7 @@ struct Vulkan_device
     PFN_vkQueueSubmit vkQueueSubmit;
     PFN_vkQueueWaitIdle vkQueueWaitIdle;
     PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier;
+    PFN_vkCmdCopyBuffer vkCmdCopyBuffer;
 };
 
 struct Vulkan_image
@@ -64,7 +65,13 @@ struct Vulkan_image
     std::uint32_t height;
     VkImage image;
     VmaAllocation allocation;
-    VkImageView view;
+};
+
+struct Vulkan_buffer
+{
+    VkDeviceSize size;
+    VkBuffer buffer;
+    VmaAllocation allocation;
 };
 
 struct Vulkan_context
@@ -75,17 +82,20 @@ struct Vulkan_context
     VkQueue queue;
     VkCommandPool command_pool;
     Vulkan_image storage_image;
+    VkImageView storage_image_view;
+    Vulkan_buffer vertex_buffer;
+    Vulkan_buffer index_buffer;
 };
 
 [[nodiscard]] Vulkan_context
 create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr);
-
 void destroy_vulkan_context(Vulkan_context &context);
 
 void load_scene(Vulkan_context &context,
                 std::uint32_t render_width,
                 std::uint32_t render_height,
                 const struct Geometry &geometry);
+void destroy_scene_resources(const Vulkan_context &context);
 
 void render(const Vulkan_context &context);
 
