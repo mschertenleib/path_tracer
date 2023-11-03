@@ -57,6 +57,14 @@ struct Vulkan_device
     PFN_vkQueueWaitIdle vkQueueWaitIdle;
     PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier;
     PFN_vkCmdCopyBuffer vkCmdCopyBuffer;
+    PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
+    PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddress;
+    PFN_vkGetAccelerationStructureDeviceAddressKHR
+        vkGetAccelerationStructureDeviceAddressKHR;
+    PFN_vkGetAccelerationStructureBuildSizesKHR
+        vkGetAccelerationStructureBuildSizesKHR;
+    PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
+    PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR ;
 };
 
 struct Vulkan_image
@@ -74,6 +82,12 @@ struct Vulkan_buffer
     VmaAllocation allocation;
 };
 
+struct Vulkan_acceleration_structure
+{
+    Vulkan_buffer buffer;
+    VkAccelerationStructureKHR acceleration_structure;
+};
+
 struct Vulkan_context
 {
     Vulkan_instance instance;
@@ -85,6 +99,8 @@ struct Vulkan_context
     VkImageView storage_image_view;
     Vulkan_buffer vertex_buffer;
     Vulkan_buffer index_buffer;
+    Vulkan_acceleration_structure blas;
+    Vulkan_acceleration_structure tlas;
 };
 
 [[nodiscard]] Vulkan_context
