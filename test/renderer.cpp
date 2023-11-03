@@ -562,6 +562,15 @@ create_device(const Vulkan_instance &instance,
     load(device.vkGetDeviceQueue, "vkGetDeviceQueue");
     load(device.vkCreateCommandPool, "vkCreateCommandPool");
     load(device.vkDestroyCommandPool, "vkDestroyCommandPool");
+    load(device.vkCreateImageView, "vkCreateImageView");
+    load(device.vkDestroyImageView, "vkDestroyImageView");
+    load(device.vkAllocateCommandBuffers, "vkAllocateCommandBuffers");
+    load(device.vkFreeCommandBuffers, "vkFreeCommandBuffers");
+    load(device.vkBeginCommandBuffer, "vkBeginCommandBuffer");
+    load(device.vkEndCommandBuffer, "vkEndCommandBuffer");
+    load(device.vkQueueSubmit, "vkQueueSubmit");
+    load(device.vkQueueWaitIdle, "vkQueueWaitIdle");
+    load(device.vkCmdPipelineBarrier, "vkCmdPipelineBarrier");
 
     return device;
 }
@@ -599,6 +608,189 @@ void destroy_command_pool(const Vulkan_device &device,
     {
         assert(device.vkDestroyCommandPool);
         device.vkDestroyCommandPool(device.device, command_pool, nullptr);
+    }
+}
+
+[[nodiscard]] VkCommandBuffer
+begin_one_time_submit_command_buffer(const Vulkan_context &context)
+{
+    const VkCommandBufferAllocateInfo allocate_info {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = {},
+        .commandPool = context.command_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1};
+
+    VkCommandBuffer command_buffer {};
+    assert(context.device.vkAllocateCommandBuffers);
+    auto result = context.device.vkAllocateCommandBuffers(
+        context.device.device, &allocate_info, &command_buffer);
+    check_result(result, "vkAllocateCommandBuffers");
+
+    constexpr VkCommandBufferBeginInfo begin_info {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = {},
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .pInheritanceInfo = {}};
+
+    try
+    {
+        assert(context.device.vkBeginCommandBuffer);
+        result =
+            context.device.vkBeginCommandBuffer(command_buffer, &begin_info);
+        check_result(result, "vkBeginCommandBuffer");
+    }
+    catch (...)
+    {
+        assert(context.device.vkFreeCommandBuffers);
+        context.device.vkFreeCommandBuffers(
+            context.device.device, context.command_pool, 1, &command_buffer);
+        throw;
+    }
+
+    return command_buffer;
+}
+
+void end_one_time_submit_command_buffer(const Vulkan_context &context,
+                                        VkCommandBuffer command_buffer)
+{
+    // FIXME: proper error handling here
+
+    assert(context.device.vkEndCommandBuffer);
+    auto result = context.device.vkEndCommandBuffer(command_buffer);
+    check_result(result, "vkEndCommandBuffer");
+
+    const VkSubmitInfo submit_info {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                                    .pNext = {},
+                                    .waitSemaphoreCount = {},
+                                    .pWaitSemaphores = {},
+                                    .pWaitDstStageMask = {},
+                                    .commandBufferCount = 1,
+                                    .pCommandBuffers = &command_buffer,
+                                    .signalSemaphoreCount = {},
+                                    .pSignalSemaphores = {}};
+
+    assert(context.device.vkQueueSubmit);
+    result = context.device.vkQueueSubmit(
+        context.queue, context.device.queue_family_index, &submit_info, {});
+    check_result(result, "vkQueueSubmit");
+
+    assert(context.device.vkQueueWaitIdle);
+    result = context.device.vkQueueWaitIdle(context.queue);
+    check_result(result, "vkQueueWaitIdle");
+
+    assert(context.device.vkFreeCommandBuffers);
+    context.device.vkFreeCommandBuffers(
+        context.device.device, context.command_pool, 1, &command_buffer);
+}
+
+Vulkan_image create_render_target(const Vulkan_context &context,
+                                  std::uint32_t width,
+                                  std::uint32_t height)
+{
+    Vulkan_image image {};
+    image.width = width;
+    image.height = height;
+
+    constexpr auto format = VK_FORMAT_R32G32B32A32_SFLOAT;
+
+    const VkImageCreateInfo image_create_info {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .pNext = {},
+        .flags = {},
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = format,
+        .extent = {width, height, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = nullptr,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
+
+    VmaAllocationCreateInfo allocation_create_info {};
+    allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    auto result = vmaCreateImage(context.allocator,
+                                 &image_create_info,
+                                 &allocation_create_info,
+                                 &image.image,
+                                 &image.allocation,
+                                 nullptr);
+    check_result(result, "vmaCreateImage");
+
+    // FIXME: proper error handling in case the subsequent code throws
+
+    constexpr VkImageSubresourceRange subresource_range {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1};
+
+    const VkImageViewCreateInfo image_view_create_info {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext = {},
+        .flags = {},
+        .image = image.image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = format,
+        .components = {VK_COMPONENT_SWIZZLE_IDENTITY,
+                       VK_COMPONENT_SWIZZLE_IDENTITY,
+                       VK_COMPONENT_SWIZZLE_IDENTITY,
+                       VK_COMPONENT_SWIZZLE_IDENTITY},
+        .subresourceRange = subresource_range};
+
+    assert(context.device.vkCreateImageView);
+    result = context.device.vkCreateImageView(
+        context.device.device, &image_view_create_info, nullptr, &image.view);
+    check_result(result, "vkCreateImageView");
+
+    const auto command_buffer = begin_one_time_submit_command_buffer(context);
+
+    const VkImageMemoryBarrier image_memory_barrier {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = {},
+        .srcAccessMask = VK_ACCESS_NONE,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image.image,
+        .subresourceRange = subresource_range};
+
+    assert(context.device.vkCmdPipelineBarrier);
+    context.device.vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+        {},
+        0,
+        nullptr,
+        0,
+        nullptr,
+        1,
+        &image_memory_barrier);
+
+    end_one_time_submit_command_buffer(context, command_buffer);
+
+    return image;
+}
+
+void destroy_render_target(const Vulkan_context &context,
+                           const Vulkan_image &image)
+{
+    if (image.image)
+    {
+        assert(context.device.vkDestroyImageView);
+        context.device.vkDestroyImageView(
+            context.device.device, image.view, nullptr);
+
+        vmaDestroyImage(context.allocator, image.image, image.allocation);
     }
 }
 

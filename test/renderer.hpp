@@ -45,6 +45,24 @@ struct Vulkan_device
     PFN_vkGetDeviceQueue vkGetDeviceQueue;
     PFN_vkCreateCommandPool vkCreateCommandPool;
     PFN_vkDestroyCommandPool vkDestroyCommandPool;
+    PFN_vkCreateImageView vkCreateImageView;
+    PFN_vkDestroyImageView vkDestroyImageView;
+    PFN_vkAllocateCommandBuffers vkAllocateCommandBuffers;
+    PFN_vkFreeCommandBuffers vkFreeCommandBuffers;
+    PFN_vkBeginCommandBuffer vkBeginCommandBuffer;
+    PFN_vkEndCommandBuffer vkEndCommandBuffer;
+    PFN_vkQueueSubmit vkQueueSubmit;
+    PFN_vkQueueWaitIdle vkQueueWaitIdle;
+    PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier;
+};
+
+struct Vulkan_image
+{
+    std::uint32_t width;
+    std::uint32_t height;
+    VkImage image;
+    VmaAllocation allocation;
+    VkImageView view;
 };
 
 struct Vulkan_context
@@ -54,6 +72,7 @@ struct Vulkan_context
     VmaAllocator allocator;
     VkQueue queue;
     VkCommandPool command_pool;
+    Vulkan_image storage_image;
 };
 
 [[nodiscard]] Vulkan_context
