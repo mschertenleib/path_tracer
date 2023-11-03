@@ -142,7 +142,6 @@ create_instance(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
 
 #ifndef NDEBUG
 
-    assert(instance.vkEnumerateInstanceLayerProperties);
     std::uint32_t layer_property_count {};
     result = instance.vkEnumerateInstanceLayerProperties(&layer_property_count,
                                                          nullptr);
@@ -164,7 +163,6 @@ create_instance(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
             "VK_LAYER_KHRONOS_validation is not supported");
     }
 
-    assert(instance.vkEnumerateInstanceExtensionProperties);
     std::uint32_t extension_property_count {};
     result = instance.vkEnumerateInstanceExtensionProperties(
         nullptr, &extension_property_count, nullptr);
@@ -224,7 +222,6 @@ create_instance(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
 
 #endif
 
-    assert(instance.vkCreateInstance);
     result = instance.vkCreateInstance(
         &instance_create_info, nullptr, &instance.instance);
     check_result(result, "vkCreateInstance");
@@ -259,12 +256,7 @@ create_instance(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
 
 #ifndef NDEBUG
 
-    SCOPE_FAIL(
-        [&]
-        {
-            assert(instance.vkDestroyInstance);
-            instance.vkDestroyInstance(instance.instance, nullptr);
-        });
+    SCOPE_FAIL([&] { instance.vkDestroyInstance(instance.instance, nullptr); });
 
     result = instance.vkCreateDebugUtilsMessengerEXT(
         instance.instance,
@@ -283,12 +275,10 @@ void destroy_instance(const Vulkan_instance &instance)
     if (instance.instance)
     {
 #ifndef NDEBUG
-        assert(instance.vkDestroyDebugUtilsMessengerEXT);
         instance.vkDestroyDebugUtilsMessengerEXT(
             instance.instance, instance.debug_messenger, nullptr);
 #endif
 
-        assert(instance.vkDestroyInstance);
         instance.vkDestroyInstance(instance.instance, nullptr);
     }
 }
@@ -297,7 +287,6 @@ void destroy_instance(const Vulkan_instance &instance)
 get_queue_family_index(const Vulkan_instance &instance,
                        VkPhysicalDevice physical_device)
 {
-    assert(instance.vkGetPhysicalDeviceQueueFamilyProperties);
     std::uint32_t queue_family_property_count {};
     instance.vkGetPhysicalDeviceQueueFamilyProperties(
         physical_device, &queue_family_property_count, nullptr);
@@ -336,7 +325,6 @@ get_queue_family_index(const Vulkan_instance &instance,
         message << "- No queue family supports compute operations\n";
     }
 
-    assert(instance.vkEnumerateDeviceExtensionProperties);
     std::uint32_t extension_property_count {};
     auto result = instance.vkEnumerateDeviceExtensionProperties(
         physical_device, nullptr, &extension_property_count, nullptr);
@@ -387,7 +375,6 @@ get_queue_family_index(const Vulkan_instance &instance,
     features_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     features_2.pNext = &vulkan_1_2_features;
 
-    assert(instance.vkGetPhysicalDeviceFeatures2);
     instance.vkGetPhysicalDeviceFeatures2(physical_device, &features_2);
 
     if (!vulkan_1_2_features.bufferDeviceAddress)
@@ -416,7 +403,6 @@ get_queue_family_index(const Vulkan_instance &instance,
         message << "- The device feature rayTracingPipeline is not supported\n";
     }
 
-    assert(instance.vkGetPhysicalDeviceFormatProperties);
     VkFormatProperties format_properties {};
     instance.vkGetPhysicalDeviceFormatProperties(
         physical_device, VK_FORMAT_R32G32B32A32_SFLOAT, &format_properties);
@@ -437,7 +423,6 @@ get_queue_family_index(const Vulkan_instance &instance,
 {
     Vulkan_device device {};
 
-    assert(instance.vkEnumeratePhysicalDevices);
     std::uint32_t physical_device_count {};
     auto result = instance.vkEnumeratePhysicalDevices(
         instance.instance, &physical_device_count, nullptr);
@@ -466,7 +451,6 @@ get_queue_family_index(const Vulkan_instance &instance,
         properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
         properties_2.pNext = &ray_tracing_pipeline_properties;
 
-        assert(instance.vkGetPhysicalDeviceProperties2);
         instance.vkGetPhysicalDeviceProperties2(physical_devices[i],
                                                 &properties_2);
 
@@ -554,12 +538,10 @@ get_queue_family_index(const Vulkan_instance &instance,
         .ppEnabledExtensionNames = device_extension_names,
         .pEnabledFeatures = {}};
 
-    assert(instance.vkCreateDevice);
     result = instance.vkCreateDevice(
         device.physical_device, &device_create_info, nullptr, &device.device);
     check_result(result, "vkCreateDevice");
 
-    assert(instance.vkGetDeviceProcAddr);
     const auto load = [&]<typename F>(F &f, const char *name)
     {
         f = reinterpret_cast<F>(
@@ -587,7 +569,6 @@ void destroy_device(const Vulkan_device &device)
 {
     if (device.device)
     {
-        assert(device.vkDestroyDevice);
         device.vkDestroyDevice(device.device, nullptr);
     }
 }
@@ -601,7 +582,6 @@ void destroy_device(const Vulkan_device &device)
         .queueFamilyIndex = device.queue_family_index};
 
     VkCommandPool command_pool {};
-    assert(device.vkCreateCommandPool);
     const auto result = device.vkCreateCommandPool(
         device.device, &create_info, nullptr, &command_pool);
     check_result(result, "vkCreateCommandPool");
@@ -614,7 +594,6 @@ void destroy_command_pool(const Vulkan_device &device,
 {
     if (command_pool)
     {
-        assert(device.vkDestroyCommandPool);
         device.vkDestroyCommandPool(device.device, command_pool, nullptr);
     }
 }
@@ -630,7 +609,6 @@ begin_one_time_submit_command_buffer(const Vulkan_context &context)
         .commandBufferCount = 1};
 
     VkCommandBuffer command_buffer {};
-    assert(context.device.vkAllocateCommandBuffers);
     auto result = context.device.vkAllocateCommandBuffers(
         context.device.device, &allocate_info, &command_buffer);
     check_result(result, "vkAllocateCommandBuffers");
@@ -644,14 +622,12 @@ begin_one_time_submit_command_buffer(const Vulkan_context &context)
     SCOPE_FAIL(
         [&]
         {
-            assert(context.device.vkFreeCommandBuffers);
             context.device.vkFreeCommandBuffers(context.device.device,
                                                 context.command_pool,
                                                 1,
                                                 &command_buffer);
         });
 
-    assert(context.device.vkBeginCommandBuffer);
     result = context.device.vkBeginCommandBuffer(command_buffer, &begin_info);
     check_result(result, "vkBeginCommandBuffer");
 
@@ -664,14 +640,12 @@ void end_one_time_submit_command_buffer(const Vulkan_context &context,
     SCOPE_EXIT(
         [&]
         {
-            assert(context.device.vkFreeCommandBuffers);
             context.device.vkFreeCommandBuffers(context.device.device,
                                                 context.command_pool,
                                                 1,
                                                 &command_buffer);
         });
 
-    assert(context.device.vkEndCommandBuffer);
     auto result = context.device.vkEndCommandBuffer(command_buffer);
     check_result(result, "vkEndCommandBuffer");
 
@@ -685,12 +659,10 @@ void end_one_time_submit_command_buffer(const Vulkan_context &context,
                                     .signalSemaphoreCount = {},
                                     .pSignalSemaphores = {}};
 
-    assert(context.device.vkQueueSubmit);
     result = context.device.vkQueueSubmit(
         context.queue, context.device.queue_family_index, &submit_info, {});
     check_result(result, "vkQueueSubmit");
 
-    assert(context.device.vkQueueWaitIdle);
     result = context.device.vkQueueWaitIdle(context.queue);
     check_result(result, "vkQueueWaitIdle");
 }
@@ -757,7 +729,6 @@ Vulkan_image create_render_target(const Vulkan_context &context,
                        VK_COMPONENT_SWIZZLE_IDENTITY},
         .subresourceRange = subresource_range};
 
-    assert(context.device.vkCreateImageView);
     result = context.device.vkCreateImageView(
         context.device.device, &image_view_create_info, nullptr, &image.view);
     check_result(result, "vkCreateImageView");
@@ -765,7 +736,6 @@ Vulkan_image create_render_target(const Vulkan_context &context,
     SCOPE_FAIL(
         [&]
         {
-            assert(context.device.vkDestroyImageView);
             context.device.vkDestroyImageView(
                 context.device.device, image.view, nullptr);
         });
@@ -784,7 +754,6 @@ Vulkan_image create_render_target(const Vulkan_context &context,
         .image = image.image,
         .subresourceRange = subresource_range};
 
-    assert(context.device.vkCmdPipelineBarrier);
     context.device.vkCmdPipelineBarrier(
         command_buffer,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
@@ -807,7 +776,6 @@ void destroy_render_target(const Vulkan_context &context,
 {
     if (image.image)
     {
-        assert(context.device.vkDestroyImageView);
         context.device.vkDestroyImageView(
             context.device.device, image.view, nullptr);
 
@@ -845,7 +813,6 @@ create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
         vmaCreateAllocator(&allocator_create_info, &context.allocator);
     check_result(result, "vmaCreateAllocator");
 
-    assert(context.device.vkGetDeviceQueue);
     context.device.vkGetDeviceQueue(context.device.device,
                                     context.device.queue_family_index,
                                     0,
