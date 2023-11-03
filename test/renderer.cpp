@@ -452,44 +452,46 @@ create_device(const Vulkan_instance &instance,
     for (std::uint32_t i {0}; i < physical_device_count; ++i)
     {
         std::ostringstream message;
-        if (is_device_suitable(instance,
-                               physical_devices[i],
-                               device_extension_count,
-                               device_extension_names,
-                               message))
+        const auto is_suitable = is_device_suitable(instance,
+                                                    physical_devices[i],
+                                                    device_extension_count,
+                                                    device_extension_names,
+                                                    message);
+
+        VkPhysicalDeviceRayTracingPipelinePropertiesKHR
+            ray_tracing_pipeline_properties {};
+        ray_tracing_pipeline_properties.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+
+        VkPhysicalDeviceProperties2 properties_2 {};
+        properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        properties_2.pNext = &ray_tracing_pipeline_properties;
+
+        assert(instance.vkGetPhysicalDeviceProperties2);
+        instance.vkGetPhysicalDeviceProperties2(physical_devices[i],
+                                                &properties_2);
+
+        if (is_suitable)
         {
-            const auto queue_family_index =
-                get_queue_family_index(instance, physical_devices[i]);
+            std::cout << "Physical device \""
+                      << properties_2.properties.deviceName
+                      << "\" is suitable\n";
 
-            VkPhysicalDeviceRayTracingPipelinePropertiesKHR
-                ray_tracing_pipeline_properties {};
-            ray_tracing_pipeline_properties.sType =
-                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
-
-            VkPhysicalDeviceProperties2 properties_2 {};
-            properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-            properties_2.pNext = &ray_tracing_pipeline_properties;
-
-            assert(instance.vkGetPhysicalDeviceProperties2);
-            instance.vkGetPhysicalDeviceProperties2(physical_devices[i],
-                                                    &properties_2);
-
-            // TODO: it might be useful to not return immediately, if one wants
-            // to know why a subsequent device is not suitable
-
-            std::cout << "Physical device: "
-                      << properties_2.properties.deviceName << '\n';
-
-            device.physical_device = physical_devices[i];
-            device.queue_family_index = queue_family_index;
-            device.properties = properties_2.properties;
-            device.ray_tracing_pipeline_properties =
-                ray_tracing_pipeline_properties;
-            break;
+            if (!device.physical_device)
+            {
+                device.physical_device = physical_devices[i];
+                device.queue_family_index =
+                    get_queue_family_index(instance, physical_devices[i]);
+                device.properties = properties_2.properties;
+                device.ray_tracing_pipeline_properties =
+                    ray_tracing_pipeline_properties;
+            }
         }
         else
         {
-            std::cerr << "Physical device " << i << " is not suitable:\n";
+            std::cerr << "Physical device \""
+                      << properties_2.properties.deviceName
+                      << "\" is not suitable:\n";
             std::cerr << message.str();
         }
     }
