@@ -655,15 +655,13 @@ void create_descriptor_set_layout(Renderer &r)
         {.binding = 2,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
          .descriptorCount = 1,
-         .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR},
+         .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR |
+                       vk::ShaderStageFlagBits::eClosestHitKHR},
         {.binding = 3,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
          .descriptorCount = 1,
-         .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR},
-        {.binding = 4,
-         .descriptorType = vk::DescriptorType::eStorageBuffer,
-         .descriptorCount = 1,
-         .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR}};
+         .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR |
+                       vk::ShaderStageFlagBits::eClosestHitKHR}};
 
     const vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
         .bindingCount = static_cast<std::uint32_t>(
@@ -678,12 +676,12 @@ void create_descriptor_pool(Renderer &r)
 {
     constexpr vk::DescriptorPoolSize pool_sizes[] {
         {vk::DescriptorType::eStorageImage, 1},
-        {vk::DescriptorType::eStorageBuffer, 3},
+        {vk::DescriptorType::eStorageBuffer, 2},
         {vk::DescriptorType::eAccelerationStructureKHR, 1}};
 
     const vk::DescriptorPoolCreateInfo create_info {
         .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets = 5, // FIXME
+        .maxSets = 4, // FIXME
         .poolSizeCount = static_cast<std::uint32_t>(std::size(pool_sizes)),
         .pPoolSizes = pool_sizes};
 
@@ -721,12 +719,7 @@ void create_descriptor_set(Renderer &r)
         .offset = r.index_range_offset,
         .range = r.index_range_size};
 
-    const vk::DescriptorBufferInfo descriptor_normals {
-        .buffer = r.geometry_buffer.get(),
-        .offset = r.normal_range_offset,
-        .range = r.normal_range_size};
-
-    const vk::WriteDescriptorSet descriptor_writes[5] {
+    const vk::WriteDescriptorSet descriptor_writes[4] {
         {.dstSet = r.descriptor_set,
          .dstBinding = 0,
          .dstArrayElement = 0,
@@ -750,13 +743,7 @@ void create_descriptor_set(Renderer &r)
          .dstArrayElement = 0,
          .descriptorCount = 1,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
-         .pBufferInfo = &descriptor_indices},
-        {.dstSet = r.descriptor_set,
-         .dstBinding = 4,
-         .dstArrayElement = 0,
-         .descriptorCount = 1,
-         .descriptorType = vk::DescriptorType::eStorageBuffer,
-         .pBufferInfo = &descriptor_normals}};
+         .pBufferInfo = &descriptor_indices}};
 
     r.device->updateDescriptorSets(descriptor_writes, {});
 }

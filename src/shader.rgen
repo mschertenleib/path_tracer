@@ -1,10 +1,22 @@
 #version 460
 
 #extension GL_EXT_ray_tracing: require
+#extension GL_EXT_scalar_block_layout: require
+#extension GL_EXT_debug_printf: enable
 
 layout (binding = 0, rgba32f) uniform image2D storage_image;
 
 layout (binding = 1) uniform accelerationStructureEXT tlas;
+
+layout (binding = 2, scalar) buffer Vertices
+{
+    vec3 vertices[];
+};
+
+layout (binding = 3, scalar) buffer Indices
+{
+    uint indices[];
+};
 
 layout (location = 0) rayPayloadEXT vec3 hit_value;
 
@@ -31,6 +43,12 @@ void main()
     if (gl_LaunchIDEXT.x >= image_size.x || gl_LaunchIDEXT.y >= image_size.y)
     {
         return;
+    }
+
+    if (gl_LaunchIDEXT.xy == ivec2(0)) {
+        debugPrintfEXT("#vertices: %d, first vertex: %f %f %f, #indices: %d, first index: %u",
+                       vertices.length(), vertices[0].x, vertices[0].y, vertices[0].z,
+                       indices.length(), indices[0]);
     }
 
     const float u = (float(gl_LaunchIDEXT.x) + 0.5) / float(image_size.x);

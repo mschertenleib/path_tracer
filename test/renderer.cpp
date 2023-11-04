@@ -742,8 +742,7 @@ void end_one_time_submit_command_buffer(const Vulkan_context &context,
                                     .signalSemaphoreCount = {},
                                     .pSignalSemaphores = {}};
 
-    result = context.device.vkQueueSubmit(
-        context.queue, 1, &submit_info, {});
+    result = context.device.vkQueueSubmit(context.queue, 1, &submit_info, {});
     check_result(result, "vkQueueSubmit");
 
     result = context.device.vkQueueWaitIdle(context.queue);
@@ -918,9 +917,7 @@ void destroy_buffer(VmaAllocator allocator, const Vulkan_buffer &buffer)
 }
 
 [[nodiscard]] Vulkan_buffer
-create_buffer_from_host_data(const Vulkan_device &device,
-                             VmaAllocator allocator,
-                             VkCommandBuffer command_buffer,
+create_buffer_from_host_data(const Vulkan_context &context,
                              VkBufferUsageFlags usage,
                              VmaMemoryUsage memory_usage,
                              const void *data,
@@ -928,41 +925,41 @@ create_buffer_from_host_data(const Vulkan_device &device,
 {
     VmaAllocationInfo staging_allocation_info {};
     const auto staging_buffer =
-        create_buffer(allocator,
+        create_buffer(context.allocator,
                       size,
                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
                           VMA_ALLOCATION_CREATE_MAPPED_BIT,
                       VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
                       &staging_allocation_info);
-    SCOPE_EXIT([&] { destroy_buffer(allocator, staging_buffer); });
+    SCOPE_EXIT([&] { destroy_buffer(context.allocator, staging_buffer); });
 
     auto *const mapped_data =
         static_cast<std::uint8_t *>(staging_allocation_info.pMappedData);
 
     std::memcpy(mapped_data, data, size);
 
-    const auto buffer =
-        create_buffer(allocator, size, usage, {}, memory_usage, nullptr);
+    const auto buffer = create_buffer(
+        context.allocator, size, usage, {}, memory_usage, nullptr);
+
+    const auto command_buffer = begin_one_time_submit_command_buffer(context);
 
     const VkBufferCopy region {.srcOffset = 0, .dstOffset = 0, .size = size};
 
-    device.vkCmdCopyBuffer(
+    context.device.vkCmdCopyBuffer(
         command_buffer, staging_buffer.buffer, buffer.buffer, 1, &region);
+
+    end_one_time_submit_command_buffer(context, command_buffer);
 
     return buffer;
 }
 
 [[nodiscard]] Vulkan_buffer
-create_vertex_buffer(const Vulkan_device &device,
-                     VmaAllocator allocator,
-                     VkCommandBuffer command_buffer,
+create_vertex_buffer(const Vulkan_context &context,
                      const std::vector<float> &vertices)
 {
     return create_buffer_from_host_data(
-        device,
-        allocator,
-        command_buffer,
+        context,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
             VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
@@ -972,15 +969,11 @@ create_vertex_buffer(const Vulkan_device &device,
 }
 
 [[nodiscard]] Vulkan_buffer
-create_index_buffer(const Vulkan_device &device,
-                    VmaAllocator allocator,
-                    VkCommandBuffer command_buffer,
+create_index_buffer(const Vulkan_context &context,
                     const std::vector<std::uint32_t> &indices)
 {
     return create_buffer_from_host_data(
-        device,
-        allocator,
-        command_buffer,
+        context,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
             VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
@@ -1158,12 +1151,8 @@ create_tlas(const Vulkan_context &context)
         .accelerationStructureReference = get_device_address(
             context.device, context.blas.acceleration_structure)};
 
-    const auto command_buffer = begin_one_time_submit_command_buffer(context);
-
     const auto instance_buffer = create_buffer_from_host_data(
-        context.device,
-        context.allocator,
-        command_buffer,
+        context,
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
             VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -1172,11 +1161,13 @@ create_tlas(const Vulkan_context &context)
         sizeof(VkAccelerationStructureInstanceKHR));
     SCOPE_EXIT([&] { destroy_buffer(context.allocator, instance_buffer); });
 
+    const auto command_buffer = begin_one_time_submit_command_buffer(context);
+
     constexpr VkMemoryBarrier barrier {
         .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
         .pNext = {},
         .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR};
+        .dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR};
 
     context.device.vkCmdPipelineBarrier(
         command_buffer,
@@ -1332,12 +1323,14 @@ create_descriptor_set_layout(const Vulkan_device &device)
         {.binding = 2,
          .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
          .descriptorCount = 1,
-         .stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+         .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR |
+                       VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
          .pImmutableSamplers = {}},
         {.binding = 3,
          .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
          .descriptorCount = 1,
-         .stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+         .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR |
+                       VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
          .pImmutableSamplers = {}}};
 
     const VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
@@ -1815,7 +1808,6 @@ void load_scene(Vulkan_context &context,
         context.device, context.storage_image.image, image_format);
 
     const auto command_buffer = begin_one_time_submit_command_buffer(context);
-
     transition_image_layout(context.device,
                             command_buffer,
                             context.storage_image.image,
@@ -1826,14 +1818,11 @@ void load_scene(Vulkan_context &context,
                             VK_IMAGE_LAYOUT_GENERAL,
                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                             VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
-
-    context.vertex_buffer = create_vertex_buffer(
-        context.device, context.allocator, command_buffer, geometry.vertices);
-
-    context.index_buffer = create_index_buffer(
-        context.device, context.allocator, command_buffer, geometry.indices);
-
     end_one_time_submit_command_buffer(context, command_buffer);
+
+    context.vertex_buffer = create_vertex_buffer(context, geometry.vertices);
+
+    context.index_buffer = create_index_buffer(context, geometry.indices);
 
     context.blas = create_blas(context);
 

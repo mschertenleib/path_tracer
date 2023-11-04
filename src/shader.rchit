@@ -2,7 +2,6 @@
 
 #extension GL_EXT_ray_tracing: require
 #extension GL_EXT_scalar_block_layout: require
-
 #extension GL_EXT_debug_printf: enable
 
 layout (binding = 2, scalar) buffer Vertices
@@ -58,8 +57,6 @@ void main()
 
     const vec3 normal = cross(v1 - v0, v2 - v0);
     const vec3 world_normal = normalize(vec3(gl_ObjectToWorldEXT * vec4(normal, 1.0)));
-
-    debugPrintfEXT("rchit invocation !");
 
     hit_value = (world_normal + vec3(1.0)) * 0.5;
 }
