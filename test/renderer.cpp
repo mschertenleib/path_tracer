@@ -743,7 +743,7 @@ void end_one_time_submit_command_buffer(const Vulkan_context &context,
                                     .pSignalSemaphores = {}};
 
     result = context.device.vkQueueSubmit(
-        context.queue, context.device.queue_family_index, &submit_info, {});
+        context.queue, 1, &submit_info, {});
     check_result(result, "vkQueueSubmit");
 
     result = context.device.vkQueueWaitIdle(context.queue);
@@ -1667,8 +1667,6 @@ void destroy_pipeline(const Vulkan_device &device, VkPipeline pipeline)
 [[nodiscard]] Vulkan_shader_binding_table
 create_shader_binding_table(const Vulkan_context &context)
 {
-    // FIXME: the rgen shader is never called, so the error must come from here
-
     const auto handle_size =
         context.device.ray_tracing_pipeline_properties.shaderGroupHandleSize;
     const auto handle_alignment = context.device.ray_tracing_pipeline_properties
@@ -1732,7 +1730,7 @@ create_shader_binding_table(const Vulkan_context &context)
     const auto get_handle_pointer = [&](std::uint32_t i)
     { return handles.data() + i * handle_size; };
 
-    std::uint32_t handle_index {};
+    std::uint32_t handle_index {0};
     std::memcpy(
         sbt_buffer_mapped, get_handle_pointer(handle_index), handle_size);
     ++handle_index;
