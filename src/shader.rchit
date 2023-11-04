@@ -49,12 +49,10 @@ void main()
     const vec3 v1 = vertices[i1];
     const vec3 v2 = vertices[i2];
 
-
     const vec3 barycentrics = vec3(1.0 - attributes.x - attributes.y, attributes.x, attributes.y);
 
     const vec3 pos = v0 * barycentrics.x + v1 * barycentrics.y + v2 * barycentrics.z;
     const vec3 world_pos = vec3(gl_ObjectToWorldEXT * vec4(pos, 1.0));
-
 
     const vec3 normal = cross(v1 - v0, v2 - v0);
     const vec3 world_normal = normalize(vec3(gl_ObjectToWorldEXT * vec4(normal, 1.0)));

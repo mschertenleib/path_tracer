@@ -62,6 +62,8 @@ struct Vulkan_device
     PFN_vkCmdBindDescriptorSets vkCmdBindDescriptorSets;
     PFN_vkCmdPushConstants vkCmdPushConstants;
     PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
+    PFN_vkCmdBlitImage vkCmdBlitImage;
+    PFN_vkCmdCopyImageToBuffer vkCmdCopyImageToBuffer;
     PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddress;
     PFN_vkGetAccelerationStructureDeviceAddressKHR
         vkGetAccelerationStructureDeviceAddressKHR;

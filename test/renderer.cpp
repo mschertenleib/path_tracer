@@ -2,6 +2,8 @@
 #include "geometry.hpp"
 #include "utility.hpp"
 
+#include "stb_image_write.h"
+
 #include <algorithm>
 #include <iostream>
 #include <limits>
@@ -575,6 +577,8 @@ get_queue_family_index(const Vulkan_instance &instance,
     load(device.vkCmdBindDescriptorSets, "vkCmdBindDescriptorSets");
     load(device.vkCmdPushConstants, "vkCmdPushConstants");
     load(device.vkCmdTraceRaysKHR, "vkCmdTraceRaysKHR");
+    load(device.vkCmdBlitImage, "vkCmdBlitImage");
+    load(device.vkCmdCopyImageToBuffer, "vkCmdCopyImageToBuffer");
     load(device.vkGetBufferDeviceAddress, "vkGetBufferDeviceAddress");
     load(device.vkGetAccelerationStructureDeviceAddressKHR,
          "vkGetAccelerationStructureDeviceAddressKHR");
@@ -1894,4 +1898,150 @@ void render(const Vulkan_context &context)
 
 void write_to_png(const Vulkan_context &context, const char *file_name)
 {
+    constexpr auto format = VK_FORMAT_R8G8B8A8_SRGB;
+
+    const auto final_image = create_image(context.allocator,
+                                          context.storage_image.width,
+                                          context.storage_image.height,
+                                          format,
+                                          VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+    SCOPE_EXIT([&] { destroy_image(context.allocator, final_image); });
+
+    const auto image_size = final_image.width * final_image.height * 4;
+
+    VmaAllocationInfo staging_allocation_info {};
+    const auto staging_buffer =
+        create_buffer(context.allocator,
+                      image_size,
+                      VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                          VMA_ALLOCATION_CREATE_MAPPED_BIT,
+                      VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+                      &staging_allocation_info);
+    SCOPE_EXIT([&] { destroy_buffer(context.allocator, staging_buffer); });
+
+    const auto *const mapped_data =
+        static_cast<std::uint8_t *>(staging_allocation_info.pMappedData);
+
+    const auto command_buffer = begin_one_time_submit_command_buffer(context);
+
+    constexpr VkImageSubresourceRange subresource_range {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1};
+
+    const VkImageMemoryBarrier storage_image_memory_barrier {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = {},
+        .srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = context.storage_image.image,
+        .subresourceRange = subresource_range};
+
+    VkImageMemoryBarrier final_image_memory_barrier {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = {},
+        .srcAccessMask = VK_ACCESS_NONE,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = final_image.image,
+        .subresourceRange = subresource_range};
+
+    const VkImageMemoryBarrier image_memory_barriers[] {
+        storage_image_memory_barrier, final_image_memory_barrier};
+
+    context.device.vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT |
+            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        {},
+        0,
+        nullptr,
+        0,
+        nullptr,
+        static_cast<std::uint32_t>(std::size(image_memory_barriers)),
+        image_memory_barriers);
+
+    constexpr VkImageSubresourceLayers subresource_layers {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .mipLevel = 0,
+        .baseArrayLayer = 0,
+        .layerCount = 1};
+
+    const VkImageBlit image_blit {
+        .srcSubresource = subresource_layers,
+        .srcOffsets = {{0, 0, 0},
+                       {static_cast<std::int32_t>(final_image.width),
+                        static_cast<std::int32_t>(final_image.height),
+                        1}},
+        .dstSubresource = subresource_layers,
+        .dstOffsets = {{0, 0, 0},
+                       {static_cast<std::int32_t>(final_image.width),
+                        static_cast<std::int32_t>(final_image.height),
+                        1}}};
+
+    context.device.vkCmdBlitImage(command_buffer,
+                                  context.storage_image.image,
+                                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                  final_image.image,
+                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                  1,
+                                  &image_blit,
+                                  VK_FILTER_NEAREST);
+
+    final_image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    final_image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    final_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    final_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+    context.device.vkCmdPipelineBarrier(command_buffer,
+                                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                        {},
+                                        0,
+                                        nullptr,
+                                        0,
+                                        nullptr,
+                                        1,
+                                        &final_image_memory_barrier);
+
+    const VkBufferImageCopy copy_region {
+        .bufferOffset = 0,
+        .bufferRowLength = {},
+        .bufferImageHeight = final_image.height,
+        .imageSubresource = subresource_layers,
+        .imageOffset = {0, 0, 0},
+        .imageExtent = {final_image.width, final_image.height, 1}};
+
+    context.device.vkCmdCopyImageToBuffer(command_buffer,
+                                          final_image.image,
+                                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                          staging_buffer.buffer,
+                                          1,
+                                          &copy_region);
+
+    end_one_time_submit_command_buffer(context, command_buffer);
+
+    const auto write_result =
+        stbi_write_png(file_name,
+                       static_cast<int>(final_image.width),
+                       static_cast<int>(final_image.height),
+                       4,
+                       mapped_data,
+                       static_cast<int>(final_image.width * 4));
+    if (write_result == 0)
+    {
+        throw std::runtime_error("Failed to write PNG image");
+    }
 }
