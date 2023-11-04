@@ -1,7 +1,19 @@
 #include "utility.hpp"
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOCRYPT
+#define NOUSER
+#define NOGDI
+#define NOSERVICE
+#define NOMCX
+#define NOIME
+#include <windows.h>
+#endif
+
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 
 std::vector<std::uint32_t> read_binary_file(const char *file_name)
 {
@@ -38,4 +50,27 @@ std::vector<std::uint32_t> read_binary_file(const char *file_name)
     }
 
     return buffer;
+}
+
+std::ostream &operator<<(std::ostream &os, Text_color color)
+{
+#ifdef _WIN32
+    const auto handle = GetStdHandle(STD_OUTPUT_HANDLE);
+    switch (color)
+    {
+    case Text_color::reset: SetConsoleTextAttribute(handle, 0); break;
+    case Text_color::green: SetConsoleTextAttribute(handle, 2); break;
+    case Text_color::yellow: SetConsoleTextAttribute(handle, 6); break;
+    case Text_color::red: SetConsoleTextAttribute(handle, 4); break;
+    }
+#else
+    switch (color)
+    {
+    case Text_color::reset: os << "\033[0m"; break;
+    case Text_color::green: os << "\033[32m"; break;
+    case Text_color::yellow: os << "\033[33m"; break;
+    case Text_color::red: os << "\033[31m"; break;
+    }
+#endif
+    return os;
 }
