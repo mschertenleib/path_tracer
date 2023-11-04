@@ -594,6 +594,8 @@ get_queue_family_index(const Vulkan_instance &instance,
     load(device.vkCreateRayTracingPipelinesKHR,
          "vkCreateRayTracingPipelinesKHR");
     load(device.vkDestroyPipeline, "vkDestroyPipeline");
+    load(device.vkGetRayTracingShaderGroupHandlesKHR,
+         "vkGetRayTracingShaderGroupHandlesKHR");
 
     return device;
 }
@@ -1633,6 +1635,103 @@ void destroy_pipeline(const Vulkan_device &device, VkPipeline pipeline)
     }
 }
 
+[[nodiscard]] Vulkan_shader_binding_table
+create_shader_binding_table(const Vulkan_context &context)
+{
+    const auto handle_size =
+        context.device.ray_tracing_pipeline_properties.shaderGroupHandleSize;
+    const auto handle_alignment = context.device.ray_tracing_pipeline_properties
+                                      .shaderGroupHandleAlignment;
+    const auto base_alignment =
+        context.device.ray_tracing_pipeline_properties.shaderGroupBaseAlignment;
+    const auto handle_size_aligned = align_up(handle_size, handle_alignment);
+
+    constexpr std::uint32_t miss_count {1};
+    constexpr std::uint32_t hit_count {1};
+    constexpr std::uint32_t handle_count {1 + miss_count + hit_count};
+
+    Vulkan_shader_binding_table sbt {};
+
+    sbt.rgen_region.stride = align_up(handle_size_aligned, base_alignment);
+    sbt.rgen_region.size = sbt.rgen_region.stride;
+
+    sbt.miss_region.stride = handle_size_aligned;
+    sbt.miss_region.size =
+        align_up(miss_count * handle_size_aligned, base_alignment);
+
+    sbt.hit_region.stride = handle_size_aligned;
+    sbt.hit_region.size =
+        align_up(hit_count * handle_size_aligned, base_alignment);
+
+    const auto data_size = handle_count * handle_size;
+    std::vector<std::uint8_t> handles(data_size);
+    const auto result = context.device.vkGetRayTracingShaderGroupHandlesKHR(
+        context.device.device,
+        context.ray_tracing_pipeline,
+        0,
+        handle_count,
+        data_size,
+        handles.data());
+    check_result(result, "vkGetRayTracingShaderGroupHandlesKHR");
+
+    const auto sbt_size = sbt.rgen_region.size + sbt.miss_region.size +
+                          sbt.hit_region.size + sbt.call_region.size;
+
+    VmaAllocationInfo sbt_allocation_info {};
+    sbt.buffer =
+        create_buffer(context.allocator,
+                      sbt_size,
+                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                          VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR |
+                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                          VMA_ALLOCATION_CREATE_MAPPED_BIT,
+                      VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+                      &sbt_allocation_info);
+    auto *const sbt_buffer_mapped =
+        static_cast<std::uint8_t *>(sbt_allocation_info.pMappedData);
+
+    const auto sbt_address =
+        get_device_address(context.device, sbt.buffer.buffer);
+    sbt.rgen_region.deviceAddress = sbt_address;
+    sbt.miss_region.deviceAddress = sbt_address + sbt.rgen_region.size;
+    sbt.hit_region.deviceAddress =
+        sbt_address + sbt.rgen_region.size + sbt.miss_region.size;
+
+    const auto get_handle_pointer = [&](std::uint32_t i)
+    { return handles.data() + i * handle_size; };
+
+    std::uint32_t handle_index {};
+    std::memcpy(
+        sbt_buffer_mapped, get_handle_pointer(handle_index), handle_size);
+    ++handle_index;
+
+    auto p_data = sbt_buffer_mapped + sbt.rgen_region.size;
+    for (std::uint32_t i {}; i < miss_count; ++i)
+    {
+        std::memcpy(p_data, get_handle_pointer(handle_index), handle_size);
+        ++handle_index;
+        p_data += sbt.miss_region.stride;
+    }
+
+    p_data = sbt_buffer_mapped + sbt.rgen_region.size + sbt.miss_region.size;
+    for (std::uint32_t i {}; i < hit_count; ++i)
+    {
+        std::memcpy(p_data, get_handle_pointer(handle_index), handle_size);
+        ++handle_index;
+        p_data += sbt.hit_region.stride;
+    }
+
+    return sbt;
+}
+
+void destroy_shader_binding_table(
+    VmaAllocator allocator,
+    const Vulkan_shader_binding_table &shader_binding_table)
+{
+    destroy_buffer(allocator, shader_binding_table.buffer);
+}
+
 } // namespace
 
 Vulkan_context
@@ -1722,10 +1821,14 @@ void load_scene(Vulkan_context &context,
         create_ray_tracing_pipeline_layout(context);
 
     context.ray_tracing_pipeline = create_ray_tracing_pipeline(context);
+
+    context.shader_binding_table = create_shader_binding_table(context);
 }
 
 void destroy_scene_resources(const Vulkan_context &context)
 {
+    destroy_shader_binding_table(context.allocator,
+                                 context.shader_binding_table);
     destroy_pipeline(context.device, context.ray_tracing_pipeline);
     destroy_pipeline_layout(context.device,
                             context.ray_tracing_pipeline_layout);

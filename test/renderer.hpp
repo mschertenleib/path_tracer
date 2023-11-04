@@ -78,6 +78,8 @@ struct Vulkan_device
     PFN_vkDestroyShaderModule vkDestroyShaderModule;
     PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
     PFN_vkDestroyPipeline vkDestroyPipeline;
+    PFN_vkGetRayTracingShaderGroupHandlesKHR
+        vkGetRayTracingShaderGroupHandlesKHR;
 };
 
 struct Vulkan_image
@@ -101,6 +103,15 @@ struct Vulkan_acceleration_structure
     VkAccelerationStructureKHR acceleration_structure;
 };
 
+struct Vulkan_shader_binding_table
+{
+    Vulkan_buffer buffer;
+    VkStridedDeviceAddressRegionKHR rgen_region;
+    VkStridedDeviceAddressRegionKHR miss_region;
+    VkStridedDeviceAddressRegionKHR hit_region;
+    VkStridedDeviceAddressRegionKHR call_region;
+};
+
 struct Vulkan_context
 {
     Vulkan_instance instance;
@@ -119,6 +130,7 @@ struct Vulkan_context
     VkDescriptorSet descriptor_set;
     VkPipelineLayout ray_tracing_pipeline_layout;
     VkPipeline ray_tracing_pipeline;
+    Vulkan_shader_binding_table shader_binding_table;
 };
 
 [[nodiscard]] Vulkan_context
