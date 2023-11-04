@@ -14,6 +14,12 @@
 namespace
 {
 
+struct Push_constants
+{
+    std::uint32_t placeholder;
+};
+static_assert(sizeof(Push_constants) <= 128);
+
 #ifndef NDEBUG
 
 VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
@@ -581,6 +587,13 @@ get_queue_family_index(const Vulkan_instance &instance,
     load(device.vkAllocateDescriptorSets, "vkAllocateDescriptorSets");
     load(device.vkFreeDescriptorSets, "vkFreeDescriptorSets");
     load(device.vkUpdateDescriptorSets, "vkUpdateDescriptorSets");
+    load(device.vkCreatePipelineLayout, "vkCreatePipelineLayout");
+    load(device.vkDestroyPipelineLayout, "vkDestroyPipelineLayout");
+    load(device.vkCreateShaderModule, "vkCreateShaderModule");
+    load(device.vkDestroyShaderModule, "vkDestroyShaderModule");
+    load(device.vkCreateRayTracingPipelinesKHR,
+         "vkCreateRayTracingPipelinesKHR");
+    load(device.vkDestroyPipeline, "vkDestroyPipeline");
 
     return device;
 }
@@ -1448,6 +1461,178 @@ allocate_descriptor_set(const Vulkan_context &context)
     return descriptor_set;
 }
 
+[[nodiscard]] VkPipelineLayout
+create_ray_tracing_pipeline_layout(const Vulkan_context &context)
+{
+    constexpr VkPushConstantRange push_constant_range {
+        .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR |
+                      VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+        .offset = 0,
+        .size = sizeof(Push_constants)};
+
+    const VkPipelineLayoutCreateInfo pipeline_layout_create_info {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext = {},
+        .flags = {},
+        .setLayoutCount = 1,
+        .pSetLayouts = &context.descriptor_set_layout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &push_constant_range};
+
+    VkPipelineLayout pipeline_layout {};
+    const auto result =
+        context.device.vkCreatePipelineLayout(context.device.device,
+                                              &pipeline_layout_create_info,
+                                              nullptr,
+                                              &pipeline_layout);
+    check_result(result, "vkCreatePipelineLayout");
+
+    return pipeline_layout;
+}
+
+void destroy_pipeline_layout(const Vulkan_device &device,
+                             VkPipelineLayout pipeline_layout)
+{
+    if (pipeline_layout)
+    {
+        device.vkDestroyPipelineLayout(device.device, pipeline_layout, nullptr);
+    }
+}
+
+[[nodiscard]] VkShaderModule create_shader_module(const Vulkan_device &device,
+                                                  const char *file_name)
+{
+    const auto shader_code = read_binary_file(file_name);
+
+    const VkShaderModuleCreateInfo shader_module_create_info {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext = {},
+        .flags = {},
+        .codeSize = shader_code.size() * sizeof(std::uint32_t),
+        .pCode = shader_code.data()};
+
+    VkShaderModule shader_module {};
+    const auto result = device.vkCreateShaderModule(
+        device.device, &shader_module_create_info, nullptr, &shader_module);
+    check_result(result, "vkCreateShaderModule");
+
+    return shader_module;
+}
+
+void destroy_shader_module(const Vulkan_device &device,
+                           VkShaderModule shader_module)
+{
+    if (shader_module)
+    {
+        device.vkDestroyShaderModule(device.device, shader_module, nullptr);
+    }
+}
+
+[[nodiscard]] VkPipeline
+create_ray_tracing_pipeline(const Vulkan_context &context)
+{
+    const auto rgen_shader_module =
+        create_shader_module(context.device, "shader.rgen.spv");
+    SCOPE_EXIT([&]
+               { destroy_shader_module(context.device, rgen_shader_module); });
+    const auto rmiss_shader_module =
+        create_shader_module(context.device, "shader.rmiss.spv");
+    SCOPE_EXIT([&]
+               { destroy_shader_module(context.device, rmiss_shader_module); });
+    const auto rchit_shader_module =
+        create_shader_module(context.device, "shader.rchit.spv");
+    SCOPE_EXIT([&]
+               { destroy_shader_module(context.device, rchit_shader_module); });
+
+    const VkPipelineShaderStageCreateInfo shader_stage_create_infos[] {
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .pNext = {},
+         .flags = {},
+         .stage = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+         .module = rgen_shader_module,
+         .pName = "main",
+         .pSpecializationInfo = {}},
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .pNext = {},
+         .flags = {},
+         .stage = VK_SHADER_STAGE_MISS_BIT_KHR,
+         .module = rmiss_shader_module,
+         .pName = "main",
+         .pSpecializationInfo = {}},
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .pNext = {},
+         .flags = {},
+         .stage = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+         .module = rchit_shader_module,
+         .pName = "main",
+         .pSpecializationInfo = {}}};
+
+    const VkRayTracingShaderGroupCreateInfoKHR ray_tracing_shader_groups[] {
+        {.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+         .pNext = {},
+         .type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
+         .generalShader = 0,
+         .closestHitShader = VK_SHADER_UNUSED_KHR,
+         .anyHitShader = VK_SHADER_UNUSED_KHR,
+         .intersectionShader = VK_SHADER_UNUSED_KHR,
+         .pShaderGroupCaptureReplayHandle = {}},
+        {.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+         .pNext = {},
+         .type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
+         .generalShader = 1,
+         .closestHitShader = VK_SHADER_UNUSED_KHR,
+         .anyHitShader = VK_SHADER_UNUSED_KHR,
+         .intersectionShader = VK_SHADER_UNUSED_KHR,
+         .pShaderGroupCaptureReplayHandle = {}},
+        {.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+         .pNext = {},
+         .type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR,
+         .generalShader = VK_SHADER_UNUSED_KHR,
+         .closestHitShader = 2,
+         .anyHitShader = VK_SHADER_UNUSED_KHR,
+         .intersectionShader = VK_SHADER_UNUSED_KHR,
+         .pShaderGroupCaptureReplayHandle = {}}};
+
+    const VkRayTracingPipelineCreateInfoKHR ray_tracing_pipeline_create_info {
+        .sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
+        .pNext = {},
+        .flags = {},
+        .stageCount =
+            static_cast<std::uint32_t>(std::size(shader_stage_create_infos)),
+        .pStages = shader_stage_create_infos,
+        .groupCount =
+            static_cast<std::uint32_t>(std::size(ray_tracing_shader_groups)),
+        .pGroups = ray_tracing_shader_groups,
+        .maxPipelineRayRecursionDepth = 1,
+        .pLibraryInfo = {},
+        .pLibraryInterface = {},
+        .pDynamicState = {},
+        .layout = context.ray_tracing_pipeline_layout,
+        .basePipelineHandle = {},
+        .basePipelineIndex = {}};
+
+    VkPipeline ray_tracing_pipeline {};
+    const auto result = context.device.vkCreateRayTracingPipelinesKHR(
+        context.device.device,
+        {},
+        {},
+        1,
+        &ray_tracing_pipeline_create_info,
+        nullptr,
+        &ray_tracing_pipeline);
+    check_result(result, "vkCreateRayTracingPipelinesKHR");
+
+    return ray_tracing_pipeline;
+}
+
+void destroy_pipeline(const Vulkan_device &device, VkPipeline pipeline)
+{
+    if (pipeline)
+    {
+        device.vkDestroyPipeline(device.device, pipeline, nullptr);
+    }
+}
+
 } // namespace
 
 Vulkan_context
@@ -1532,10 +1717,18 @@ void load_scene(Vulkan_context &context,
     context.descriptor_pool = create_descriptor_pool(context.device);
 
     context.descriptor_set = allocate_descriptor_set(context);
+
+    context.ray_tracing_pipeline_layout =
+        create_ray_tracing_pipeline_layout(context);
+
+    context.ray_tracing_pipeline = create_ray_tracing_pipeline(context);
 }
 
 void destroy_scene_resources(const Vulkan_context &context)
 {
+    destroy_pipeline(context.device, context.ray_tracing_pipeline);
+    destroy_pipeline_layout(context.device,
+                            context.ray_tracing_pipeline_layout);
     destroy_descriptor_pool(context.device, context.descriptor_pool);
     destroy_descriptor_set_layout(context.device,
                                   context.descriptor_set_layout);

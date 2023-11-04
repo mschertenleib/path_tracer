@@ -72,6 +72,12 @@ struct Vulkan_device
     PFN_vkAllocateDescriptorSets vkAllocateDescriptorSets;
     PFN_vkFreeDescriptorSets vkFreeDescriptorSets;
     PFN_vkUpdateDescriptorSets vkUpdateDescriptorSets;
+    PFN_vkCreatePipelineLayout vkCreatePipelineLayout;
+    PFN_vkDestroyPipelineLayout vkDestroyPipelineLayout;
+    PFN_vkCreateShaderModule vkCreateShaderModule;
+    PFN_vkDestroyShaderModule vkDestroyShaderModule;
+    PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
+    PFN_vkDestroyPipeline vkDestroyPipeline;
 };
 
 struct Vulkan_image
@@ -111,6 +117,8 @@ struct Vulkan_context
     VkDescriptorSetLayout descriptor_set_layout;
     VkDescriptorPool descriptor_pool;
     VkDescriptorSet descriptor_set;
+    VkPipelineLayout ray_tracing_pipeline_layout;
+    VkPipeline ray_tracing_pipeline;
 };
 
 [[nodiscard]] Vulkan_context
