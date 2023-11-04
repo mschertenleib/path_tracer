@@ -79,7 +79,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
     void *user_data [[maybe_unused]])
 {
-    std::cerr << callback_data->pMessage << std::endl;
+    std::cout << callback_data->pMessage << std::endl;
     return VK_FALSE;
 }
 
@@ -995,15 +995,28 @@ Renderer create_renderer()
     constexpr vk::DebugUtilsMessengerCreateInfoEXT
         debug_utils_messenger_create_info {
             .messageSeverity =
+                vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
                 vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
                 vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
-            .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-                           vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
-                           vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
-            .pfnUserCallback = debug_callback};
+            .messageType =
+                vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+                vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+                vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
+                vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
+            .pfnUserCallback = &debug_callback};
+
+    constexpr vk::ValidationFeatureEnableEXT enabled_validation_features[] {
+        vk::ValidationFeatureEnableEXT::eDebugPrintf,
+        vk::ValidationFeatureEnableEXT::eSynchronizationValidation};
+
+    const vk::ValidationFeaturesEXT validation_features {
+        .pNext = &debug_utils_messenger_create_info,
+        .enabledValidationFeatureCount =
+            static_cast<std::uint32_t>(std::size(enabled_validation_features)),
+        .pEnabledValidationFeatures = enabled_validation_features};
 
     const vk::InstanceCreateInfo instance_create_info {
-        .pNext = &debug_utils_messenger_create_info,
+        .pNext = &validation_features,
         .pApplicationInfo = &application_info,
         .enabledLayerCount = 1,
         .ppEnabledLayerNames = &khronos_validation_layer,
@@ -1029,6 +1042,8 @@ Renderer create_renderer()
 #endif
 
     constexpr const char *device_extension_names[] {
+        VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, // FIXME: disable for
+                                                        // release build
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME};

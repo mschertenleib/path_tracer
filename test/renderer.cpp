@@ -30,7 +30,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
     void *user_data [[maybe_unused]])
 {
-    std::cerr << callback_data->pMessage << std::endl;
+    std::cout << callback_data->pMessage << std::endl;
     return VK_FALSE;
 }
 
@@ -194,22 +194,37 @@ create_instance(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
                                  " is not supported");
     }
 
-    constexpr VkDebugUtilsMessengerCreateInfoEXT
-        debug_utils_messenger_create_info {
-            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-            .pNext = {},
-            .flags = {},
-            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-            .pfnUserCallback = &debug_callback,
-            .pUserData = {}};
+    const VkDebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info {
+        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+        .pNext = {},
+        .flags = {},
+        .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+        .messageType =
+            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT,
+        .pfnUserCallback = &debug_callback,
+        .pUserData = {}};
+
+    constexpr VkValidationFeatureEnableEXT enabled_validation_features[] {
+        VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT,
+        VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT};
+
+    const VkValidationFeaturesEXT validation_features {
+        .sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
+        .pNext = &debug_utils_messenger_create_info,
+        .enabledValidationFeatureCount =
+            static_cast<std::uint32_t>(std::size(enabled_validation_features)),
+        .pEnabledValidationFeatures = enabled_validation_features,
+        .disabledValidationFeatureCount = {},
+        .pDisabledValidationFeatures = {}};
 
     const VkInstanceCreateInfo instance_create_info {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pNext = &debug_utils_messenger_create_info,
+        .pNext = &validation_features,
         .flags = {},
         .pApplicationInfo = &application_info,
         .enabledLayerCount = 1,
@@ -442,6 +457,8 @@ get_queue_family_index(const Vulkan_instance &instance,
     check_result(result, "vkEnumeratePhysicalDevices");
 
     constexpr const char *device_extension_names[] {
+        VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, // FIXME: disable for
+                                                        // release build
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME};
@@ -1650,6 +1667,8 @@ void destroy_pipeline(const Vulkan_device &device, VkPipeline pipeline)
 [[nodiscard]] Vulkan_shader_binding_table
 create_shader_binding_table(const Vulkan_context &context)
 {
+    // FIXME: the rgen shader is never called, so the error must come from here
+
     const auto handle_size =
         context.device.ray_tracing_pipeline_properties.shaderGroupHandleSize;
     const auto handle_alignment = context.device.ray_tracing_pipeline_properties
