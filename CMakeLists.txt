@@ -103,6 +103,7 @@ add_executable(path_tracer_test
         test/tiny_obj_loader.cpp
         test/vk_mem_alloc.cpp
 )
+add_dependencies(path_tracer_test shaders)
 target_compile_features(path_tracer_test PRIVATE cxx_std_20)
 target_compile_definitions(path_tracer_test PRIVATE VK_NO_PROTOTYPES)
 target_include_directories(path_tracer_test SYSTEM PRIVATE
