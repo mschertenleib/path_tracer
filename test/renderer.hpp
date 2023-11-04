@@ -64,7 +64,14 @@ struct Vulkan_device
     PFN_vkGetAccelerationStructureBuildSizesKHR
         vkGetAccelerationStructureBuildSizesKHR;
     PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
-    PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR ;
+    PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR;
+    PFN_vkCreateDescriptorSetLayout vkCreateDescriptorSetLayout;
+    PFN_vkDestroyDescriptorSetLayout vkDestroyDescriptorSetLayout;
+    PFN_vkCreateDescriptorPool vkCreateDescriptorPool;
+    PFN_vkDestroyDescriptorPool vkDestroyDescriptorPool;
+    PFN_vkAllocateDescriptorSets vkAllocateDescriptorSets;
+    PFN_vkFreeDescriptorSets vkFreeDescriptorSets;
+    PFN_vkUpdateDescriptorSets vkUpdateDescriptorSets;
 };
 
 struct Vulkan_image
@@ -101,6 +108,9 @@ struct Vulkan_context
     Vulkan_buffer index_buffer;
     Vulkan_acceleration_structure blas;
     Vulkan_acceleration_structure tlas;
+    VkDescriptorSetLayout descriptor_set_layout;
+    VkDescriptorPool descriptor_pool;
+    VkDescriptorSet descriptor_set;
 };
 
 [[nodiscard]] Vulkan_context

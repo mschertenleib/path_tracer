@@ -574,6 +574,13 @@ get_queue_family_index(const Vulkan_instance &instance,
          "vkCreateAccelerationStructureKHR");
     load(device.vkDestroyAccelerationStructureKHR,
          "vkDestroyAccelerationStructureKHR");
+    load(device.vkCreateDescriptorSetLayout, "vkCreateDescriptorSetLayout");
+    load(device.vkDestroyDescriptorSetLayout, "vkDestroyDescriptorSetLayout");
+    load(device.vkCreateDescriptorPool, "vkCreateDescriptorPool");
+    load(device.vkDestroyDescriptorPool, "vkDestroyDescriptorPool");
+    load(device.vkAllocateDescriptorSets, "vkAllocateDescriptorSets");
+    load(device.vkFreeDescriptorSets, "vkFreeDescriptorSets");
+    load(device.vkUpdateDescriptorSets, "vkUpdateDescriptorSets");
 
     return device;
 }
@@ -870,17 +877,15 @@ void destroy_buffer(VmaAllocator allocator, const Vulkan_buffer &buffer)
     vmaDestroyBuffer(allocator, buffer.buffer, buffer.allocation);
 }
 
-template <typename T>
 [[nodiscard]] Vulkan_buffer
 create_buffer_from_host_data(const Vulkan_device &device,
                              VmaAllocator allocator,
                              VkCommandBuffer command_buffer,
                              VkBufferUsageFlags usage,
                              VmaMemoryUsage memory_usage,
-                             const std::vector<T> &data)
+                             const void *data,
+                             std::size_t size)
 {
-    const auto size = data.size() * sizeof(T);
-
     VmaAllocationInfo staging_allocation_info {};
     const auto staging_buffer =
         create_buffer(allocator,
@@ -895,7 +900,7 @@ create_buffer_from_host_data(const Vulkan_device &device,
     auto *const mapped_data =
         static_cast<std::uint8_t *>(staging_allocation_info.pMappedData);
 
-    std::memcpy(mapped_data, data.data(), size);
+    std::memcpy(mapped_data, data, size);
 
     const auto buffer =
         create_buffer(allocator, size, usage, {}, memory_usage, nullptr);
@@ -922,7 +927,8 @@ create_vertex_buffer(const Vulkan_device &device,
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
             VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
         VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-        vertices);
+        vertices.data(),
+        vertices.size() * sizeof(float));
 }
 
 [[nodiscard]] Vulkan_buffer
@@ -939,7 +945,8 @@ create_index_buffer(const Vulkan_device &device,
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
             VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
         VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-        indices);
+        indices.data(),
+        indices.size() * sizeof(std::uint32_t));
 }
 
 [[nodiscard]] VkDeviceAddress get_device_address(const Vulkan_device &device,
@@ -957,7 +964,8 @@ get_device_address(const Vulkan_device &device,
                    VkAccelerationStructureKHR acceleration_structure)
 {
     const VkAccelerationStructureDeviceAddressInfoKHR address_info {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+        .sType =
+            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
         .pNext = {},
         .accelerationStructure = acceleration_structure};
     return device.vkGetAccelerationStructureDeviceAddressKHR(device.device,
@@ -1022,25 +1030,13 @@ create_blas(const Vulkan_context &context)
         .accelerationStructureSize = {},
         .updateScratchSize = {},
         .buildScratchSize = {}};
+
     context.device.vkGetAccelerationStructureBuildSizesKHR(
         context.device.device,
         VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
         &build_geometry_info,
         &build_range_info.primitiveCount,
         &build_sizes_info);
-
-    const auto scratch_buffer =
-        create_buffer(context.allocator,
-                      build_sizes_info.buildScratchSize,
-                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                      {},
-                      VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-                      nullptr);
-    SCOPE_EXIT([&] { destroy_buffer(context.allocator, scratch_buffer); });
-
-    const auto scratch_buffer_address =
-        get_device_address(context.device, scratch_buffer.buffer);
 
     Vulkan_acceleration_structure blas {};
     blas.buffer =
@@ -1077,6 +1073,19 @@ create_blas(const Vulkan_context &context)
                 context.device.device, blas.acceleration_structure, nullptr);
         });
 
+    const auto scratch_buffer =
+        create_buffer(context.allocator,
+                      build_sizes_info.buildScratchSize,
+                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                      {},
+                      VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+                      nullptr);
+    SCOPE_EXIT([&] { destroy_buffer(context.allocator, scratch_buffer); });
+
+    const auto scratch_buffer_address =
+        get_device_address(context.device, scratch_buffer.buffer);
+
     build_geometry_info.dstAccelerationStructure = blas.acceleration_structure;
     build_geometry_info.scratchData.deviceAddress = scratch_buffer_address;
 
@@ -1095,7 +1104,159 @@ create_blas(const Vulkan_context &context)
 [[nodiscard]] Vulkan_acceleration_structure
 create_tlas(const Vulkan_context &context)
 {
+    VkTransformMatrixKHR transform {};
+    transform.matrix[0][0] = 1.0f;
+    transform.matrix[1][1] = 1.0f;
+    transform.matrix[2][2] = 1.0f;
+
+    const VkAccelerationStructureInstanceKHR as_instance {
+        .transform = transform,
+        .instanceCustomIndex = 0,
+        .mask = 0xFF,
+        .instanceShaderBindingTableRecordOffset = 0,
+        .flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
+        .accelerationStructureReference = get_device_address(
+            context.device, context.blas.acceleration_structure)};
+
+    const auto command_buffer = begin_one_time_submit_command_buffer(context);
+
+    const auto instance_buffer = create_buffer_from_host_data(
+        context.device,
+        context.allocator,
+        command_buffer,
+        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+        &as_instance,
+        sizeof(VkAccelerationStructureInstanceKHR));
+    SCOPE_EXIT([&] { destroy_buffer(context.allocator, instance_buffer); });
+
+    constexpr VkMemoryBarrier barrier {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .pNext = {},
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR};
+
+    context.device.vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+        {},
+        1,
+        &barrier,
+        0,
+        nullptr,
+        0,
+        nullptr);
+
+    const VkAccelerationStructureGeometryInstancesDataKHR geometry_instances_data {
+        .sType =
+            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
+        .pNext = {},
+        .arrayOfPointers = {},
+        .data = {.deviceAddress = get_device_address(context.device,
+                                                     instance_buffer.buffer)}};
+
+    const VkAccelerationStructureGeometryKHR geometry {
+        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
+        .pNext = {},
+        .geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR,
+        .geometry = {.instances = geometry_instances_data},
+        .flags = {}};
+
+    VkAccelerationStructureBuildGeometryInfoKHR build_geometry_info {
+        .sType =
+            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+        .pNext = {},
+        .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
+        .flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR,
+        .mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+        .srcAccelerationStructure = {},
+        .dstAccelerationStructure = {},
+        .geometryCount = 1,
+        .pGeometries = &geometry,
+        .ppGeometries = {},
+        .scratchData = {}};
+
+    VkAccelerationStructureBuildSizesInfoKHR build_sizes_info {
+        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
+        .pNext = {},
+        .accelerationStructureSize = {},
+        .updateScratchSize = {},
+        .buildScratchSize = {}};
+
+    constexpr std::uint32_t primitive_count {1};
+    context.device.vkGetAccelerationStructureBuildSizesKHR(
+        context.device.device,
+        VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+        &build_geometry_info,
+        &primitive_count,
+        &build_sizes_info);
+
     Vulkan_acceleration_structure tlas {};
+    tlas.buffer =
+        create_buffer(context.allocator,
+                      build_sizes_info.accelerationStructureSize,
+                      VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
+                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                      {},
+                      VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+                      nullptr);
+    SCOPE_FAIL([&] { destroy_buffer(context.allocator, tlas.buffer); });
+
+    const VkAccelerationStructureCreateInfoKHR
+        acceleration_structure_create_info {
+            .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
+            .pNext = {},
+            .createFlags = {},
+            .buffer = tlas.buffer.buffer,
+            .offset = {},
+            .size = build_sizes_info.accelerationStructureSize,
+            .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
+            .deviceAddress = {}};
+
+    const auto result = context.device.vkCreateAccelerationStructureKHR(
+        context.device.device,
+        &acceleration_structure_create_info,
+        nullptr,
+        &tlas.acceleration_structure);
+    check_result(result, "vkCreateAccelerationStructureKHR");
+    SCOPE_FAIL(
+        [&]
+        {
+            context.device.vkDestroyAccelerationStructureKHR(
+                context.device.device, tlas.acceleration_structure, nullptr);
+        });
+
+    const auto scratch_buffer =
+        create_buffer(context.allocator,
+                      build_sizes_info.buildScratchSize,
+                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                      {},
+                      VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+                      nullptr);
+    SCOPE_EXIT([&] { destroy_buffer(context.allocator, scratch_buffer); });
+
+    const auto scratch_buffer_address =
+        get_device_address(context.device, scratch_buffer.buffer);
+
+    build_geometry_info.dstAccelerationStructure = tlas.acceleration_structure;
+    build_geometry_info.scratchData.deviceAddress = scratch_buffer_address;
+
+    constexpr VkAccelerationStructureBuildRangeInfoKHR build_range_info {
+        .primitiveCount = 1,
+        .primitiveOffset = 0,
+        .firstVertex = 0,
+        .transformOffset = 0};
+
+    const auto *const p_build_range_info = &build_range_info;
+
+    context.device.vkCmdBuildAccelerationStructuresKHR(
+        command_buffer, 1, &build_geometry_info, &p_build_range_info);
+
+    end_one_time_submit_command_buffer(context, command_buffer);
 
     return tlas;
 }
@@ -1112,6 +1273,179 @@ void destroy_acceleration_structure(
             nullptr);
         destroy_buffer(context.allocator, acceleration_structure.buffer);
     }
+}
+
+[[nodiscard]] VkDescriptorSetLayout
+create_descriptor_set_layout(const Vulkan_device &device)
+{
+    constexpr VkDescriptorSetLayoutBinding descriptor_set_layout_bindings[] {
+        {.binding = 0,
+         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+         .descriptorCount = 1,
+         .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+         .pImmutableSamplers = {}},
+        {.binding = 1,
+         .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+         .descriptorCount = 1,
+         .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+         .pImmutableSamplers = {}},
+        {.binding = 2,
+         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+         .descriptorCount = 1,
+         .stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+         .pImmutableSamplers = {}},
+        {.binding = 3,
+         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+         .descriptorCount = 1,
+         .stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+         .pImmutableSamplers = {}}};
+
+    const VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .pNext = {},
+        .flags = {},
+        .bindingCount = static_cast<std::uint32_t>(
+            std::size(descriptor_set_layout_bindings)),
+        .pBindings = descriptor_set_layout_bindings};
+
+    VkDescriptorSetLayout descriptor_set_layout {};
+    const auto result =
+        device.vkCreateDescriptorSetLayout(device.device,
+                                           &descriptor_set_layout_create_info,
+                                           nullptr,
+                                           &descriptor_set_layout);
+    check_result(result, "vkCreateDescriptorSetLayout");
+
+    return descriptor_set_layout;
+}
+
+void destroy_descriptor_set_layout(const Vulkan_device &device,
+                                   VkDescriptorSetLayout descriptor_set_layout)
+{
+    if (descriptor_set_layout)
+    {
+        device.vkDestroyDescriptorSetLayout(
+            device.device, descriptor_set_layout, nullptr);
+    }
+}
+
+[[nodiscard]] VkDescriptorPool
+create_descriptor_pool(const Vulkan_device &device)
+{
+    constexpr VkDescriptorPoolSize pool_sizes[] {
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2},
+        {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1}};
+
+    const VkDescriptorPoolCreateInfo create_info {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .pNext = {},
+        .flags = {},
+        .maxSets = 4, // FIXME
+        .poolSizeCount = static_cast<std::uint32_t>(std::size(pool_sizes)),
+        .pPoolSizes = pool_sizes};
+
+    VkDescriptorPool descriptor_pool {};
+    const auto result = device.vkCreateDescriptorPool(
+        device.device, &create_info, nullptr, &descriptor_pool);
+    check_result(result, "vkCreateDescriptorPool");
+
+    return descriptor_pool;
+}
+
+void destroy_descriptor_pool(const Vulkan_device &device,
+                             VkDescriptorPool descriptor_pool)
+{
+    if (descriptor_pool)
+    {
+        device.vkDestroyDescriptorPool(device.device, descriptor_pool, nullptr);
+    }
+}
+
+[[nodiscard]] VkDescriptorSet
+allocate_descriptor_set(const Vulkan_context &context)
+{
+    const VkDescriptorSetAllocateInfo descriptor_set_allocate_info {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .pNext = {},
+        .descriptorPool = context.descriptor_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &context.descriptor_set_layout};
+
+    VkDescriptorSet descriptor_set {};
+    const auto result = context.device.vkAllocateDescriptorSets(
+        context.device.device, &descriptor_set_allocate_info, &descriptor_set);
+    check_result(result, "vkAllocateDescriptorSets");
+
+    const VkDescriptorImageInfo descriptor_storage_image {
+        .sampler = VK_NULL_HANDLE,
+        .imageView = context.storage_image_view,
+        .imageLayout = VK_IMAGE_LAYOUT_GENERAL};
+
+    const VkWriteDescriptorSetAccelerationStructureKHR
+        descriptor_acceleration_structure {
+            .sType =
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
+            .pNext = {},
+            .accelerationStructureCount = 1,
+            .pAccelerationStructures = &context.tlas.acceleration_structure};
+
+    const VkDescriptorBufferInfo descriptor_vertices {
+        .buffer = context.vertex_buffer.buffer,
+        .offset = 0,
+        .range = context.vertex_buffer.size};
+
+    const VkDescriptorBufferInfo descriptor_indices {
+        .buffer = context.index_buffer.buffer,
+        .offset = 0,
+        .range = context.index_buffer.size};
+
+    const VkWriteDescriptorSet descriptor_writes[4] {
+        {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+         .pNext = {},
+         .dstSet = descriptor_set,
+         .dstBinding = 0,
+         .dstArrayElement = 0,
+         .descriptorCount = 1,
+         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+         .pImageInfo = &descriptor_storage_image,
+         .pBufferInfo = {},
+         .pTexelBufferView = {}},
+        {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+         .pNext = &descriptor_acceleration_structure,
+         .dstSet = descriptor_set,
+         .dstBinding = 1,
+         .dstArrayElement = 0,
+         .descriptorCount = 1,
+         .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+         .pImageInfo = {},
+         .pBufferInfo = {},
+         .pTexelBufferView = {}},
+        {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+         .pNext = {},
+         .dstSet = descriptor_set,
+         .dstBinding = 2,
+         .dstArrayElement = 0,
+         .descriptorCount = 1,
+         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+         .pImageInfo = {},
+         .pBufferInfo = &descriptor_vertices,
+         .pTexelBufferView = {}},
+        {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+         .pNext = {},
+         .dstSet = descriptor_set,
+         .dstBinding = 3,
+         .dstArrayElement = 0,
+         .descriptorCount = 1,
+         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+         .pImageInfo = {},
+         .pBufferInfo = &descriptor_indices,
+         .pTexelBufferView = {}}};
+
+    context.device.vkUpdateDescriptorSets(
+        context.device.device, 1, descriptor_writes, 0, nullptr);
+
+    return descriptor_set;
 }
 
 } // namespace
@@ -1191,12 +1525,22 @@ void load_scene(Vulkan_context &context,
     context.blas = create_blas(context);
 
     context.tlas = create_tlas(context);
+
+    context.descriptor_set_layout =
+        create_descriptor_set_layout(context.device);
+
+    context.descriptor_pool = create_descriptor_pool(context.device);
+
+    context.descriptor_set = allocate_descriptor_set(context);
 }
 
 void destroy_scene_resources(const Vulkan_context &context)
 {
-    destroy_acceleration_structure(context, context.blas);
+    destroy_descriptor_pool(context.device, context.descriptor_pool);
+    destroy_descriptor_set_layout(context.device,
+                                  context.descriptor_set_layout);
     destroy_acceleration_structure(context, context.tlas);
+    destroy_acceleration_structure(context, context.blas);
     destroy_buffer(context.allocator, context.index_buffer);
     destroy_buffer(context.allocator, context.vertex_buffer);
     destroy_image_view(context.device, context.storage_image_view);
