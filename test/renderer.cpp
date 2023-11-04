@@ -571,6 +571,10 @@ get_queue_family_index(const Vulkan_instance &instance,
     load(device.vkCmdCopyBuffer, "vkCmdCopyBuffer");
     load(device.vkCmdBuildAccelerationStructuresKHR,
          "vkCmdBuildAccelerationStructuresKHR");
+    load(device.vkCmdBindPipeline, "vkCmdBindPipeline");
+    load(device.vkCmdBindDescriptorSets, "vkCmdBindDescriptorSets");
+    load(device.vkCmdPushConstants, "vkCmdPushConstants");
+    load(device.vkCmdTraceRaysKHR, "vkCmdTraceRaysKHR");
     load(device.vkGetBufferDeviceAddress, "vkGetBufferDeviceAddress");
     load(device.vkGetAccelerationStructureDeviceAddressKHR,
          "vkGetAccelerationStructureDeviceAddressKHR");
@@ -1458,7 +1462,11 @@ allocate_descriptor_set(const Vulkan_context &context)
          .pTexelBufferView = {}}};
 
     context.device.vkUpdateDescriptorSets(
-        context.device.device, 1, descriptor_writes, 0, nullptr);
+        context.device.device,
+        static_cast<std::uint32_t>(std::size(descriptor_writes)),
+        descriptor_writes,
+        0,
+        nullptr);
 
     return descriptor_set;
 }
@@ -1652,8 +1660,8 @@ create_shader_binding_table(const Vulkan_context &context)
 
     Vulkan_shader_binding_table sbt {};
 
-    sbt.rgen_region.stride = align_up(handle_size_aligned, base_alignment);
-    sbt.rgen_region.size = sbt.rgen_region.stride;
+    sbt.raygen_region.stride = align_up(handle_size_aligned, base_alignment);
+    sbt.raygen_region.size = sbt.raygen_region.stride;
 
     sbt.miss_region.stride = handle_size_aligned;
     sbt.miss_region.size =
@@ -1674,8 +1682,8 @@ create_shader_binding_table(const Vulkan_context &context)
         handles.data());
     check_result(result, "vkGetRayTracingShaderGroupHandlesKHR");
 
-    const auto sbt_size = sbt.rgen_region.size + sbt.miss_region.size +
-                          sbt.hit_region.size + sbt.call_region.size;
+    const auto sbt_size = sbt.raygen_region.size + sbt.miss_region.size +
+                          sbt.hit_region.size + sbt.callable_region.size;
 
     VmaAllocationInfo sbt_allocation_info {};
     sbt.buffer =
@@ -1693,10 +1701,10 @@ create_shader_binding_table(const Vulkan_context &context)
 
     const auto sbt_address =
         get_device_address(context.device, sbt.buffer.buffer);
-    sbt.rgen_region.deviceAddress = sbt_address;
-    sbt.miss_region.deviceAddress = sbt_address + sbt.rgen_region.size;
+    sbt.raygen_region.deviceAddress = sbt_address;
+    sbt.miss_region.deviceAddress = sbt_address + sbt.raygen_region.size;
     sbt.hit_region.deviceAddress =
-        sbt_address + sbt.rgen_region.size + sbt.miss_region.size;
+        sbt_address + sbt.raygen_region.size + sbt.miss_region.size;
 
     const auto get_handle_pointer = [&](std::uint32_t i)
     { return handles.data() + i * handle_size; };
@@ -1706,7 +1714,7 @@ create_shader_binding_table(const Vulkan_context &context)
         sbt_buffer_mapped, get_handle_pointer(handle_index), handle_size);
     ++handle_index;
 
-    auto p_data = sbt_buffer_mapped + sbt.rgen_region.size;
+    auto p_data = sbt_buffer_mapped + sbt.raygen_region.size;
     for (std::uint32_t i {}; i < miss_count; ++i)
     {
         std::memcpy(p_data, get_handle_pointer(handle_index), handle_size);
@@ -1714,7 +1722,7 @@ create_shader_binding_table(const Vulkan_context &context)
         p_data += sbt.miss_region.stride;
     }
 
-    p_data = sbt_buffer_mapped + sbt.rgen_region.size + sbt.miss_region.size;
+    p_data = sbt_buffer_mapped + sbt.raygen_region.size + sbt.miss_region.size;
     for (std::uint32_t i {}; i < hit_count; ++i)
     {
         std::memcpy(p_data, get_handle_pointer(handle_index), handle_size);
@@ -1845,6 +1853,43 @@ void destroy_scene_resources(const Vulkan_context &context)
 
 void render(const Vulkan_context &context)
 {
+    const auto command_buffer = begin_one_time_submit_command_buffer(context);
+
+    context.device.vkCmdBindPipeline(command_buffer,
+                                     VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+                                     context.ray_tracing_pipeline);
+
+    context.device.vkCmdBindDescriptorSets(
+        command_buffer,
+        VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+        context.ray_tracing_pipeline_layout,
+        0,
+        1,
+        &context.descriptor_set,
+        0,
+        nullptr);
+
+    const Push_constants push_constants {};
+
+    context.device.vkCmdPushConstants(command_buffer,
+                                      context.ray_tracing_pipeline_layout,
+                                      VK_SHADER_STAGE_RAYGEN_BIT_KHR |
+                                          VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+                                      0,
+                                      sizeof(Push_constants),
+                                      &push_constants);
+
+    context.device.vkCmdTraceRaysKHR(
+        command_buffer,
+        &context.shader_binding_table.raygen_region,
+        &context.shader_binding_table.miss_region,
+        &context.shader_binding_table.hit_region,
+        &context.shader_binding_table.callable_region,
+        context.storage_image.width,
+        context.storage_image.height,
+        1);
+
+    end_one_time_submit_command_buffer(context, command_buffer);
 }
 
 void write_to_png(const Vulkan_context &context, const char *file_name)

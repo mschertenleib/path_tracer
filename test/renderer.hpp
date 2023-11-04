@@ -58,6 +58,10 @@ struct Vulkan_device
     PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier;
     PFN_vkCmdCopyBuffer vkCmdCopyBuffer;
     PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
+    PFN_vkCmdBindPipeline vkCmdBindPipeline;
+    PFN_vkCmdBindDescriptorSets vkCmdBindDescriptorSets;
+    PFN_vkCmdPushConstants vkCmdPushConstants;
+    PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
     PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddress;
     PFN_vkGetAccelerationStructureDeviceAddressKHR
         vkGetAccelerationStructureDeviceAddressKHR;
@@ -106,10 +110,10 @@ struct Vulkan_acceleration_structure
 struct Vulkan_shader_binding_table
 {
     Vulkan_buffer buffer;
-    VkStridedDeviceAddressRegionKHR rgen_region;
+    VkStridedDeviceAddressRegionKHR raygen_region;
     VkStridedDeviceAddressRegionKHR miss_region;
     VkStridedDeviceAddressRegionKHR hit_region;
-    VkStridedDeviceAddressRegionKHR call_region;
+    VkStridedDeviceAddressRegionKHR callable_region;
 };
 
 struct Vulkan_context
