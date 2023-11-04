@@ -90,32 +90,3 @@ if (ipo_supported_result)
 else ()
     message(CHECK_FAIL "not supported")
 endif ()
-
-
-
-add_executable(path_tracer_test
-        test/main.cpp
-        test/geometry.cpp test/geometry.hpp
-        test/renderer.cpp test/renderer.hpp
-        test/utility.cpp test/utility.hpp
-        test/stb_image.cpp
-        test/stb_image_write.cpp
-        test/tiny_obj_loader.cpp
-        test/vk_mem_alloc.cpp
-)
-add_dependencies(path_tracer_test shaders)
-target_compile_features(path_tracer_test PRIVATE cxx_std_20)
-target_compile_definitions(path_tracer_test PRIVATE VK_NO_PROTOTYPES)
-target_include_directories(path_tracer_test SYSTEM PRIVATE
-        external
-        ${Vulkan_INCLUDE_DIRS}
-)
-if (CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-    target_compile_options(path_tracer_test PRIVATE ${CLANG_WARNINGS})
-elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(path_tracer_test PRIVATE ${GCC_WARNINGS})
-elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_compile_options(path_tracer_test PRIVATE /W4)
-else ()
-    message(WARNING "No warnings set for compiler '${CMAKE_CXX_COMPILER_ID}'")
-endif ()

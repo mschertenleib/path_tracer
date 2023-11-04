@@ -3,176 +3,154 @@
 
 #include "vk_mem_alloc.h"
 
-#define VULKAN_HPP_NO_CONSTRUCTORS
-#define VULKAN_HPP_NO_SETTERS
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan.h>
 
-#include <array>
 #include <cstdint>
-#include <limits>
-#include <utility>
-#include <vector>
 
-template <typename T>
-struct Destructor;
-
-template <>
-struct Destructor<VmaAllocator>
+struct Vulkan_instance
 {
-    void operator()(VmaAllocator allocator) const noexcept;
-};
-
-template <>
-struct Destructor<vk::Buffer>
-{
-    void operator()(vk::Buffer buffer) const noexcept;
-
-    VmaAllocator allocator;
-    VmaAllocation allocation;
-};
-
-template <>
-struct Destructor<vk::Image>
-{
-    void operator()(vk::Image image) const noexcept;
-
-    VmaAllocator allocator;
-    VmaAllocation allocation;
-};
-
-template <typename T>
-class Handle : private Destructor<T>
-{
-public:
-    constexpr Handle() noexcept : Destructor<T>(), m_value()
-    {
-    }
-
-    constexpr explicit Handle(T value) noexcept
-        : Destructor<T>(), m_value(value)
-    {
-    }
-
-    constexpr Handle(T value, const Destructor<T> &destructor) noexcept
-        : Destructor<T>(destructor), m_value(value)
-    {
-    }
-
-    constexpr Handle(const Handle &) = delete;
-
-    constexpr Handle(Handle &&other) noexcept
-        : Destructor<T>(std::move(static_cast<Destructor<T> &>(other))),
-          m_value(other.m_value)
-    {
-        other.m_value = T {};
-    }
-
-    constexpr ~Handle() noexcept
-    {
-        if (m_value)
-        {
-            this->operator()(m_value);
-        }
-    }
-
-    constexpr Handle &operator=(const Handle &) = delete;
-
-    constexpr Handle &operator=(Handle &&other) noexcept
-    {
-        if (m_value)
-        {
-            this->operator()(m_value);
-        }
-
-        static_cast<Destructor<T> &>(*this) =
-            std::move(static_cast<Destructor<T> &>(other));
-        m_value = other.m_value;
-        other.m_value = T {};
-        return *this;
-    }
-
-    [[nodiscard]] constexpr T get() const noexcept
-    {
-        return m_value;
-    }
-
-private:
-    T m_value;
-};
-
-struct Renderer
-{
-    vk::DynamicLoader dl {};
-
-    vk::UniqueInstance instance {};
-
+    VkInstance instance;
 #ifndef NDEBUG
-    vk::UniqueDebugUtilsMessengerEXT debug_messenger {};
+    VkDebugUtilsMessengerEXT debug_messenger;
 #endif
-
-    std::uint32_t queue_family_index {
-        std::numeric_limits<std::uint32_t>::max()};
-    vk::PhysicalDevice physical_device {};
-    vk::PhysicalDeviceProperties physical_device_properties {};
-    vk::PhysicalDeviceRayTracingPipelinePropertiesKHR
-        ray_tracing_pipeline_properties {};
-
-    vk::UniqueDevice device {};
-
-    Handle<VmaAllocator> allocator {};
-
-    vk::Queue queue {};
-
-    vk::UniqueCommandPool command_pool {};
-
-    std::uint32_t render_width {};
-    std::uint32_t render_height {};
-    Handle<vk::Image> storage_image {};
-    vk::UniqueImageView storage_image_view {};
-
-    std::uint32_t vertex_count {};
-    std::uint32_t index_count {};
-    vk::DeviceSize vertex_range_size {};
-    vk::DeviceSize index_range_offset {};
-    vk::DeviceSize index_range_size {};
-    vk::DeviceSize normal_range_offset {};
-    vk::DeviceSize normal_range_size {};
-    Handle<vk::Buffer> geometry_buffer {};
-
-    Handle<vk::Buffer> blas_buffer {};
-    vk::UniqueAccelerationStructureKHR blas {};
-    Handle<vk::Buffer> tlas_buffer {};
-    vk::UniqueAccelerationStructureKHR tlas {};
-
-    vk::UniqueDescriptorSetLayout descriptor_set_layout {};
-    vk::UniqueDescriptorPool descriptor_pool {};
-    vk::DescriptorSet descriptor_set {};
-
-    std::vector<vk::RayTracingShaderGroupCreateInfoKHR>
-        ray_tracing_shader_groups {};
-    vk::UniquePipelineLayout ray_tracing_pipeline_layout {};
-    vk::UniquePipeline ray_tracing_pipeline {};
-    Handle<vk::Buffer> sbt_buffer {};
-    vk::StridedDeviceAddressRegionKHR rgen_region {};
-    vk::StridedDeviceAddressRegionKHR miss_region {};
-    vk::StridedDeviceAddressRegionKHR hit_region {};
-    vk::StridedDeviceAddressRegionKHR call_region {};
+    PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr;
+    PFN_vkEnumerateInstanceLayerProperties vkEnumerateInstanceLayerProperties;
+    PFN_vkEnumerateInstanceExtensionProperties
+        vkEnumerateInstanceExtensionProperties;
+    PFN_vkCreateInstance vkCreateInstance;
+    PFN_vkDestroyInstance vkDestroyInstance;
+#ifndef NDEBUG
+    PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
+    PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT;
+#endif
+    PFN_vkEnumeratePhysicalDevices vkEnumeratePhysicalDevices;
+    PFN_vkGetPhysicalDeviceQueueFamilyProperties
+        vkGetPhysicalDeviceQueueFamilyProperties;
+    PFN_vkEnumerateDeviceExtensionProperties
+        vkEnumerateDeviceExtensionProperties;
+    PFN_vkGetPhysicalDeviceFeatures2 vkGetPhysicalDeviceFeatures2;
+    PFN_vkGetPhysicalDeviceFormatProperties vkGetPhysicalDeviceFormatProperties;
+    PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2;
+    PFN_vkCreateDevice vkCreateDevice;
+    PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr;
 };
 
-[[nodiscard]] Renderer create_renderer();
+struct Vulkan_device
+{
+    VkPhysicalDevice physical_device;
+    std::uint32_t queue_family_index;
+    VkPhysicalDeviceProperties properties;
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR
+        ray_tracing_pipeline_properties;
+    VkDevice device;
+    PFN_vkDestroyDevice vkDestroyDevice;
+    PFN_vkGetDeviceQueue vkGetDeviceQueue;
+    PFN_vkCreateCommandPool vkCreateCommandPool;
+    PFN_vkDestroyCommandPool vkDestroyCommandPool;
+    PFN_vkCreateImageView vkCreateImageView;
+    PFN_vkDestroyImageView vkDestroyImageView;
+    PFN_vkAllocateCommandBuffers vkAllocateCommandBuffers;
+    PFN_vkFreeCommandBuffers vkFreeCommandBuffers;
+    PFN_vkBeginCommandBuffer vkBeginCommandBuffer;
+    PFN_vkEndCommandBuffer vkEndCommandBuffer;
+    PFN_vkQueueSubmit vkQueueSubmit;
+    PFN_vkQueueWaitIdle vkQueueWaitIdle;
+    PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier;
+    PFN_vkCmdCopyBuffer vkCmdCopyBuffer;
+    PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
+    PFN_vkCmdBindPipeline vkCmdBindPipeline;
+    PFN_vkCmdBindDescriptorSets vkCmdBindDescriptorSets;
+    PFN_vkCmdPushConstants vkCmdPushConstants;
+    PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
+    PFN_vkCmdBlitImage vkCmdBlitImage;
+    PFN_vkCmdCopyImageToBuffer vkCmdCopyImageToBuffer;
+    PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddress;
+    PFN_vkGetAccelerationStructureDeviceAddressKHR
+        vkGetAccelerationStructureDeviceAddressKHR;
+    PFN_vkGetAccelerationStructureBuildSizesKHR
+        vkGetAccelerationStructureBuildSizesKHR;
+    PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
+    PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR;
+    PFN_vkCreateDescriptorSetLayout vkCreateDescriptorSetLayout;
+    PFN_vkDestroyDescriptorSetLayout vkDestroyDescriptorSetLayout;
+    PFN_vkCreateDescriptorPool vkCreateDescriptorPool;
+    PFN_vkDestroyDescriptorPool vkDestroyDescriptorPool;
+    PFN_vkAllocateDescriptorSets vkAllocateDescriptorSets;
+    PFN_vkFreeDescriptorSets vkFreeDescriptorSets;
+    PFN_vkUpdateDescriptorSets vkUpdateDescriptorSets;
+    PFN_vkCreatePipelineLayout vkCreatePipelineLayout;
+    PFN_vkDestroyPipelineLayout vkDestroyPipelineLayout;
+    PFN_vkCreateShaderModule vkCreateShaderModule;
+    PFN_vkDestroyShaderModule vkDestroyShaderModule;
+    PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
+    PFN_vkDestroyPipeline vkDestroyPipeline;
+    PFN_vkGetRayTracingShaderGroupHandlesKHR
+        vkGetRayTracingShaderGroupHandlesKHR;
+};
 
-void load_scene(Renderer &r,
+struct Vulkan_image
+{
+    std::uint32_t width;
+    std::uint32_t height;
+    VkImage image;
+    VmaAllocation allocation;
+};
+
+struct Vulkan_buffer
+{
+    VkDeviceSize size;
+    VkBuffer buffer;
+    VmaAllocation allocation;
+};
+
+struct Vulkan_acceleration_structure
+{
+    Vulkan_buffer buffer;
+    VkAccelerationStructureKHR acceleration_structure;
+};
+
+struct Vulkan_shader_binding_table
+{
+    Vulkan_buffer buffer;
+    VkStridedDeviceAddressRegionKHR raygen_region;
+    VkStridedDeviceAddressRegionKHR miss_region;
+    VkStridedDeviceAddressRegionKHR hit_region;
+    VkStridedDeviceAddressRegionKHR callable_region;
+};
+
+struct Vulkan_context
+{
+    Vulkan_instance instance;
+    Vulkan_device device;
+    VmaAllocator allocator;
+    VkQueue queue;
+    VkCommandPool command_pool;
+    Vulkan_image storage_image;
+    VkImageView storage_image_view;
+    Vulkan_buffer vertex_buffer;
+    Vulkan_buffer index_buffer;
+    Vulkan_acceleration_structure blas;
+    Vulkan_acceleration_structure tlas;
+    VkDescriptorSetLayout descriptor_set_layout;
+    VkDescriptorPool descriptor_pool;
+    VkDescriptorSet descriptor_set;
+    VkPipelineLayout ray_tracing_pipeline_layout;
+    VkPipeline ray_tracing_pipeline;
+    Vulkan_shader_binding_table shader_binding_table;
+};
+
+[[nodiscard]] Vulkan_context
+create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr);
+void destroy_vulkan_context(Vulkan_context &context);
+
+void load_scene(Vulkan_context &context,
                 std::uint32_t render_width,
                 std::uint32_t render_height,
                 const struct Geometry &geometry);
+void destroy_scene_resources(const Vulkan_context &context);
 
-void render(const Renderer &r);
+void render(const Vulkan_context &context);
 
-void write_to_png(const Renderer &r, const char *file_name);
-
-// TODO: it might be just better to dump this bloated vulkan.hpp nonsense and
-// just have create/destroy pairs that make sense, having try/catch blocks in
-// higher level functions if necessary
+void write_to_png(const Vulkan_context &context, const char *file_name);
 
 #endif // RENDERER_HPP
