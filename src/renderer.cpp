@@ -34,7 +34,43 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
     void *user_data [[maybe_unused]])
 {
-    std::cout << callback_data->pMessage << std::endl;
+    if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT)
+    {
+        std::cout << Text_color::blue << "[VERBOSE]";
+    }
+    else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
+    {
+        std::cout << Text_color::blue << "[INFO]";
+    }
+    else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+    {
+        std::cout << Text_color::yellow << "[WARNING]";
+    }
+    else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+    {
+        std::cout << Text_color::red << "[ERROR]";
+    }
+
+    if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
+    {
+        std::cout << "[GENERAL] ";
+    }
+    else if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
+    {
+        std::cout << "[VALIDATION] ";
+    }
+    else if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
+    {
+        std::cout << "[PERFORMANCE] ";
+    }
+    else if (message_type &
+             VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT)
+    {
+        std::cout << "[DEVICE_ADDRESS_BINDING] ";
+    }
+
+    std::cout << callback_data->pMessage << Text_color::reset << '\n';
+
     return VK_FALSE;
 }
 

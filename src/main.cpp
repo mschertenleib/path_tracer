@@ -89,7 +89,7 @@ int main(int argc, char *argv[])
             return EXIT_FAILURE;
         }
 
-        glfwSetErrorCallback(glfw_error_callback);
+        glfwSetErrorCallback(&glfw_error_callback);
 
         if (!glfwInit())
         {

@@ -90,7 +90,8 @@ enum struct Text_color
     reset,
     red,
     yellow,
-    green
+    green,
+    blue
 };
 
 std::ostream &operator<<(std::ostream &os, Text_color color);
