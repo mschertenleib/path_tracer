@@ -139,8 +139,7 @@ struct Vulkan_context
     Vulkan_shader_binding_table shader_binding_table;
 };
 
-[[nodiscard]] Vulkan_context
-create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr);
+[[nodiscard]] Vulkan_context create_vulkan_context(struct GLFWwindow *window);
 void destroy_vulkan_context(Vulkan_context &context);
 
 void load_scene(Vulkan_context &context,

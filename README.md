@@ -8,6 +8,9 @@ Prerequisites:
 
 - [The Vulkan SDK](https://www.lunarg.com/vulkan-sdk)
 
+All other dependencies are handled
+by [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake).
+
 ```
 git clone https://github.com/mschertenleib/path_tracer.git
 cd path_tracer
@@ -17,6 +20,7 @@ cmake --build build --target path_tracer
 
 ## External libraries
 
+- [GLFW](https://github.com/glfw/glfw)
 - [stb_image](https://github.com/nothings/stb)
 - [stb_image_write](https://github.com/nothings/stb)
 - [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader)

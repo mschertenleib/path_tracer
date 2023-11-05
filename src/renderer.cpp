@@ -4,6 +4,10 @@
 
 #include "stb_image_write.h"
 
+#define GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
+
 #include <algorithm>
 #include <iostream>
 #include <limits>
@@ -117,11 +121,14 @@ inline void check_result(VkResult result, const char *message)
     }
 }
 
-[[nodiscard]] Vulkan_instance
-create_instance(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
+[[nodiscard]] Vulkan_instance create_instance()
 {
     Vulkan_instance instance {};
 
+    const auto vkGetInstanceProcAddr =
+        reinterpret_cast<PFN_vkGetInstanceProcAddr>(glfwGetInstanceProcAddress(
+            VK_NULL_HANDLE, "vkGetInstanceProcAddr"));
+    // FIXME: proper error handling
     assert(vkGetInstanceProcAddr);
     instance.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
 
@@ -146,6 +153,10 @@ create_instance(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
         .pEngineName = {},
         .engineVersion = {},
         .apiVersion = VK_API_VERSION_1_3};
+
+    std::uint32_t glfw_required_extension_count {};
+    const auto glfw_required_extension_names =
+        glfwGetRequiredInstanceExtensions(&glfw_required_extension_count);
 
     VkResult result;
 
@@ -182,16 +193,25 @@ create_instance(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
         nullptr, &extension_property_count, extension_properties.data());
     check_result(result, "vkEnumerateInstanceExtensionProperties");
 
-    constexpr auto debug_utils_extension = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
-    if (std::none_of(extension_properties.begin(),
-                     extension_properties.end(),
-                     [](const VkExtensionProperties &properties) {
-                         return std::strcmp(properties.extensionName,
-                                            debug_utils_extension) == 0;
-                     }))
+    std::vector<const char *> required_extensions;
+    required_extensions.reserve(glfw_required_extension_count + 1);
+    required_extensions.assign(glfw_required_extension_names,
+                               glfw_required_extension_names +
+                                   glfw_required_extension_count);
+    required_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    for (const auto extension_name : required_extensions)
     {
-        throw std::runtime_error(VK_EXT_DEBUG_UTILS_EXTENSION_NAME
-                                 " is not supported");
+        if (std::none_of(
+                extension_properties.begin(),
+                extension_properties.end(),
+                [extension_name](const VkExtensionProperties &properties) {
+                    return std::strcmp(properties.extensionName,
+                                       extension_name) == 0;
+                }))
+        {
+            // FIXME
+            throw std::runtime_error("Some extension is not supported");
+        }
     }
 
     const VkDebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info {
@@ -229,11 +249,13 @@ create_instance(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
         .pApplicationInfo = &application_info,
         .enabledLayerCount = 1,
         .ppEnabledLayerNames = &khronos_validation_layer,
-        .enabledExtensionCount = 1,
-        .ppEnabledExtensionNames = &debug_utils_extension};
+        .enabledExtensionCount =
+            static_cast<std::uint32_t>(required_extensions.size()),
+        .ppEnabledExtensionNames = required_extensions.data()};
 
 #else
 
+    // FIXME: check for extension support!
     const VkInstanceCreateInfo instance_create_info {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pNext = {},
@@ -241,8 +263,8 @@ create_instance(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
         .pApplicationInfo = &application_info,
         .enabledLayerCount = {},
         .ppEnabledLayerNames = {},
-        .enabledExtensionCount = {},
-        .ppEnabledExtensionNames = {}};
+        .enabledExtensionCount = glfw_required_extension_count,
+        .ppEnabledExtensionNames = glfw_required_extension_names};
 
 #endif
 
@@ -443,7 +465,8 @@ get_queue_family_index(const Vulkan_instance &instance,
     return suitable;
 }
 
-[[nodiscard]] Vulkan_device create_device(const Vulkan_instance &instance)
+[[nodiscard]] Vulkan_device create_device(const Vulkan_instance &instance,
+                                          GLFWwindow *window)
 {
     Vulkan_device device {};
 
@@ -459,6 +482,7 @@ get_queue_family_index(const Vulkan_instance &instance,
     constexpr const char *device_extension_names[] {
         VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, // FIXME: disable for
                                                         // release build
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME};
@@ -1756,16 +1780,15 @@ void destroy_shader_binding_table(
 
 } // namespace
 
-Vulkan_context
-create_vulkan_context(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr)
+Vulkan_context create_vulkan_context(GLFWwindow *window)
 {
     Vulkan_context context {};
 
     SCOPE_FAIL([&] { destroy_vulkan_context(context); });
 
-    context.instance = create_instance(vkGetInstanceProcAddr);
+    context.instance = create_instance();
 
-    context.device = create_device(context.instance);
+    context.device = create_device(context.instance, window);
 
     context.allocator = create_allocator(context.instance, context.device);
 

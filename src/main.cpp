@@ -2,11 +2,9 @@
 #include "renderer.hpp"
 #include "utility.hpp"
 
-// Temporary, just so we can use vk::DynamicLoader to load vkGetInstanceProcAddr
-#define VULKAN_HPP_NO_CONSTRUCTORS
-#define VULKAN_HPP_NO_SETTERS
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#include <vulkan/vulkan.hpp>
+#define GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
 
 #include <chrono>
 #include <iostream>
@@ -16,6 +14,46 @@
 
 namespace
 {
+
+void glfw_error_callback(int error, const char *description)
+{
+    std::cerr << "GLFW error " << error << ": " << description << '\n';
+}
+
+[[nodiscard]] bool is_fullscreen(GLFWwindow *window)
+{
+    return glfwGetWindowMonitor(window) != nullptr;
+}
+
+void set_fullscreen(GLFWwindow *window)
+{
+    // TODO: ideally use the current monitor, not the primary one
+    const auto monitor = glfwGetPrimaryMonitor();
+    const auto video_mode = glfwGetVideoMode(monitor);
+    glfwSetWindowMonitor(window,
+                         monitor,
+                         0,
+                         0,
+                         video_mode->width,
+                         video_mode->height,
+                         video_mode->refreshRate);
+}
+
+void set_windowed(GLFWwindow *window)
+{
+    // TODO: use previous windowed size, scale must be taken into account
+    const auto monitor = glfwGetPrimaryMonitor();
+    const auto video_mode = glfwGetVideoMode(monitor);
+    constexpr int width {1280};
+    constexpr int height {720};
+    glfwSetWindowMonitor(window,
+                         nullptr,
+                         (video_mode->width - width) / 2,
+                         (video_mode->height - height) / 2,
+                         width,
+                         height,
+                         GLFW_DONT_CARE);
+}
 
 class Timer
 {
@@ -51,15 +89,34 @@ int main(int argc, char *argv[])
             return EXIT_FAILURE;
         }
 
-        vk::DynamicLoader dl;
-        const auto vkGetInstanceProcAddr =
-            dl.getProcAddress<PFN_vkGetInstanceProcAddr>(
-                "vkGetInstanceProcAddr");
+        glfwSetErrorCallback(glfw_error_callback);
+
+        if (!glfwInit())
+        {
+            throw std::runtime_error("Failed to initialize GLFW");
+        }
+        SCOPE_EXIT([] { glfwTerminate(); });
+
+        if (!glfwVulkanSupported())
+        {
+            throw std::runtime_error(
+                "Vulkan loader or ICD have not been found");
+        }
+
+        glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        const auto window =
+            glfwCreateWindow(1280, 720, "Path tracer", nullptr, nullptr);
+        if (!window)
+        {
+            throw std::runtime_error("Failed to create GLFW window");
+        }
+        SCOPE_EXIT([window] { glfwDestroyWindow(window); });
 
         Timer t;
 
         t.start("create_vulkan_context");
-        auto context = create_vulkan_context(vkGetInstanceProcAddr);
+        auto context = create_vulkan_context(window);
         SCOPE_EXIT([&] { destroy_vulkan_context(context); });
         t.stop();
 
