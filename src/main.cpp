@@ -141,11 +141,13 @@ int main(int argc, char *argv[])
     }
     catch (const std::exception &e)
     {
+        std::cout << std::flush;
         std::cerr << "Exception thrown: " << e.what() << '\n';
         return EXIT_FAILURE;
     }
     catch (...)
     {
+        std::cout << std::flush;
         std::cerr << "Unknown exception thrown\n";
         return EXIT_FAILURE;
     }

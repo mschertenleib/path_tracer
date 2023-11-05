@@ -133,17 +133,18 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     }
 }
 
-void print_result(std::ostringstream &oss, VkResult result)
+std::ostream &operator<<(std::ostream &os, VkResult result)
 {
     if (const auto result_string = result_to_string(result);
         result_string != nullptr)
     {
-        oss << result_string;
+        os << result_string;
     }
     else
     {
-        oss << static_cast<std::underlying_type_t<VkResult>>(result);
+        os << static_cast<std::underlying_type_t<VkResult>>(result);
     }
+    return os;
 }
 
 inline void check_result(VkResult result, const char *message)
@@ -151,8 +152,7 @@ inline void check_result(VkResult result, const char *message)
     if (result != VK_SUCCESS)
     {
         std::ostringstream oss;
-        oss << message << ": ";
-        print_result(oss, result);
+        oss << message << ": " << result;
         throw std::runtime_error(oss.str());
     }
 }
@@ -164,7 +164,6 @@ inline void check_result(VkResult result, const char *message)
     const auto vkGetInstanceProcAddr =
         reinterpret_cast<PFN_vkGetInstanceProcAddr>(glfwGetInstanceProcAddress(
             VK_NULL_HANDLE, "vkGetInstanceProcAddr"));
-    // FIXME: proper error handling
     assert(vkGetInstanceProcAddr);
     instance.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
 
@@ -219,6 +218,8 @@ inline void check_result(VkResult result, const char *message)
             "VK_LAYER_KHRONOS_validation is not supported");
     }
 
+#endif
+
     std::uint32_t extension_property_count {};
     result = instance.vkEnumerateInstanceExtensionProperties(
         nullptr, &extension_property_count, nullptr);
@@ -229,15 +230,29 @@ inline void check_result(VkResult result, const char *message)
         nullptr, &extension_property_count, extension_properties.data());
     check_result(result, "vkEnumerateInstanceExtensionProperties");
 
-    std::vector<const char *> required_extensions;
-    required_extensions.reserve(glfw_required_extension_count + 1);
-    required_extensions.assign(glfw_required_extension_names,
-                               glfw_required_extension_names +
-                                   glfw_required_extension_count);
-    required_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    for (const auto extension_name : required_extensions)
+#ifndef NDEBUG
+
+    std::vector<const char *> required_extension_names;
+    required_extension_names.reserve(glfw_required_extension_count + 1);
+    required_extension_names.assign(glfw_required_extension_names,
+                                    glfw_required_extension_names +
+                                        glfw_required_extension_count);
+    required_extension_names.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+
+#else
+
+    const std::vector<const char *> required_extension_names(
+        glfw_required_extension_names,
+        glfw_required_extension_names + glfw_required_extension_count);
+
+#endif
+
+    std::cout << "Instance extensions:\n";
+    bool all_extensions_supported {true};
+    for (const auto extension_name : required_extension_names)
     {
-        if (std::none_of(
+        std::cout << "    " << extension_name << ": ";
+        if (std::any_of(
                 extension_properties.begin(),
                 extension_properties.end(),
                 [extension_name](const VkExtensionProperties &properties) {
@@ -245,10 +260,23 @@ inline void check_result(VkResult result, const char *message)
                                        extension_name) == 0;
                 }))
         {
-            // FIXME
-            throw std::runtime_error("Some extension is not supported");
+            std::cout << Text_color::green << "supported" << Text_color::reset
+                      << '\n';
+        }
+        else
+        {
+            all_extensions_supported = false;
+            std::cout << Text_color::red << "not supported" << Text_color::reset
+                      << '\n';
         }
     }
+    if (!all_extensions_supported)
+    {
+        throw std::runtime_error(
+            "Not all requested instance extensions are supported");
+    }
+
+#ifndef NDEBUG
 
     const VkDebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info {
         .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
@@ -286,12 +314,11 @@ inline void check_result(VkResult result, const char *message)
         .enabledLayerCount = 1,
         .ppEnabledLayerNames = &khronos_validation_layer,
         .enabledExtensionCount =
-            static_cast<std::uint32_t>(required_extensions.size()),
-        .ppEnabledExtensionNames = required_extensions.data()};
+            static_cast<std::uint32_t>(required_extension_names.size()),
+        .ppEnabledExtensionNames = required_extension_names.data()};
 
 #else
 
-    // FIXME: check for extension support!
     const VkInstanceCreateInfo instance_create_info {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pNext = {},
@@ -299,8 +326,9 @@ inline void check_result(VkResult result, const char *message)
         .pApplicationInfo = &application_info,
         .enabledLayerCount = {},
         .ppEnabledLayerNames = {},
-        .enabledExtensionCount = glfw_required_extension_count,
-        .ppEnabledExtensionNames = glfw_required_extension_names};
+        .enabledExtensionCount =
+            static_cast<std::uint32_t>(required_extension_names.size()),
+        .ppEnabledExtensionNames = required_extension_names.data()};
 
 #endif
 
@@ -394,8 +422,7 @@ get_queue_family_index(const Vulkan_instance &instance,
 [[nodiscard]] bool is_device_suitable(const Vulkan_instance &instance,
                                       VkPhysicalDevice physical_device,
                                       std::uint32_t device_extension_count,
-                                      const char *const *device_extension_names,
-                                      std::ostringstream &message)
+                                      const char *const *device_extension_names)
 {
     bool suitable {true};
 
@@ -404,7 +431,9 @@ get_queue_family_index(const Vulkan_instance &instance,
     if (queue_family_index == std::numeric_limits<std::uint32_t>::max())
     {
         suitable = false;
-        message << "- No queue family supports compute operations\n";
+        std::cout << "    " << Text_color::red
+                  << "No queue family supports compute operations"
+                  << Text_color::reset << '\n';
     }
 
     std::uint32_t extension_property_count {};
@@ -420,10 +449,12 @@ get_queue_family_index(const Vulkan_instance &instance,
         extension_properties.data());
     check_result(result, "vkEnumerateDeviceExtensionProperties");
 
+    std::cout << "    Extensions:\n";
     for (std::uint32_t i {}; i < device_extension_count; ++i)
     {
         const auto extension_name = device_extension_names[i];
-        if (std::none_of(
+        std::cout << "        " << extension_name << ": ";
+        if (std::any_of(
                 extension_properties.begin(),
                 extension_properties.end(),
                 [extension_name](const VkExtensionProperties &properties) {
@@ -431,9 +462,14 @@ get_queue_family_index(const Vulkan_instance &instance,
                                        extension_name) == 0;
                 }))
         {
+            std::cout << Text_color::green << "supported" << Text_color::reset
+                      << '\n';
+        }
+        else
+        {
             suitable = false;
-            message << "- The device extension " << extension_name
-                    << " is not supported\n";
+            std::cout << Text_color::red << "not supported" << Text_color::reset
+                      << '\n';
         }
     }
 
@@ -459,44 +495,30 @@ get_queue_family_index(const Vulkan_instance &instance,
 
     instance.vkGetPhysicalDeviceFeatures2(physical_device, &features_2);
 
-    if (!vulkan_1_2_features.bufferDeviceAddress)
+    const auto check_support = [&suitable](bool condition)
     {
-        suitable = false;
-        message
-            << "- The device feature bufferDeviceAddress is not supported\n";
-    }
+        if (condition)
+        {
+            std::cout << Text_color::green << "supported" << Text_color::reset
+                      << '\n';
+        }
+        else
+        {
+            suitable = false;
+            std::cout << Text_color::red << "not supported" << Text_color::reset
+                      << '\n';
+        }
+    };
 
-    if (!vulkan_1_2_features.scalarBlockLayout)
-    {
-        suitable = false;
-        message << "- The device feature scalarBlockLayout is not supported\n";
-    }
-
-    if (!acceleration_structure_features.accelerationStructure)
-    {
-        suitable = false;
-        message
-            << "- The device feature accelerationStructure is not supported\n";
-    }
-
-    if (!ray_tracing_pipeline_features.rayTracingPipeline)
-    {
-        suitable = false;
-        message << "- The device feature rayTracingPipeline is not supported\n";
-    }
-
-    VkFormatProperties format_properties {};
-    instance.vkGetPhysicalDeviceFormatProperties(
-        physical_device, VK_FORMAT_R32G32B32A32_SFLOAT, &format_properties);
-    if (!(format_properties.optimalTilingFeatures &
-          VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) ||
-        !(format_properties.optimalTilingFeatures &
-          VK_FORMAT_FEATURE_TRANSFER_SRC_BIT))
-    {
-        suitable = false;
-        message << "- VK_FORMAT_R32G32B32A32_SFLOAT not supported for storage "
-                   "images\n";
-    }
+    std::cout << "    Features:\n";
+    std::cout << "        bufferDeviceAddress: ";
+    check_support(vulkan_1_2_features.bufferDeviceAddress);
+    std::cout << "        scalarBlockLayout: ";
+    check_support(vulkan_1_2_features.scalarBlockLayout);
+    std::cout << "        accelerationStructure: ";
+    check_support(acceleration_structure_features.accelerationStructure);
+    std::cout << "        rayTracingPipeline: ";
+    check_support(ray_tracing_pipeline_features.rayTracingPipeline);
 
     return suitable;
 }
@@ -541,31 +563,21 @@ get_queue_family_index(const Vulkan_instance &instance,
                                                 &properties_2);
 
         std::cout << "Physical device " << i << ": "
-                  << properties_2.properties.deviceName;
+                  << properties_2.properties.deviceName << '\n';
 
-        std::ostringstream message;
         if (is_device_suitable(instance,
                                physical_devices[i],
                                device_extension_count,
-                               device_extension_names,
-                               message))
+                               device_extension_names) &&
+            !device.physical_device)
         {
-            std::cout << ": suitable\n";
-
-            if (!device.physical_device)
-            {
-                selected_device_index = i;
-                device.physical_device = physical_devices[i];
-                device.queue_family_index =
-                    get_queue_family_index(instance, physical_devices[i]);
-                device.properties = properties_2.properties;
-                device.ray_tracing_pipeline_properties =
-                    ray_tracing_pipeline_properties;
-            }
-        }
-        else
-        {
-            std::cout << ": not suitable:\n" << message.str();
+            selected_device_index = i;
+            device.physical_device = physical_devices[i];
+            device.queue_family_index =
+                get_queue_family_index(instance, physical_devices[i]);
+            device.properties = properties_2.properties;
+            device.ray_tracing_pipeline_properties =
+                ray_tracing_pipeline_properties;
         }
     }
     if (device.physical_device)
