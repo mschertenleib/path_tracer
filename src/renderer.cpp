@@ -206,16 +206,35 @@ inline void check_result(VkResult result, const char *message)
         &layer_property_count, layer_properties.data());
     check_result(result, "vkEnumerateInstanceLayerProperties");
 
-    constexpr auto khronos_validation_layer = "VK_LAYER_KHRONOS_validation";
-    if (std::none_of(layer_properties.begin(),
-                     layer_properties.end(),
-                     [](const VkLayerProperties &properties) {
-                         return std::strcmp(properties.layerName,
-                                            khronos_validation_layer) == 0;
-                     }))
+    constexpr const char *required_layer_names[] {
+        "VK_LAYER_KHRONOS_validation"};
+
+    std::cout << "Instance layers:\n";
+    bool all_layers_supported {true};
+    for (const auto layer_name : required_layer_names)
+    {
+        std::cout << "    " << layer_name << ": ";
+        if (std::any_of(layer_properties.begin(),
+                        layer_properties.end(),
+                        [layer_name](const VkLayerProperties &properties) {
+                            return std::strcmp(properties.layerName,
+                                               layer_name) == 0;
+                        }))
+        {
+            std::cout << Text_color::green << "supported" << Text_color::reset
+                      << '\n';
+        }
+        else
+        {
+            all_layers_supported = false;
+            std::cout << Text_color::red << "not supported" << Text_color::reset
+                      << '\n';
+        }
+    }
+    if (!all_layers_supported)
     {
         throw std::runtime_error(
-            "VK_LAYER_KHRONOS_validation is not supported");
+            "Not all requested instance layers are supported");
     }
 
 #endif
@@ -311,8 +330,9 @@ inline void check_result(VkResult result, const char *message)
         .pNext = &validation_features,
         .flags = {},
         .pApplicationInfo = &application_info,
-        .enabledLayerCount = 1,
-        .ppEnabledLayerNames = &khronos_validation_layer,
+        .enabledLayerCount =
+            static_cast<std::uint32_t>(std::size(required_layer_names)),
+        .ppEnabledLayerNames = required_layer_names,
         .enabledExtensionCount =
             static_cast<std::uint32_t>(required_extension_names.size()),
         .ppEnabledExtensionNames = required_extension_names.data()};
