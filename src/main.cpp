@@ -2,6 +2,10 @@
 #include "renderer.hpp"
 #include "utility.hpp"
 
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_vulkan.h"
+
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -112,6 +116,27 @@ int main(int argc, char *argv[])
             throw std::runtime_error("Failed to create GLFW window");
         }
         SCOPE_EXIT([window] { glfwDestroyWindow(window); });
+
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        SCOPE_EXIT([] { ImGui::DestroyContext(); });
+
+        auto &io = ImGui::GetIO();
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+        float y_scale {1.0f};
+        glfwGetWindowContentScale(window, nullptr, &y_scale);
+        ImFontConfig font_config {};
+        font_config.SizePixels = 13.0f * y_scale;
+        io.Fonts->AddFontDefault(&font_config);
+
+        if (!ImGui_ImplGlfw_InitForVulkan(window, true))
+        {
+            return EXIT_FAILURE;
+        }
+        SCOPE_EXIT([] { ImGui_ImplGlfw_Shutdown(); });
 
         Timer t;
 

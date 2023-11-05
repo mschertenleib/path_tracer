@@ -36,6 +36,23 @@ CPMAddPackage(
 )
 
 
+CPMAddPackage(
+        GITHUB_REPOSITORY ocornut/imgui
+        GIT_TAG v1.89.8-docking
+        DOWNLOAD_ONLY YES
+)
+
+
+set(IMGUI_SOURCES
+        ${imgui_SOURCE_DIR}/imgui.cpp ${imgui_SOURCE_DIR}/imgui.h
+        ${imgui_SOURCE_DIR}/imgui_internal.h
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp
+        ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/imgui_demo.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+)
 add_executable(path_tracer
         src/main.cpp
         src/geometry.cpp src/geometry.hpp
@@ -45,12 +62,15 @@ add_executable(path_tracer
         src/stb_image_write.cpp
         src/tiny_obj_loader.cpp
         src/vk_mem_alloc.cpp
+        ${IMGUI_SOURCES}
 )
 target_compile_features(path_tracer PRIVATE cxx_std_20)
 target_compile_definitions(path_tracer PRIVATE VK_NO_PROTOTYPES)
 target_include_directories(path_tracer SYSTEM PRIVATE
         external
         ${Vulkan_INCLUDE_DIRS}
+        ${imgui_SOURCE_DIR}
+        ${imgui_SOURCE_DIR}/backends
 )
 target_link_libraries(path_tracer PRIVATE glfw)
 
@@ -102,10 +122,19 @@ set(GCC_WARNINGS
 )
 if (CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
     target_compile_options(path_tracer PRIVATE ${CLANG_WARNINGS})
+    set_source_files_properties(${IMGUI_SOURCES} PROPERTIES COMPILE_OPTIONS
+            "-Wno-conversion;-Wno-sign-conversion;-Wno-double-promotion;-Wno-null-dereference;-Wno-unused"
+    )
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(path_tracer PRIVATE ${GCC_WARNINGS})
+    set_source_files_properties(${IMGUI_SOURCES} PROPERTIES COMPILE_OPTIONS
+            "-Wno-conversion;-Wno-sign-conversion;-Wno-double-promotion;-Wno-null-dereference;-Wno-unused;-Wno-useless-cast"
+    )
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(path_tracer PRIVATE /W4)
+    set_source_files_properties(${IMGUI_SOURCES} PROPERTIES COMPILE_OPTIONS
+            "/wd4189"
+    )
 else ()
     message(WARNING "No warnings set for compiler '${CMAKE_CXX_COMPILER_ID}'")
 endif ()

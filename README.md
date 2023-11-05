@@ -21,6 +21,7 @@ cmake --build build --target path_tracer
 ## External libraries
 
 - [GLFW](https://github.com/glfw/glfw)
+- [Dear ImGui](https://github.com/ocornut/imgui)
 - [stb_image](https://github.com/nothings/stb)
 - [stb_image_write](https://github.com/nothings/stb)
 - [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader)
