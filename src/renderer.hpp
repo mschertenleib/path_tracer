@@ -33,6 +33,7 @@ struct Vulkan_instance
     PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2;
     PFN_vkCreateDevice vkCreateDevice;
     PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr;
+    PFN_vkDestroySurfaceKHR vkDestroySurfaceKHR;
 };
 
 struct Vulkan_device
@@ -122,9 +123,11 @@ struct Vulkan_context
 {
     Vulkan_instance instance;
     Vulkan_device device;
+    VkSurfaceKHR surface;
     VmaAllocator allocator;
     VkQueue queue;
     VkCommandPool command_pool;
+
     Vulkan_image storage_image;
     VkImageView storage_image_view;
     Vulkan_buffer vertex_buffer;

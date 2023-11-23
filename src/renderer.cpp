@@ -211,7 +211,7 @@ inline void check_result(VkResult result, const char *message)
 
     std::cout << "Instance layers:\n";
     bool all_layers_supported {true};
-    for (const auto layer_name : required_layer_names)
+    for (const auto *layer_name : required_layer_names)
     {
         std::cout << "    " << layer_name << ": ";
         if (std::any_of(layer_properties.begin(),
@@ -268,7 +268,7 @@ inline void check_result(VkResult result, const char *message)
 
     std::cout << "Instance extensions:\n";
     bool all_extensions_supported {true};
-    for (const auto extension_name : required_extension_names)
+    for (const auto *extension_name : required_extension_names)
     {
         std::cout << "    " << extension_name << ": ";
         if (std::any_of(
@@ -383,6 +383,7 @@ inline void check_result(VkResult result, const char *message)
                            "vkGetPhysicalDeviceProperties2");
     load_instance_function(instance.vkCreateDevice, "vkCreateDevice");
     load_instance_function(instance.vkGetDeviceProcAddr, "vkGetDeviceProcAddr");
+    load_instance_function(instance.vkDestroySurfaceKHR, "vkDestroySurfaceKHR");
 
 #ifndef NDEBUG
 
@@ -722,6 +723,24 @@ void destroy_device(const Vulkan_device &device)
     if (device.device)
     {
         device.vkDestroyDevice(device.device, nullptr);
+    }
+}
+
+[[nodiscard]] VkSurfaceKHR create_surface(const Vulkan_instance &instance,
+                                          GLFWwindow *window)
+{
+    VkSurfaceKHR surface {};
+    const auto result =
+        glfwCreateWindowSurface(instance.instance, window, nullptr, &surface);
+    check_result(result, "glfwCreateWindowSurface");
+    return surface;
+}
+
+void destroy_surface(const Vulkan_instance &instance, VkSurfaceKHR surface)
+{
+    if (surface)
+    {
+        instance.vkDestroySurfaceKHR(instance.instance, surface, nullptr);
     }
 }
 
@@ -1858,6 +1877,8 @@ Vulkan_context create_vulkan_context(GLFWwindow *window)
 
     context.device = create_device(context.instance, window);
 
+    context.surface = create_surface(context.instance, window);
+
     context.allocator = create_allocator(context.instance, context.device);
 
     context.device.vkGetDeviceQueue(context.device.device,
@@ -1874,6 +1895,7 @@ void destroy_vulkan_context(Vulkan_context &context)
 {
     destroy_command_pool(context.device, context.command_pool);
     vmaDestroyAllocator(context.allocator);
+    destroy_surface(context.instance, context.surface);
     destroy_device(context.device);
     destroy_instance(context.instance);
     context = {};
