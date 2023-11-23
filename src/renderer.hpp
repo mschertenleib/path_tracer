@@ -36,10 +36,16 @@ struct Vulkan_instance
     PFN_vkDestroySurfaceKHR vkDestroySurfaceKHR;
 };
 
+struct Vulkan_queue_family_indices
+{
+    std::uint32_t graphics_compute;
+    std::uint32_t present;
+};
+
 struct Vulkan_device
 {
     VkPhysicalDevice physical_device;
-    std::uint32_t queue_family_index;
+    Vulkan_queue_family_indices queue_family_indices;
     VkPhysicalDeviceProperties properties;
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR
         ray_tracing_pipeline_properties;
@@ -123,9 +129,10 @@ struct Vulkan_context
 {
     Vulkan_instance instance;
     Vulkan_device device;
+    VkQueue graphics_compute_queue;
+    VkQueue present_queue;
     VkSurfaceKHR surface;
     VmaAllocator allocator;
-    VkQueue queue;
     VkCommandPool command_pool;
 
     Vulkan_image storage_image;
