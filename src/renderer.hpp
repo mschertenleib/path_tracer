@@ -5,6 +5,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include <vector>
+
 #include <cstdint>
 
 struct Vulkan_instance
@@ -95,6 +97,16 @@ struct Vulkan_device
         vkGetRayTracingShaderGroupHandlesKHR;
 };
 
+struct Vulkan_swapchain
+{
+    VkSwapchainKHR swapchain;
+    std::vector<VkImage> images;
+    VkFormat format;
+    VkExtent2D extent;
+    std::vector<VkImageView> image_views;
+    std::vector<VkFramebuffer> framebuffers;
+};
+
 struct Vulkan_image
 {
     std::uint32_t width;
@@ -134,6 +146,7 @@ struct Vulkan_context
     VkSurfaceKHR surface;
     VmaAllocator allocator;
     VkCommandPool command_pool;
+    Vulkan_swapchain swapchain;
 
     Vulkan_image storage_image;
     VkImageView storage_image_view;

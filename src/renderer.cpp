@@ -829,6 +829,23 @@ void destroy_command_pool(const Vulkan_device &device,
     }
 }
 
+[[nodiscard]] Vulkan_swapchain create_swapchain(const Vulkan_device &device)
+{
+    std::cout << Text_color::red << "create_swapchain not implemented\n"
+              << Text_color::reset;
+
+    Vulkan_swapchain swapchain {};
+
+    return swapchain;
+}
+
+void destroy_swapchain(const Vulkan_device &device,
+                       const Vulkan_swapchain &swapchain)
+{
+    std::cout << Text_color::red << "destroy_swapchain not implemented\n"
+              << Text_color::reset;
+}
+
 [[nodiscard]] VkCommandBuffer
 begin_one_time_submit_command_buffer(const Vulkan_context &context)
 {
@@ -1931,11 +1948,14 @@ Vulkan_context create_vulkan_context(GLFWwindow *window)
 
     context.command_pool = create_command_pool(context.device);
 
+    context.swapchain = create_swapchain(context.device);
+
     return context;
 }
 
 void destroy_vulkan_context(Vulkan_context &context)
 {
+    destroy_swapchain(context.device, context.swapchain);
     destroy_command_pool(context.device, context.command_pool);
     vmaDestroyAllocator(context.allocator);
     destroy_surface(context.instance, context.surface);
