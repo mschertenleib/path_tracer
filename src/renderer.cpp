@@ -1707,16 +1707,32 @@ void destroy_descriptor_set_layout(const Vulkan_device &device,
 [[nodiscard]] VkDescriptorPool
 create_descriptor_pool(const Vulkan_device &device)
 {
+    // TODO: copied from Dear ImGui, this is overkill
     constexpr VkDescriptorPoolSize pool_sizes[] {
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2},
+        {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
+        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000},
         {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1}};
+
+    std::uint32_t max_sets {0};
+    for (const auto pool_size : pool_sizes)
+    {
+        max_sets += pool_size.descriptorCount;
+    }
 
     const VkDescriptorPoolCreateInfo create_info {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .pNext = {},
         .flags = {},
-        .maxSets = 4, // FIXME
+        .maxSets = max_sets,
         .poolSizeCount = static_cast<std::uint32_t>(std::size(pool_sizes)),
         .pPoolSizes = pool_sizes};
 
