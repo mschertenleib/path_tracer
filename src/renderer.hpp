@@ -104,6 +104,8 @@ struct Vulkan_device
     PFN_vkDestroyPipeline vkDestroyPipeline;
     PFN_vkGetRayTracingShaderGroupHandlesKHR
         vkGetRayTracingShaderGroupHandlesKHR;
+    PFN_vkCreateRenderPass vkCreateRenderPass;
+    PFN_vkDestroyRenderPass vkDestroyRenderPass;
 };
 
 struct Vulkan_swapchain
@@ -156,7 +158,6 @@ struct Vulkan_context
     VmaAllocator allocator;
     VkCommandPool command_pool;
     Vulkan_swapchain swapchain;
-
     Vulkan_image storage_image;
     VkImageView storage_image_view;
     Vulkan_image render_target;
@@ -172,6 +173,7 @@ struct Vulkan_context
     VkPipelineLayout ray_tracing_pipeline_layout;
     VkPipeline ray_tracing_pipeline;
     Vulkan_shader_binding_table shader_binding_table;
+    VkRenderPass render_pass;
 };
 
 [[nodiscard]] Vulkan_context create_vulkan_context(struct GLFWwindow *window);

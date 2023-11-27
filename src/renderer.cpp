@@ -573,8 +573,7 @@ get_queue_family_indices(const Vulkan_instance &instance,
     return suitable;
 }
 
-[[nodiscard]] Vulkan_device create_device(const Vulkan_instance &instance,
-                                          GLFWwindow *window)
+[[nodiscard]] Vulkan_device create_device(const Vulkan_instance &instance)
 {
     Vulkan_device device {};
 
@@ -760,6 +759,8 @@ get_queue_family_indices(const Vulkan_instance &instance,
     load(device.vkDestroyPipeline, "vkDestroyPipeline");
     load(device.vkGetRayTracingShaderGroupHandlesKHR,
          "vkGetRayTracingShaderGroupHandlesKHR");
+    load(device.vkCreateRenderPass, "vkCreateRenderPass");
+    load(device.vkDestroyRenderPass, "vkDestroyRenderPass");
 
     return device;
 }
@@ -2112,6 +2113,71 @@ void destroy_shader_binding_table(
     destroy_buffer(allocator, shader_binding_table.buffer);
 }
 
+[[nodiscard]] VkRenderPass create_render_pass(const Vulkan_device &device,
+                                              VkFormat color_attachment_format)
+{
+    const VkAttachmentDescription attachment_description {
+        .flags = {},
+        .format = color_attachment_format,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR};
+
+    constexpr VkAttachmentReference attachment_reference {
+        .attachment = 0, .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+
+    const VkSubpassDescription subpass_description {
+        .flags = {},
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .inputAttachmentCount = {},
+        .pInputAttachments = {},
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &attachment_reference,
+        .pResolveAttachments = {},
+        .pDepthStencilAttachment = {},
+        .preserveAttachmentCount = {},
+        .pPreserveAttachments = {}};
+
+    constexpr VkSubpassDependency subpass_dependency {
+        .srcSubpass = VK_SUBPASS_EXTERNAL,
+        .dstSubpass = 0,
+        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .srcAccessMask = VK_ACCESS_NONE,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dependencyFlags = {}};
+
+    const VkRenderPassCreateInfo render_pass_create_info {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .pNext = {},
+        .flags = {},
+        .attachmentCount = 1,
+        .pAttachments = &attachment_description,
+        .subpassCount = 1,
+        .pSubpasses = &subpass_description,
+        .dependencyCount = 1,
+        .pDependencies = &subpass_dependency};
+
+    VkRenderPass render_pass {};
+    const auto result = device.vkCreateRenderPass(
+        device.device, &render_pass_create_info, nullptr, &render_pass);
+    check_result(result, "vkCreateRenderPass");
+
+    return render_pass;
+}
+
+void destroy_render_pass(const Vulkan_device &device, VkRenderPass render_pass)
+{
+    if (render_pass)
+    {
+        device.vkDestroyRenderPass(device.device, render_pass, nullptr);
+    }
+}
+
 } // namespace
 
 Vulkan_context create_vulkan_context(GLFWwindow *window)
@@ -2125,7 +2191,7 @@ Vulkan_context create_vulkan_context(GLFWwindow *window)
 
     context.instance = create_instance();
 
-    context.device = create_device(context.instance, window);
+    context.device = create_device(context.instance);
 
     context.device.vkGetDeviceQueue(
         context.device.device,
@@ -2233,10 +2299,14 @@ void load_scene(Vulkan_context &context,
     context.ray_tracing_pipeline = create_ray_tracing_pipeline(context);
 
     context.shader_binding_table = create_shader_binding_table(context);
+
+    context.render_pass =
+        create_render_pass(context.device, context.swapchain.format);
 }
 
 void destroy_scene_resources(const Vulkan_context &context)
 {
+    destroy_render_pass(context.device, context.render_pass);
     destroy_shader_binding_table(context.allocator,
                                  context.shader_binding_table);
     destroy_pipeline(context.device, context.ray_tracing_pipeline);
