@@ -65,6 +65,8 @@ struct Vulkan_device
     PFN_vkGetSwapchainImagesKHR vkGetSwapchainImagesKHR;
     PFN_vkCreateImageView vkCreateImageView;
     PFN_vkDestroyImageView vkDestroyImageView;
+    PFN_vkCreateSampler vkCreateSampler;
+    PFN_vkDestroySampler vkDestroySampler;
     PFN_vkAllocateCommandBuffers vkAllocateCommandBuffers;
     PFN_vkFreeCommandBuffers vkFreeCommandBuffers;
     PFN_vkBeginCommandBuffer vkBeginCommandBuffer;
@@ -157,6 +159,9 @@ struct Vulkan_context
 
     Vulkan_image storage_image;
     VkImageView storage_image_view;
+    Vulkan_image render_target;
+    VkImageView render_target_view;
+    VkSampler render_target_sampler;
     Vulkan_buffer vertex_buffer;
     Vulkan_buffer index_buffer;
     Vulkan_acceleration_structure blas;

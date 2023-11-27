@@ -717,6 +717,8 @@ get_queue_family_indices(const Vulkan_instance &instance,
     load(device.vkGetSwapchainImagesKHR, "vkGetSwapchainImagesKHR");
     load(device.vkCreateImageView, "vkCreateImageView");
     load(device.vkDestroyImageView, "vkDestroyImageView");
+    load(device.vkCreateSampler, "vkCreateSampler");
+    load(device.vkDestroySampler, "vkDestroySampler");
     load(device.vkAllocateCommandBuffers, "vkAllocateCommandBuffers");
     load(device.vkFreeCommandBuffers, "vkFreeCommandBuffers");
     load(device.vkBeginCommandBuffer, "vkBeginCommandBuffer");
@@ -1175,6 +1177,44 @@ void transition_image_layout(const Vulkan_device &device,
                                 nullptr,
                                 1,
                                 &image_memory_barrier);
+}
+
+[[nodiscard]] VkSampler create_sampler(const Vulkan_device &device)
+{
+    constexpr VkSamplerCreateInfo sampler_create_info {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .pNext = {},
+        .flags = {},
+        .magFilter = VK_FILTER_NEAREST,
+        .minFilter = VK_FILTER_NEAREST,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .mipLodBias = {},
+        .anisotropyEnable = VK_FALSE,
+        .maxAnisotropy = {},
+        .compareEnable = VK_FALSE,
+        .compareOp = {},
+        .minLod = {},
+        .maxLod = {},
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE};
+
+    VkSampler sampler {};
+    const auto result = device.vkCreateSampler(
+        device.device, &sampler_create_info, nullptr, &sampler);
+    check_result(result, "vkCreateSampler");
+
+    return sampler;
+}
+
+void destroy_sampler(const Vulkan_device &device, VkSampler sampler)
+{
+    if (sampler)
+    {
+        device.vkDestroySampler(device.device, sampler, nullptr);
+    }
 }
 
 [[nodiscard]] Vulkan_buffer
@@ -2111,17 +2151,26 @@ void load_scene(Vulkan_context &context,
 {
     SCOPE_FAIL([&] { destroy_scene_resources(context); });
 
-    constexpr auto image_format = VK_FORMAT_R32G32B32A32_SFLOAT;
-
+    constexpr VkFormat storage_image_format {VK_FORMAT_R32G32B32A32_SFLOAT};
     context.storage_image = create_image(context.allocator,
                                          render_width,
                                          render_height,
-                                         image_format,
+                                         storage_image_format,
                                          VK_IMAGE_USAGE_STORAGE_BIT |
                                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
-
     context.storage_image_view = create_image_view(
-        context.device, context.storage_image.image, image_format);
+        context.device, context.storage_image.image, storage_image_format);
+
+    constexpr VkFormat render_target_format {VK_FORMAT_R8G8B8A8_SRGB};
+    context.render_target = create_image(context.allocator,
+                                         render_width,
+                                         render_height,
+                                         render_target_format,
+                                         VK_IMAGE_USAGE_SAMPLED_BIT |
+                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                             VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+    context.render_target_view = create_image_view(
+        context.device, context.render_target.image, render_target_format);
 
     const auto command_buffer = begin_one_time_submit_command_buffer(context);
     transition_image_layout(context.device,
@@ -2134,7 +2183,18 @@ void load_scene(Vulkan_context &context,
                             VK_IMAGE_LAYOUT_GENERAL,
                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                             VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+    transition_image_layout(context.device,
+                            command_buffer,
+                            context.render_target.image,
+                            VK_ACCESS_NONE,
+                            VK_ACCESS_SHADER_READ_BIT,
+                            VK_IMAGE_LAYOUT_UNDEFINED,
+                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
     end_one_time_submit_command_buffer(context, command_buffer);
+
+    context.render_target_sampler = create_sampler(context.device);
 
     context.vertex_buffer = create_vertex_buffer(context, geometry.vertices);
 
@@ -2173,6 +2233,9 @@ void destroy_scene_resources(const Vulkan_context &context)
     destroy_acceleration_structure(context, context.blas);
     destroy_buffer(context.allocator, context.index_buffer);
     destroy_buffer(context.allocator, context.vertex_buffer);
+    destroy_sampler(context.device, context.render_target_sampler);
+    destroy_image_view(context.device, context.render_target_view);
+    destroy_image(context.allocator, context.render_target);
     destroy_image_view(context.device, context.storage_image_view);
     destroy_image(context.allocator, context.storage_image);
 }
