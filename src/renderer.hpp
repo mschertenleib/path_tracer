@@ -36,6 +36,10 @@ struct Vulkan_instance
     PFN_vkCreateDevice vkCreateDevice;
     PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr;
     PFN_vkDestroySurfaceKHR vkDestroySurfaceKHR;
+    PFN_vkGetPhysicalDeviceSurfaceFormatsKHR
+        vkGetPhysicalDeviceSurfaceFormatsKHR;
+    PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR;
 };
 
 struct Vulkan_queue_family_indices
@@ -56,6 +60,9 @@ struct Vulkan_device
     PFN_vkGetDeviceQueue vkGetDeviceQueue;
     PFN_vkCreateCommandPool vkCreateCommandPool;
     PFN_vkDestroyCommandPool vkDestroyCommandPool;
+    PFN_vkCreateSwapchainKHR vkCreateSwapchainKHR;
+    PFN_vkDestroySwapchainKHR vkDestroySwapchainKHR;
+    PFN_vkGetSwapchainImagesKHR vkGetSwapchainImagesKHR;
     PFN_vkCreateImageView vkCreateImageView;
     PFN_vkDestroyImageView vkDestroyImageView;
     PFN_vkAllocateCommandBuffers vkAllocateCommandBuffers;
@@ -99,12 +106,12 @@ struct Vulkan_device
 
 struct Vulkan_swapchain
 {
-    VkSwapchainKHR swapchain;
-    std::vector<VkImage> images;
     VkFormat format;
     VkExtent2D extent;
+    std::uint32_t min_image_count;
+    VkSwapchainKHR swapchain;
+    std::vector<VkImage> images;
     std::vector<VkImageView> image_views;
-    std::vector<VkFramebuffer> framebuffers;
 };
 
 struct Vulkan_image
