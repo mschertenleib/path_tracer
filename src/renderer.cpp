@@ -4,6 +4,8 @@
 
 #include "stb_image_write.h"
 
+#include "imgui_impl_vulkan.h"
+
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -2429,6 +2431,46 @@ void destroy_fences(
     }
 }
 
+void init_imgui(const Vulkan_context &context)
+{
+    const auto loader_func = [](const char *function_name, void *user_data)
+    {
+        const auto ctx = static_cast<const Vulkan_context *>(user_data);
+        return ctx->instance.vkGetInstanceProcAddr(ctx->instance.instance,
+                                                   function_name);
+    };
+    ImGui_ImplVulkan_LoadFunctions(loader_func,
+                                   const_cast<Vulkan_context *>(&context));
+
+    const auto check_vk_result = [](VkResult result)
+    { check_result(result, "ImGui Vulkan call"); };
+
+    ImGui_ImplVulkan_InitInfo init_info {
+        .Instance = context.instance.instance,
+        .PhysicalDevice = context.device.physical_device,
+        .Device = context.device.device,
+        .QueueFamily = context.device.queue_family_indices.graphics_compute,
+        .Queue = context.graphics_compute_queue,
+        .PipelineCache = VK_NULL_HANDLE,
+        .DescriptorPool = context.descriptor_pool,
+        .Subpass = 0,
+        .MinImageCount = context.swapchain.min_image_count,
+        .ImageCount =
+            static_cast<std::uint32_t>(context.swapchain.images.size()),
+        .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
+        .UseDynamicRendering = false,
+        .ColorAttachmentFormat = context.swapchain.format,
+        .Allocator = nullptr,
+        .CheckVkResultFn = check_vk_result};
+
+    ImGui_ImplVulkan_Init(&init_info, context.render_pass);
+
+    const auto command_buffer = begin_one_time_submit_command_buffer(context);
+    ImGui_ImplVulkan_CreateFontsTexture(command_buffer);
+    end_one_time_submit_command_buffer(context, command_buffer);
+    ImGui_ImplVulkan_DestroyFontUploadObjects();
+}
+
 } // namespace
 
 Vulkan_context create_vulkan_context(GLFWwindow *window)
@@ -2567,10 +2609,13 @@ void load_scene(Vulkan_context &context,
     context.image_available_semaphores = create_semaphores(context.device);
     context.render_finished_semaphores = create_semaphores(context.device);
     context.in_flight_fences = create_fences(context.device);
+
+    init_imgui(context);
 }
 
 void destroy_scene_resources(const Vulkan_context &context)
 {
+    ImGui_ImplVulkan_Shutdown();
     destroy_fences(context.device, context.in_flight_fences);
     destroy_semaphores(context.device, context.render_finished_semaphores);
     destroy_semaphores(context.device, context.image_available_semaphores);
