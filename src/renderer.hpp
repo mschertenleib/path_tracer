@@ -5,6 +5,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <array>
 #include <vector>
 
 #include <cstdint>
@@ -106,6 +107,12 @@ struct Vulkan_device
         vkGetRayTracingShaderGroupHandlesKHR;
     PFN_vkCreateRenderPass vkCreateRenderPass;
     PFN_vkDestroyRenderPass vkDestroyRenderPass;
+    PFN_vkCreateFramebuffer vkCreateFramebuffer;
+    PFN_vkDestroyFramebuffer vkDestroyFramebuffer;
+    PFN_vkCreateSemaphore vkCreateSemaphore;
+    PFN_vkDestroySemaphore vkDestroySemaphore;
+    PFN_vkCreateFence vkCreateFence;
+    PFN_vkDestroyFence vkDestroyFence;
 };
 
 struct Vulkan_swapchain
@@ -168,12 +175,21 @@ struct Vulkan_context
     Vulkan_acceleration_structure blas;
     Vulkan_acceleration_structure tlas;
     VkDescriptorSetLayout descriptor_set_layout;
+    VkDescriptorSetLayout final_render_descriptor_set_layout;
     VkDescriptorPool descriptor_pool;
     VkDescriptorSet descriptor_set;
+    VkDescriptorSet final_render_descriptor_set;
     VkPipelineLayout ray_tracing_pipeline_layout;
     VkPipeline ray_tracing_pipeline;
     Vulkan_shader_binding_table shader_binding_table;
     VkRenderPass render_pass;
+    std::vector<VkFramebuffer> framebuffers;
+    static constexpr std::uint32_t frames_in_flight {2};
+    std::array<VkCommandBuffer, frames_in_flight> command_buffers;
+    std::array<VkSemaphore, frames_in_flight> image_available_semaphores;
+    std::array<VkSemaphore, frames_in_flight> render_finished_semaphores;
+    std::array<VkFence, frames_in_flight> in_flight_fences;
+    std::uint32_t current_frame;
 };
 
 [[nodiscard]] Vulkan_context create_vulkan_context(struct GLFWwindow *window);

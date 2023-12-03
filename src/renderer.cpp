@@ -761,6 +761,12 @@ get_queue_family_indices(const Vulkan_instance &instance,
          "vkGetRayTracingShaderGroupHandlesKHR");
     load(device.vkCreateRenderPass, "vkCreateRenderPass");
     load(device.vkDestroyRenderPass, "vkDestroyRenderPass");
+    load(device.vkCreateFramebuffer, "vkCreateFramebuffer");
+    load(device.vkDestroyFramebuffer, "vkDestroyFramebuffer");
+    load(device.vkCreateSemaphore, "vkCreateSemaphore");
+    load(device.vkDestroySemaphore, "vkDestroySemaphore");
+    load(device.vkCreateFence, "vkCreateFence");
+    load(device.vkDestroyFence, "vkDestroyFence");
 
     return device;
 }
@@ -1695,6 +1701,35 @@ create_descriptor_set_layout(const Vulkan_device &device)
     return descriptor_set_layout;
 }
 
+[[nodiscard]] VkDescriptorSetLayout
+create_final_render_descriptor_set_layout(const Vulkan_device &device)
+{
+    constexpr VkDescriptorSetLayoutBinding descriptor_set_layout_bindings[] {
+        {.binding = 0,
+         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+         .descriptorCount = 1,
+         .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+         .pImmutableSamplers = {}}};
+
+    const VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .pNext = {},
+        .flags = {},
+        .bindingCount = static_cast<std::uint32_t>(
+            std::size(descriptor_set_layout_bindings)),
+        .pBindings = descriptor_set_layout_bindings};
+
+    VkDescriptorSetLayout descriptor_set_layout {};
+    const auto result =
+        device.vkCreateDescriptorSetLayout(device.device,
+                                           &descriptor_set_layout_create_info,
+                                           nullptr,
+                                           &descriptor_set_layout);
+    check_result(result, "vkCreateDescriptorSetLayout");
+
+    return descriptor_set_layout;
+}
+
 void destroy_descriptor_set_layout(const Vulkan_device &device,
                                    VkDescriptorSetLayout descriptor_set_layout)
 {
@@ -1755,7 +1790,7 @@ void destroy_descriptor_pool(const Vulkan_device &device,
 }
 
 [[nodiscard]] VkDescriptorSet
-allocate_descriptor_set(const Vulkan_context &context)
+create_descriptor_set(const Vulkan_context &context)
 {
     const VkDescriptorSetAllocateInfo descriptor_set_allocate_info {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -1840,6 +1875,44 @@ allocate_descriptor_set(const Vulkan_context &context)
         descriptor_writes,
         0,
         nullptr);
+
+    return descriptor_set;
+}
+
+[[nodiscard]] VkDescriptorSet
+create_final_render_descriptor_set(const Vulkan_context &context)
+{
+    const VkDescriptorSetAllocateInfo descriptor_set_allocate_info {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .pNext = {},
+        .descriptorPool = context.descriptor_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &context.final_render_descriptor_set_layout};
+
+    VkDescriptorSet descriptor_set {};
+    const auto result = context.device.vkAllocateDescriptorSets(
+        context.device.device, &descriptor_set_allocate_info, &descriptor_set);
+    check_result(result, "vkAllocateDescriptorSets");
+
+    const VkDescriptorImageInfo descriptor_render_target {
+        .sampler = context.render_target_sampler,
+        .imageView = context.render_target_view,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+
+    const VkWriteDescriptorSet descriptor_write {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = {},
+        .dstSet = descriptor_set,
+        .dstBinding = 0,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &descriptor_render_target,
+        .pBufferInfo = {},
+        .pTexelBufferView = {}};
+
+    context.device.vkUpdateDescriptorSets(
+        context.device.device, 1, &descriptor_write, 0, nullptr);
 
     return descriptor_set;
 }
@@ -2178,13 +2251,191 @@ void destroy_render_pass(const Vulkan_device &device, VkRenderPass render_pass)
     }
 }
 
+[[nodiscard]] std::vector<VkFramebuffer>
+create_framebuffers(const Vulkan_context &context)
+{
+    std::vector<VkFramebuffer> framebuffers(
+        context.swapchain.image_views.size());
+
+    SCOPE_FAIL(
+        [&]
+        {
+            for (const auto framebuffer : framebuffers)
+            {
+                if (framebuffer)
+                {
+                    context.device.vkDestroyFramebuffer(
+                        context.device.device, framebuffer, nullptr);
+                }
+            }
+        });
+
+    for (std::size_t i {0}; i < framebuffers.size(); ++i)
+    {
+        const VkFramebufferCreateInfo framebuffer_create_info {
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .pNext = {},
+            .flags = {},
+            .renderPass = context.render_pass,
+            .attachmentCount = 1,
+            .pAttachments = &context.swapchain.image_views[i],
+            .width = context.swapchain.extent.width,
+            .height = context.swapchain.extent.height,
+            .layers = 1};
+
+        const auto result =
+            context.device.vkCreateFramebuffer(context.device.device,
+                                               &framebuffer_create_info,
+                                               nullptr,
+                                               &framebuffers[i]);
+        check_result(result, "vkCreateFramebuffer");
+    }
+
+    return framebuffers;
+}
+
+void destroy_framebuffers(const Vulkan_device &device,
+                          const std::vector<VkFramebuffer> &framebuffers)
+{
+    for (const auto framebuffer : framebuffers)
+    {
+        if (framebuffer)
+        {
+            device.vkDestroyFramebuffer(device.device, framebuffer, nullptr);
+        }
+    }
+}
+
+[[nodiscard]] std::array<VkCommandBuffer, Vulkan_context::frames_in_flight>
+create_command_buffers(const Vulkan_context &context)
+{
+    const VkCommandBufferAllocateInfo allocate_info {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = {},
+        .commandPool = context.command_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = Vulkan_context::frames_in_flight};
+
+    std::array<VkCommandBuffer, Vulkan_context::frames_in_flight>
+        command_buffers {};
+
+    const auto result = context.device.vkAllocateCommandBuffers(
+        context.device.device, &allocate_info, command_buffers.data());
+    check_result(result, "vkAllocateCommandBuffers");
+
+    return command_buffers;
+}
+
+void destroy_command_buffers(
+    const Vulkan_context &context,
+    const std::array<VkCommandBuffer, Vulkan_context::frames_in_flight>
+        &command_buffers)
+{
+    context.device.vkFreeCommandBuffers(
+        context.device.device,
+        context.command_pool,
+        static_cast<std::uint32_t>(command_buffers.size()),
+        command_buffers.data());
+}
+
+[[nodiscard]] std::array<VkSemaphore, Vulkan_context::frames_in_flight>
+create_semaphores(const Vulkan_device &device)
+{
+    constexpr VkSemaphoreCreateInfo semaphore_create_info {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = {},
+        .flags = {}};
+
+    std::array<VkSemaphore, Vulkan_context::frames_in_flight> semaphores {};
+
+    SCOPE_FAIL(
+        [&]
+        {
+            for (const auto semaphore : semaphores)
+            {
+                if (semaphore)
+                {
+                    device.vkDestroySemaphore(
+                        device.device, semaphore, nullptr);
+                }
+            }
+        });
+
+    for (auto &semaphore : semaphores)
+    {
+        const auto result = device.vkCreateSemaphore(
+            device.device, &semaphore_create_info, nullptr, &semaphore);
+        check_result(result, "vkCreateSemaphore");
+    }
+
+    return semaphores;
+}
+
+void destroy_semaphores(
+    const Vulkan_device &device,
+    const std::array<VkSemaphore, Vulkan_context::frames_in_flight> &semaphores)
+{
+    for (const auto semaphore : semaphores)
+    {
+        if (semaphore)
+        {
+            device.vkDestroySemaphore(device.device, semaphore, nullptr);
+        }
+    }
+}
+
+[[nodiscard]] std::array<VkFence, Vulkan_context::frames_in_flight>
+create_fences(const Vulkan_device &device)
+{
+    constexpr VkFenceCreateInfo fence_create_info {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .pNext = {},
+        .flags = VK_FENCE_CREATE_SIGNALED_BIT};
+
+    std::array<VkFence, Vulkan_context::frames_in_flight> fences {};
+
+    SCOPE_FAIL(
+        [&]
+        {
+            for (const auto fence : fences)
+            {
+                if (fence)
+                {
+                    device.vkDestroyFence(device.device, fence, nullptr);
+                }
+            }
+        });
+
+    for (auto &fence : fences)
+    {
+        const auto result = device.vkCreateFence(
+            device.device, &fence_create_info, nullptr, &fence);
+        check_result(result, "vkCreateFence");
+    }
+
+    return fences;
+}
+
+void destroy_fences(
+    const Vulkan_device &device,
+    const std::array<VkFence, Vulkan_context::frames_in_flight> &fences)
+{
+    for (const auto fence : fences)
+    {
+        if (fence)
+        {
+            device.vkDestroyFence(device.device, fence, nullptr);
+        }
+    }
+}
+
 } // namespace
 
 Vulkan_context create_vulkan_context(GLFWwindow *window)
 {
     Vulkan_context context {};
 
-    // FIXME: we really should set handles to nullptr/VK_NULL_HANDLE when we
+    // FIXME: we really should set handles to {} when we
     // destroy them, to avoid accidental double freeing
 
     SCOPE_FAIL([&] { destroy_vulkan_context(context); });
@@ -2289,9 +2540,15 @@ void load_scene(Vulkan_context &context,
     context.descriptor_set_layout =
         create_descriptor_set_layout(context.device);
 
+    context.final_render_descriptor_set_layout =
+        create_final_render_descriptor_set_layout(context.device);
+
     context.descriptor_pool = create_descriptor_pool(context.device);
 
-    context.descriptor_set = allocate_descriptor_set(context);
+    context.descriptor_set = create_descriptor_set(context);
+
+    context.final_render_descriptor_set =
+        create_final_render_descriptor_set(context);
 
     context.ray_tracing_pipeline_layout =
         create_ray_tracing_pipeline_layout(context);
@@ -2302,10 +2559,23 @@ void load_scene(Vulkan_context &context,
 
     context.render_pass =
         create_render_pass(context.device, context.swapchain.format);
+
+    context.framebuffers = create_framebuffers(context);
+
+    context.command_buffers = create_command_buffers(context);
+
+    context.image_available_semaphores = create_semaphores(context.device);
+    context.render_finished_semaphores = create_semaphores(context.device);
+    context.in_flight_fences = create_fences(context.device);
 }
 
 void destroy_scene_resources(const Vulkan_context &context)
 {
+    destroy_fences(context.device, context.in_flight_fences);
+    destroy_semaphores(context.device, context.render_finished_semaphores);
+    destroy_semaphores(context.device, context.image_available_semaphores);
+    destroy_command_buffers(context, context.command_buffers);
+    destroy_framebuffers(context.device, context.framebuffers);
     destroy_render_pass(context.device, context.render_pass);
     destroy_shader_binding_table(context.allocator,
                                  context.shader_binding_table);
@@ -2313,6 +2583,8 @@ void destroy_scene_resources(const Vulkan_context &context)
     destroy_pipeline_layout(context.device,
                             context.ray_tracing_pipeline_layout);
     destroy_descriptor_pool(context.device, context.descriptor_pool);
+    destroy_descriptor_set_layout(context.device,
+                                  context.final_render_descriptor_set_layout);
     destroy_descriptor_set_layout(context.device,
                                   context.descriptor_set_layout);
     destroy_acceleration_structure(context, context.tlas);
