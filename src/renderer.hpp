@@ -74,6 +74,7 @@ struct Vulkan_device
     PFN_vkEndCommandBuffer vkEndCommandBuffer;
     PFN_vkQueueSubmit vkQueueSubmit;
     PFN_vkQueueWaitIdle vkQueueWaitIdle;
+    PFN_vkDeviceWaitIdle vkDeviceWaitIdle;
     PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier;
     PFN_vkCmdCopyBuffer vkCmdCopyBuffer;
     PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
@@ -190,6 +191,9 @@ struct Vulkan_context
     std::array<VkSemaphore, frames_in_flight> render_finished_semaphores;
     std::array<VkFence, frames_in_flight> in_flight_fences;
     std::uint32_t current_frame;
+    bool framebuffer_resized;
+    std::uint32_t framebuffer_width;
+    std::uint32_t framebuffer_height;
 };
 
 [[nodiscard]] Vulkan_context create_vulkan_context(struct GLFWwindow *window);
@@ -204,6 +208,10 @@ void load_scene(Vulkan_context &context,
 void destroy_scene_resources(const Vulkan_context &context);
 
 void render(const Vulkan_context &context);
+
+void resize_framebuffer(Vulkan_context &context,
+                        std::uint32_t width,
+                        std::uint32_t height);
 
 void write_to_png(const Vulkan_context &context, const char *file_name);
 

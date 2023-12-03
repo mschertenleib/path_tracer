@@ -726,6 +726,7 @@ get_queue_family_indices(const Vulkan_instance &instance,
     load(device.vkEndCommandBuffer, "vkEndCommandBuffer");
     load(device.vkQueueSubmit, "vkQueueSubmit");
     load(device.vkQueueWaitIdle, "vkQueueWaitIdle");
+    load(device.vkDeviceWaitIdle, "vkDeviceWaitIdle");
     load(device.vkCmdPipelineBarrier, "vkCmdPipelineBarrier");
     load(device.vkCmdCopyBuffer, "vkCmdCopyBuffer");
     load(device.vkCmdBuildAccelerationStructuresKHR,
@@ -2471,6 +2472,24 @@ void init_imgui(const Vulkan_context &context)
     ImGui_ImplVulkan_DestroyFontUploadObjects();
 }
 
+void recreate_swapchain(Vulkan_context &context)
+{
+    const auto result = context.device.vkDeviceWaitIdle(context.device.device);
+    check_result(result, "vkDeviceWaitIdle");
+
+    destroy_swapchain(context.device, context.swapchain);
+    context.swapchain = {};
+    context.swapchain = create_swapchain(context.instance,
+                                         context.device,
+                                         context.surface,
+                                         context.framebuffer_width,
+                                         context.framebuffer_height);
+
+    destroy_framebuffers(context.device, context.framebuffers);
+    context.framebuffers = {};
+    context.framebuffers = create_framebuffers(context);
+}
+
 } // namespace
 
 Vulkan_context create_vulkan_context(GLFWwindow *window)
@@ -2682,6 +2701,15 @@ void render(const Vulkan_context &context)
         1);
 
     end_one_time_submit_command_buffer(context, command_buffer);
+}
+
+void resize_framebuffer(Vulkan_context &context,
+                        std::uint32_t width,
+                        std::uint32_t height)
+{
+    context.framebuffer_resized = true;
+    context.framebuffer_width = width;
+    context.framebuffer_height = height;
 }
 
 void write_to_png(const Vulkan_context &context, const char *file_name)
