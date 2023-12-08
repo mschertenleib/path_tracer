@@ -202,7 +202,7 @@ struct Vulkan_context
     bool framebuffer_resized;
     std::uint32_t framebuffer_width;
     std::uint32_t framebuffer_height;
-    std::uint32_t sample_count;
+    std::uint32_t frame_count;
 };
 
 [[nodiscard]] Vulkan_context create_vulkan_context(struct GLFWwindow *window);

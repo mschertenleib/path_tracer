@@ -24,7 +24,7 @@ namespace
 
 struct Push_constants
 {
-    std::uint32_t sample_count;
+    std::uint32_t frame_count;
     std::uint32_t samples_per_frame;
 };
 static_assert(sizeof(Push_constants) <= 128);
@@ -1933,8 +1933,7 @@ create_final_render_descriptor_set(const Vulkan_context &context)
 create_ray_tracing_pipeline_layout(const Vulkan_context &context)
 {
     constexpr VkPushConstantRange push_constant_range {
-        .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR |
-                      VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+        .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
         .offset = 0,
         .size = sizeof(Push_constants)};
 
@@ -2721,12 +2720,11 @@ void render_single(const Vulkan_context &context)
         0,
         nullptr);
 
-    const Push_constants push_constants {.sample_count = 0,
+    const Push_constants push_constants {.frame_count = context.frame_count,
                                          .samples_per_frame = 1};
     context.device.vkCmdPushConstants(command_buffer,
                                       context.ray_tracing_pipeline_layout,
-                                      VK_SHADER_STAGE_RAYGEN_BIT_KHR |
-                                          VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+                                      VK_SHADER_STAGE_RAYGEN_BIT_KHR,
                                       0,
                                       sizeof(Push_constants),
                                       &push_constants);
@@ -2815,17 +2813,16 @@ void draw_frame(Vulkan_context &context)
         nullptr);
 
     constexpr std::uint32_t samples_per_frame {1};
-    const Push_constants push_constants {.sample_count = context.sample_count,
+    const Push_constants push_constants {.frame_count = context.frame_count,
                                          .samples_per_frame =
                                              samples_per_frame};
     context.device.vkCmdPushConstants(command_buffer,
                                       context.ray_tracing_pipeline_layout,
-                                      VK_SHADER_STAGE_RAYGEN_BIT_KHR |
-                                          VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+                                      VK_SHADER_STAGE_RAYGEN_BIT_KHR,
                                       0,
                                       sizeof(Push_constants),
                                       &push_constants);
-    context.sample_count += samples_per_frame;
+    ++context.frame_count;
 
     context.device.vkCmdTraceRaysKHR(
         command_buffer,
