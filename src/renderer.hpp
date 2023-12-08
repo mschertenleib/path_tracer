@@ -75,8 +75,8 @@ struct Vulkan_device
     PFN_vkQueueSubmit vkQueueSubmit;
     PFN_vkQueueWaitIdle vkQueueWaitIdle;
     PFN_vkDeviceWaitIdle vkDeviceWaitIdle;
-    PFN_vkCmdClearColorImage vkCmdClearColorImage ;
-        PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier;
+    PFN_vkCmdClearColorImage vkCmdClearColorImage;
+    PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier;
     PFN_vkCmdCopyBuffer vkCmdCopyBuffer;
     PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
     PFN_vkCmdBindPipeline vkCmdBindPipeline;

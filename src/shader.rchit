@@ -18,24 +18,6 @@ layout (location = 0) rayPayloadInEXT vec3 hit_value;
 
 hitAttributeEXT vec2 attributes;
 
-uint hash(uint x)
-{
-    x += x << 10;
-    x ^= x >> 6;
-    x += x << 3;
-    x ^= x >> 11;
-    x += x << 15;
-    return x;
-}
-
-float random(inout uint rng_state)
-{
-    rng_state ^= rng_state << 13;
-    rng_state ^= rng_state >> 17;
-    rng_state ^= rng_state << 5;
-    return float(rng_state) * (1.0 / 4294967295.0);
-}
-
 void main()
 {
     const uint i0 = indices[gl_PrimitiveID * 3 + 0];

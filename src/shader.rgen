@@ -41,6 +41,24 @@ const vec3 camera_horizontal = viewport_width * camera_local_x;
 const vec3 camera_vertical = viewport_height * camera_local_y;
 const vec3 camera_lower_left_corner = -camera_horizontal / 2.0 - camera_vertical / 2.0 - camera_local_z;
 
+uint hash(uint x)
+{
+    x += x << 10;
+    x ^= x >> 6;
+    x += x << 3;
+    x ^= x >> 11;
+    x += x << 15;
+    return x;
+}
+
+float random(inout uint rng_state)
+{
+    rng_state ^= rng_state << 13;
+    rng_state ^= rng_state >> 17;
+    rng_state ^= rng_state << 5;
+    return float(rng_state) * (1.0 / 4294967295.0);
+}
+
 void main()
 {
     const uvec2 image_size = imageSize(storage_image);
@@ -50,12 +68,14 @@ void main()
         return;
     }
 
+    uint rng_state = hash(gl_LaunchIDEXT.y * image_size.x + gl_LaunchIDEXT.x) ^ hash(sample_count);
+
     vec4 accumulated_color = imageLoad(storage_image, ivec2(gl_LaunchIDEXT.xy)) * sample_count;
 
     for (uint s = 0; s < samples_per_frame; ++s)
     {
-        const float u = (float(gl_LaunchIDEXT.x) + 0.5) / float(image_size.x);
-        const float v = (float(image_size.y - 1 - gl_LaunchIDEXT.y) + 0.5) / float(image_size.y);
+        const float u = (float(gl_LaunchIDEXT.x) + random(rng_state)) / float(image_size.x);
+        const float v = (float(image_size.y - 1 - gl_LaunchIDEXT.y) + random(rng_state)) / float(image_size.y);
 
         const vec3 origin = camera_position;
         const vec3 direction = normalize(
