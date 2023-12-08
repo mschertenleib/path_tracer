@@ -190,6 +190,8 @@ int main(int argc, char *argv[])
         SCOPE_EXIT([&] { destroy_scene_resources(context); });
         t.stop();
 
+        glfwSetWindowUserPointer(window, &context);
+
         char input_text_buffer[1024] {"image.png"};
 
         while (!glfwWindowShouldClose(window))
