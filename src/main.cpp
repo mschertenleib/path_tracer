@@ -116,9 +116,9 @@ int main(int argc, char *argv[])
 {
     try
     {
-        if (argc != 3)
+        if (argc != 2)
         {
-            std::cerr << "Usage: " << argv[0] << " <model.obj> <output.png>\n";
+            std::cerr << "Usage: " << argv[0] << " <model.obj>\n";
             return EXIT_FAILURE;
         }
 
@@ -146,8 +146,8 @@ int main(int argc, char *argv[])
         }
         SCOPE_EXIT([window] { glfwDestroyWindow(window); });
 
-        glfwSetKeyCallback(window, glfw_key_callback);
-        glfwSetFramebufferSizeCallback(window, glfw_framebuffer_size_callback);
+        glfwSetKeyCallback(window, &glfw_key_callback);
+        glfwSetFramebufferSizeCallback(window, &glfw_framebuffer_size_callback);
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -249,11 +249,11 @@ int main(int argc, char *argv[])
                 ImGui::Text("Press [F] to toggle fullscreen");
 
                 ImGui::InputText(
-                    "##", input_text_buffer, sizeof(input_text_buffer));
+                    "##", input_text_buffer, sizeof(input_text_buffer) - 1);
                 if (ImGui::Button("Write to PNG"))
                 {
                     t.start("write_to_png");
-                    write_to_png(context, argv[2]);
+                    write_to_png(context, input_text_buffer);
                     t.stop();
                 }
             }
