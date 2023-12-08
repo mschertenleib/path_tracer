@@ -75,7 +75,8 @@ struct Vulkan_device
     PFN_vkQueueSubmit vkQueueSubmit;
     PFN_vkQueueWaitIdle vkQueueWaitIdle;
     PFN_vkDeviceWaitIdle vkDeviceWaitIdle;
-    PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier;
+    PFN_vkCmdClearColorImage vkCmdClearColorImage ;
+        PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier;
     PFN_vkCmdCopyBuffer vkCmdCopyBuffer;
     PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
     PFN_vkCmdBindPipeline vkCmdBindPipeline;
@@ -84,6 +85,8 @@ struct Vulkan_device
     PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
     PFN_vkCmdBlitImage vkCmdBlitImage;
     PFN_vkCmdCopyImageToBuffer vkCmdCopyImageToBuffer;
+    PFN_vkCmdBeginRenderPass vkCmdBeginRenderPass;
+    PFN_vkCmdEndRenderPass vkCmdEndRenderPass;
     PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddress;
     PFN_vkGetAccelerationStructureDeviceAddressKHR
         vkGetAccelerationStructureDeviceAddressKHR;
@@ -114,6 +117,11 @@ struct Vulkan_device
     PFN_vkDestroySemaphore vkDestroySemaphore;
     PFN_vkCreateFence vkCreateFence;
     PFN_vkDestroyFence vkDestroyFence;
+    PFN_vkWaitForFences vkWaitForFences;
+    PFN_vkAcquireNextImageKHR vkAcquireNextImageKHR;
+    PFN_vkResetFences vkResetFences;
+    PFN_vkResetCommandBuffer vkResetCommandBuffer;
+    PFN_vkQueuePresentKHR vkQueuePresentKHR;
 };
 
 struct Vulkan_swapchain
@@ -194,6 +202,7 @@ struct Vulkan_context
     bool framebuffer_resized;
     std::uint32_t framebuffer_width;
     std::uint32_t framebuffer_height;
+    std::uint32_t sample_count;
 };
 
 [[nodiscard]] Vulkan_context create_vulkan_context(struct GLFWwindow *window);
@@ -207,12 +216,16 @@ void load_scene(Vulkan_context &context,
 
 void destroy_scene_resources(const Vulkan_context &context);
 
-void render(const Vulkan_context &context);
+void render_single(const Vulkan_context &context);
+
+void draw_frame(Vulkan_context &context);
 
 void resize_framebuffer(Vulkan_context &context,
                         std::uint32_t width,
                         std::uint32_t height);
 
 void write_to_png(const Vulkan_context &context, const char *file_name);
+
+void wait_idle(const Vulkan_context &context);
 
 #endif // RENDERER_HPP

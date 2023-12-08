@@ -24,7 +24,8 @@ namespace
 
 struct Push_constants
 {
-    std::uint32_t placeholder;
+    std::uint32_t sample_count;
+    std::uint32_t samples_per_frame;
 };
 static_assert(sizeof(Push_constants) <= 128);
 
@@ -727,6 +728,7 @@ get_queue_family_indices(const Vulkan_instance &instance,
     load(device.vkQueueSubmit, "vkQueueSubmit");
     load(device.vkQueueWaitIdle, "vkQueueWaitIdle");
     load(device.vkDeviceWaitIdle, "vkDeviceWaitIdle");
+    load(device.vkCmdClearColorImage, "vkCmdClearColorImage");
     load(device.vkCmdPipelineBarrier, "vkCmdPipelineBarrier");
     load(device.vkCmdCopyBuffer, "vkCmdCopyBuffer");
     load(device.vkCmdBuildAccelerationStructuresKHR,
@@ -737,6 +739,8 @@ get_queue_family_indices(const Vulkan_instance &instance,
     load(device.vkCmdTraceRaysKHR, "vkCmdTraceRaysKHR");
     load(device.vkCmdBlitImage, "vkCmdBlitImage");
     load(device.vkCmdCopyImageToBuffer, "vkCmdCopyImageToBuffer");
+    load(device.vkCmdBeginRenderPass, "vkCmdBeginRenderPass");
+    load(device.vkCmdEndRenderPass, "vkCmdEndRenderPass");
     load(device.vkGetBufferDeviceAddress, "vkGetBufferDeviceAddress");
     load(device.vkGetAccelerationStructureDeviceAddressKHR,
          "vkGetAccelerationStructureDeviceAddressKHR");
@@ -770,6 +774,11 @@ get_queue_family_indices(const Vulkan_instance &instance,
     load(device.vkDestroySemaphore, "vkDestroySemaphore");
     load(device.vkCreateFence, "vkCreateFence");
     load(device.vkDestroyFence, "vkDestroyFence");
+    load(device.vkWaitForFences, "vkWaitForFences");
+    load(device.vkAcquireNextImageKHR, "vkAcquireNextImageKHR");
+    load(device.vkResetFences, "vkResetFences");
+    load(device.vkResetCommandBuffer, "vkResetCommandBuffer");
+    load(device.vkQueuePresentKHR, "vkQueuePresentKHR");
 
     return device;
 }
@@ -2521,8 +2530,16 @@ Vulkan_context create_vulkan_context(GLFWwindow *window)
 
     context.command_pool = create_command_pool(context.device);
 
-    context.swapchain = create_swapchain(
-        context.instance, context.device, context.surface, 640, 480);
+    int width {};
+    int height {};
+    glfwGetFramebufferSize(window, &width, &height);
+    context.framebuffer_width = static_cast<std::uint32_t>(width);
+    context.framebuffer_height = static_cast<std::uint32_t>(height);
+    context.swapchain = create_swapchain(context.instance,
+                                         context.device,
+                                         context.surface,
+                                         context.framebuffer_width,
+                                         context.framebuffer_height);
 
     return context;
 }
@@ -2551,7 +2568,8 @@ void load_scene(Vulkan_context &context,
                                          render_height,
                                          storage_image_format,
                                          VK_IMAGE_USAGE_STORAGE_BIT |
-                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                             VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     context.storage_image_view = create_image_view(
         context.device, context.storage_image.image, storage_image_format);
 
@@ -2566,27 +2584,50 @@ void load_scene(Vulkan_context &context,
     context.render_target_view = create_image_view(
         context.device, context.render_target.image, render_target_format);
 
-    const auto command_buffer = begin_one_time_submit_command_buffer(context);
-    transition_image_layout(context.device,
-                            command_buffer,
-                            context.storage_image.image,
-                            VK_ACCESS_NONE,
-                            VK_ACCESS_SHADER_READ_BIT |
-                                VK_ACCESS_SHADER_WRITE_BIT,
-                            VK_IMAGE_LAYOUT_UNDEFINED,
-                            VK_IMAGE_LAYOUT_GENERAL,
-                            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
-    transition_image_layout(context.device,
-                            command_buffer,
-                            context.render_target.image,
-                            VK_ACCESS_NONE,
-                            VK_ACCESS_SHADER_READ_BIT,
-                            VK_IMAGE_LAYOUT_UNDEFINED,
-                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
-    end_one_time_submit_command_buffer(context, command_buffer);
+    {
+        const auto command_buffer =
+            begin_one_time_submit_command_buffer(context);
+        transition_image_layout(context.device,
+                                command_buffer,
+                                context.storage_image.image,
+                                VK_ACCESS_NONE,
+                                VK_ACCESS_SHADER_READ_BIT |
+                                    VK_ACCESS_SHADER_WRITE_BIT,
+                                VK_IMAGE_LAYOUT_UNDEFINED,
+                                VK_IMAGE_LAYOUT_GENERAL,
+                                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR |
+                                    VK_PIPELINE_STAGE_TRANSFER_BIT);
+        transition_image_layout(context.device,
+                                command_buffer,
+                                context.render_target.image,
+                                VK_ACCESS_NONE,
+                                VK_ACCESS_SHADER_READ_BIT,
+                                VK_IMAGE_LAYOUT_UNDEFINED,
+                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+        end_one_time_submit_command_buffer(context, command_buffer);
+    }
+    {
+        const auto command_buffer =
+            begin_one_time_submit_command_buffer(context);
+        constexpr VkClearColorValue clear_value {
+            .float32 = {0.0f, 0.0f, 0.0f, 1.0f}};
+        constexpr VkImageSubresourceRange subresource_range {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1};
+        context.device.vkCmdClearColorImage(command_buffer,
+                                            context.storage_image.image,
+                                            VK_IMAGE_LAYOUT_GENERAL,
+                                            &clear_value,
+                                            1,
+                                            &subresource_range);
+        end_one_time_submit_command_buffer(context, command_buffer);
+    }
 
     context.render_target_sampler = create_sampler(context.device);
 
@@ -2662,7 +2703,7 @@ void destroy_scene_resources(const Vulkan_context &context)
     destroy_image(context.allocator, context.storage_image);
 }
 
-void render(const Vulkan_context &context)
+void render_single(const Vulkan_context &context)
 {
     const auto command_buffer = begin_one_time_submit_command_buffer(context);
 
@@ -2680,8 +2721,8 @@ void render(const Vulkan_context &context)
         0,
         nullptr);
 
-    const Push_constants push_constants {};
-
+    const Push_constants push_constants {.sample_count = 0,
+                                         .samples_per_frame = 1};
     context.device.vkCmdPushConstants(command_buffer,
                                       context.ray_tracing_pipeline_layout,
                                       VK_SHADER_STAGE_RAYGEN_BIT_KHR |
@@ -2701,6 +2742,267 @@ void render(const Vulkan_context &context)
         1);
 
     end_one_time_submit_command_buffer(context, command_buffer);
+}
+
+void draw_frame(Vulkan_context &context)
+{
+    if (context.framebuffer_width == 0 || context.framebuffer_height == 0)
+    {
+        // TODO: we shouldn't really be waiting here
+        glfwWaitEvents();
+        return;
+    }
+
+    auto result = context.device.vkWaitForFences(
+        context.device.device,
+        1,
+        &context.in_flight_fences[context.current_frame],
+        VK_TRUE,
+        std::numeric_limits<std::uint64_t>::max());
+    check_result(result, "vkWaitForFences");
+
+    std::uint32_t image_index {};
+    result = context.device.vkAcquireNextImageKHR(
+        context.device.device,
+        context.swapchain.swapchain,
+        std::numeric_limits<std::uint64_t>::max(),
+        context.image_available_semaphores[context.current_frame],
+        {},
+        &image_index);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        recreate_swapchain(context);
+        return;
+    }
+    else if (result != VK_SUBOPTIMAL_KHR)
+    {
+        check_result(result, "vkAcquireNextImageKHR");
+    }
+
+    result = context.device.vkResetFences(
+        context.device.device,
+        1,
+        &context.in_flight_fences[context.current_frame]);
+    check_result(result, "vkResetFences");
+
+    const auto command_buffer = context.command_buffers[context.current_frame];
+
+    result = context.device.vkResetCommandBuffer(command_buffer, {});
+    check_result(result, "vkResetCommandBuffer");
+
+    constexpr VkCommandBufferBeginInfo command_buffer_begin_info {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = {},
+        .flags = {},
+        .pInheritanceInfo = {}};
+
+    result = context.device.vkBeginCommandBuffer(command_buffer,
+                                                 &command_buffer_begin_info);
+    check_result(result, "vkBeginCommandBuffer");
+
+    context.device.vkCmdBindPipeline(command_buffer,
+                                     VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+                                     context.ray_tracing_pipeline);
+
+    context.device.vkCmdBindDescriptorSets(
+        command_buffer,
+        VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+        context.ray_tracing_pipeline_layout,
+        0,
+        1,
+        &context.descriptor_set,
+        0,
+        nullptr);
+
+    constexpr std::uint32_t samples_per_frame {1};
+    const Push_constants push_constants {.sample_count = context.sample_count,
+                                         .samples_per_frame =
+                                             samples_per_frame};
+    context.device.vkCmdPushConstants(command_buffer,
+                                      context.ray_tracing_pipeline_layout,
+                                      VK_SHADER_STAGE_RAYGEN_BIT_KHR |
+                                          VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+                                      0,
+                                      sizeof(Push_constants),
+                                      &push_constants);
+    context.sample_count += samples_per_frame;
+
+    context.device.vkCmdTraceRaysKHR(
+        command_buffer,
+        &context.shader_binding_table.raygen_region,
+        &context.shader_binding_table.miss_region,
+        &context.shader_binding_table.hit_region,
+        &context.shader_binding_table.callable_region,
+        context.storage_image.width,
+        context.storage_image.height,
+        1);
+
+    constexpr VkImageSubresourceRange subresource_range {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1};
+
+    VkImageMemoryBarrier image_memory_barriers[] {
+        {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+         .pNext = {},
+         .srcAccessMask =
+             VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+         .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+         .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+         .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .image = context.storage_image.image,
+         .subresourceRange = subresource_range},
+        {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+         .pNext = {},
+         .srcAccessMask = VK_ACCESS_SHADER_READ_BIT,
+         .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+         .oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+         .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .image = context.render_target.image,
+         .subresourceRange = subresource_range}};
+
+    context.device.vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR |
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        {},
+        0,
+        nullptr,
+        0,
+        nullptr,
+        static_cast<std::uint32_t>(std::size(image_memory_barriers)),
+        image_memory_barriers);
+
+    constexpr VkImageSubresourceLayers subresource_layers {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .mipLevel = 0,
+        .baseArrayLayer = 0,
+        .layerCount = 1};
+
+    const VkImageBlit image_blit {
+        .srcSubresource = subresource_layers,
+        .srcOffsets = {{0, 0, 0},
+                       {static_cast<std::int32_t>(context.render_target.width),
+                        static_cast<std::int32_t>(context.render_target.height),
+                        1}},
+        .dstSubresource = subresource_layers,
+        .dstOffsets = {{0, 0, 0},
+                       {static_cast<std::int32_t>(context.render_target.width),
+                        static_cast<std::int32_t>(context.render_target.height),
+                        1}}};
+
+    context.device.vkCmdBlitImage(command_buffer,
+                                  context.storage_image.image,
+                                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                  context.render_target.image,
+                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                  1,
+                                  &image_blit,
+                                  VK_FILTER_NEAREST);
+
+    image_memory_barriers[0].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    image_memory_barriers[0].dstAccessMask =
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    image_memory_barriers[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    image_memory_barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    image_memory_barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    image_memory_barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    image_memory_barriers[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    image_memory_barriers[1].newLayout =
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    context.device.vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR |
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        {},
+        0,
+        nullptr,
+        0,
+        nullptr,
+        static_cast<std::uint32_t>(std::size(image_memory_barriers)),
+        image_memory_barriers);
+
+    constexpr VkClearValue clear_value {
+        .color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}}};
+
+    const VkRenderPassBeginInfo render_pass_begin_info {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .pNext = {},
+        .renderPass = context.render_pass,
+        .framebuffer = context.framebuffers[image_index],
+        .renderArea = {.offset = {0, 0}, .extent = context.swapchain.extent},
+        .clearValueCount = 1,
+        .pClearValues = &clear_value};
+
+    context.device.vkCmdBeginRenderPass(
+        command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
+
+    context.device.vkCmdEndRenderPass(command_buffer);
+
+    result = context.device.vkEndCommandBuffer(command_buffer);
+    check_result(result, "vkEndCommandBuffer");
+
+    constexpr VkPipelineStageFlags wait_stage {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+
+    const VkSubmitInfo submit_info {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = {},
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores =
+            &context.image_available_semaphores[context.current_frame],
+        .pWaitDstStageMask = &wait_stage,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &command_buffer,
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores =
+            &context.render_finished_semaphores[context.current_frame]};
+
+    result = context.device.vkQueueSubmit(
+        context.graphics_compute_queue,
+        1,
+        &submit_info,
+        context.in_flight_fences[context.current_frame]);
+    check_result(result, "vkQueueSubmit");
+
+    const VkPresentInfoKHR present_info {
+        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+        .pNext = {},
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores =
+            &context.render_finished_semaphores[context.current_frame],
+        .swapchainCount = 1,
+        .pSwapchains = &context.swapchain.swapchain,
+        .pImageIndices = &image_index,
+        .pResults = {}};
+
+    result =
+        context.device.vkQueuePresentKHR(context.present_queue, &present_info);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
+        context.framebuffer_resized)
+    {
+        context.framebuffer_resized = false;
+        recreate_swapchain(context);
+    }
+    else
+    {
+        check_result(result, "vkQueuePresentKHR");
+    }
+
+    context.current_frame =
+        (context.current_frame + 1) % Vulkan_context::frames_in_flight;
 }
 
 void resize_framebuffer(Vulkan_context &context,
@@ -2860,4 +3162,10 @@ void write_to_png(const Vulkan_context &context, const char *file_name)
     {
         throw std::runtime_error("Failed to write PNG image");
     }
+}
+
+void wait_idle(const Vulkan_context &context)
+{
+    const auto result = context.device.vkDeviceWaitIdle(context.device.device);
+    check_result(result, "vkDeviceWaitIdle");
 }

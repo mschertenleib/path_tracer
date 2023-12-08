@@ -14,11 +14,6 @@ layout (binding = 3, scalar) buffer Indices
     uint indices[];
 };
 
-layout (push_constant) uniform Push_constants
-{
-    uint rng_seed;
-};
-
 layout (location = 0) rayPayloadInEXT vec3 hit_value;
 
 hitAttributeEXT vec2 attributes;
