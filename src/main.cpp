@@ -248,6 +248,12 @@ int main(int argc, char *argv[])
 
                 ImGui::Text("Press [F] to toggle fullscreen");
 
+                auto samples_per_frame =
+                    static_cast<int>(context.samples_per_frame);
+                ImGui::InputInt("Samples per frame", &samples_per_frame, 1, 10);
+                context.samples_per_frame =
+                    static_cast<std::uint32_t>(std::max(samples_per_frame, 1));
+
                 ImGui::InputText(
                     "##", input_text_buffer, sizeof(input_text_buffer) - 1);
                 if (ImGui::Button("Write to PNG"))

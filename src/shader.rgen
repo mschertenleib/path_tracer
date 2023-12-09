@@ -70,7 +70,7 @@ void main()
 
         vec3 transmitted = vec3(1.0);
 
-        for (uint depth = 0; depth < 32; ++depth)
+        for (uint depth = 0; depth < 64; ++depth)
         {
             traceRayEXT(tlas,
                         gl_RayFlagsOpaqueEXT,
@@ -81,7 +81,7 @@ void main()
                         payload.ray_origin,
                         0.0,
                         payload.ray_direction,
-                        10000.0,
+                        1000.0,
                         0);
 
             transmitted *= payload.color;

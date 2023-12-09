@@ -78,6 +78,7 @@ void main()
     uint rng_state = payload.rng_state;
 
     payload.color = (world_normal + vec3(1.0)) * 0.5;
+    payload.color = vec3(0.75, 0.5, 0.5);
     payload.ray_origin = offset_position_along_normal(world_position, world_normal);
     payload.ray_direction = reflect_diffuse(world_normal, rng_state);
     payload.hit_sky = false;

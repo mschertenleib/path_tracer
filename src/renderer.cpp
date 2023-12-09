@@ -2669,6 +2669,9 @@ void load_scene(Vulkan_context &context,
     context.render_finished_semaphores = create_semaphores(context.device);
     context.in_flight_fences = create_fences(context.device);
 
+    context.frame_count = 0;
+    context.samples_per_frame = 1;
+
     init_imgui(context);
 }
 
@@ -2812,10 +2815,9 @@ void draw_frame(Vulkan_context &context)
         0,
         nullptr);
 
-    constexpr std::uint32_t samples_per_frame {1};
     const Push_constants push_constants {.frame_count = context.frame_count,
                                          .samples_per_frame =
-                                             samples_per_frame};
+                                             context.samples_per_frame};
     context.device.vkCmdPushConstants(command_buffer,
                                       context.ray_tracing_pipeline_layout,
                                       VK_SHADER_STAGE_RAYGEN_BIT_KHR,
