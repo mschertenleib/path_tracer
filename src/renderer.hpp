@@ -217,8 +217,6 @@ void load_scene(Vulkan_context &context,
 
 void destroy_scene_resources(const Vulkan_context &context);
 
-void render_single(const Vulkan_context &context);
-
 void draw_frame(Vulkan_context &context);
 
 void resize_framebuffer(Vulkan_context &context,

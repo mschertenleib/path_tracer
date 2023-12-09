@@ -2705,46 +2705,6 @@ void destroy_scene_resources(const Vulkan_context &context)
     destroy_image(context.allocator, context.storage_image);
 }
 
-void render_single(const Vulkan_context &context)
-{
-    const auto command_buffer = begin_one_time_submit_command_buffer(context);
-
-    context.device.vkCmdBindPipeline(command_buffer,
-                                     VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                                     context.ray_tracing_pipeline);
-
-    context.device.vkCmdBindDescriptorSets(
-        command_buffer,
-        VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-        context.ray_tracing_pipeline_layout,
-        0,
-        1,
-        &context.descriptor_set,
-        0,
-        nullptr);
-
-    const Push_constants push_constants {.frame_count = context.frame_count,
-                                         .samples_per_frame = 1};
-    context.device.vkCmdPushConstants(command_buffer,
-                                      context.ray_tracing_pipeline_layout,
-                                      VK_SHADER_STAGE_RAYGEN_BIT_KHR,
-                                      0,
-                                      sizeof(Push_constants),
-                                      &push_constants);
-
-    context.device.vkCmdTraceRaysKHR(
-        command_buffer,
-        &context.shader_binding_table.raygen_region,
-        &context.shader_binding_table.miss_region,
-        &context.shader_binding_table.hit_region,
-        &context.shader_binding_table.callable_region,
-        context.storage_image.width,
-        context.storage_image.height,
-        1);
-
-    end_one_time_submit_command_buffer(context, command_buffer);
-}
-
 void draw_frame(Vulkan_context &context)
 {
     if (context.framebuffer_width == 0 || context.framebuffer_height == 0)
@@ -3050,32 +3010,29 @@ void write_to_png(const Vulkan_context &context, const char *file_name)
         .baseArrayLayer = 0,
         .layerCount = 1};
 
-    const VkImageMemoryBarrier storage_image_memory_barrier {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .pNext = {},
-        .srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = context.storage_image.image,
-        .subresourceRange = subresource_range};
-
-    VkImageMemoryBarrier final_image_memory_barrier {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .pNext = {},
-        .srcAccessMask = VK_ACCESS_NONE,
-        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = final_image.image,
-        .subresourceRange = subresource_range};
-
-    const VkImageMemoryBarrier image_memory_barriers[] {
-        storage_image_memory_barrier, final_image_memory_barrier};
+    // Transition for the blit
+    VkImageMemoryBarrier image_memory_barriers[] {
+        {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+         .pNext = {},
+         .srcAccessMask =
+             VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+         .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+         .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+         .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .image = context.storage_image.image,
+         .subresourceRange = subresource_range},
+        {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+         .pNext = {},
+         .srcAccessMask = VK_ACCESS_NONE,
+         .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+         .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+         .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .image = final_image.image,
+         .subresourceRange = subresource_range}};
 
     context.device.vkCmdPipelineBarrier(
         command_buffer,
@@ -3117,21 +3074,30 @@ void write_to_png(const Vulkan_context &context, const char *file_name)
                                   &image_blit,
                                   VK_FILTER_NEAREST);
 
-    final_image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    final_image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    final_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    final_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    // Revert the storage image transition, and transition the final image for
+    // the transfer to CPU memory
+    image_memory_barriers[0].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    image_memory_barriers[0].dstAccessMask =
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    image_memory_barriers[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    image_memory_barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    image_memory_barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    image_memory_barriers[1].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    image_memory_barriers[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    image_memory_barriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 
-    context.device.vkCmdPipelineBarrier(command_buffer,
-                                        VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                        VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                        {},
-                                        0,
-                                        nullptr,
-                                        0,
-                                        nullptr,
-                                        1,
-                                        &final_image_memory_barrier);
+    context.device.vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT |
+            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+        {},
+        0,
+        nullptr,
+        0,
+        nullptr,
+        static_cast<std::uint32_t>(std::size(image_memory_barriers)),
+        image_memory_barriers);
 
     const VkBufferImageCopy copy_region {
         .bufferOffset = 0,
