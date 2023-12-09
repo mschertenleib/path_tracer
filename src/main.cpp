@@ -116,11 +116,15 @@ int main(int argc, char *argv[])
 {
     try
     {
-        if (argc != 2)
+        if (argc != 4)
         {
-            std::cerr << "Usage: " << argv[0] << " <model.obj>\n";
+            std::cerr << "Usage: " << argv[0]
+                      << " <model.obj> <width> <height>\n";
             return EXIT_FAILURE;
         }
+        const auto obj_file_name = argv[1];
+        const std::uint32_t render_width {std::stoul(argv[2])};
+        const std::uint32_t render_height {std::stoul(argv[3])};
 
         glfwSetErrorCallback(&glfw_error_callback);
 
@@ -180,11 +184,9 @@ int main(int argc, char *argv[])
         t.stop();
 
         t.start("load_obj");
-        const auto geometry = load_obj(argv[1]);
+        const auto geometry = load_obj(obj_file_name);
         t.stop();
 
-        constexpr std::uint32_t render_width {640};
-        constexpr std::uint32_t render_height {480};
         t.start("load_scene");
         load_scene(context, render_width, render_height, geometry);
         SCOPE_EXIT([&] { destroy_scene_resources(context); });
@@ -192,7 +194,7 @@ int main(int argc, char *argv[])
 
         glfwSetWindowUserPointer(window, &context);
 
-        char input_text_buffer[1024] {"image.png"};
+        char filename_buffer[1024] {"image.png"};
 
         while (!glfwWindowShouldClose(window))
         {
@@ -248,23 +250,34 @@ int main(int argc, char *argv[])
 
                 ImGui::Text("Press [F] to toggle fullscreen");
 
+                ImGui::Text("Resolution: %u x %u", render_width, render_height);
+
+                ImGui::Text("Samples: %u", context.sample_count);
+
+                auto samples_to_render =
+                    static_cast<int>(context.samples_to_render);
+                ImGui::InputInt("Total samples", &samples_to_render);
+                context.samples_to_render =
+                    static_cast<std::uint32_t>(std::max(samples_to_render, 1));
+
                 auto samples_per_frame =
                     static_cast<int>(context.samples_per_frame);
                 ImGui::InputInt("Samples per frame", &samples_per_frame, 1, 10);
                 context.samples_per_frame =
                     static_cast<std::uint32_t>(std::max(samples_per_frame, 1));
 
-                if (ImGui::Button("Reset render"))
+                if (ImGui::Button("Reset render") ||
+                    context.samples_to_render < context.sample_count)
                 {
                     reset_render(context);
                 }
 
                 ImGui::InputText(
-                    "##", input_text_buffer, sizeof(input_text_buffer) - 1);
+                    "File name", filename_buffer, sizeof(filename_buffer) - 1);
                 if (ImGui::Button("Write to PNG"))
                 {
                     t.start("write_to_png");
-                    write_to_png(context, input_text_buffer);
+                    write_to_png(context, filename_buffer);
                     t.stop();
                 }
             }

@@ -56,6 +56,11 @@ vec3 reflect_diffuse(vec3 normal, inout uint rng_state)
     return normalize(direction);
 }
 
+vec3 reflect_specular(vec3 normal)
+{
+    return reflect(gl_WorldRayDirectionEXT, normal);
+}
+
 void main()
 {
     const uint i0 = indices[gl_PrimitiveID * 3 + 0];
@@ -78,7 +83,7 @@ void main()
     uint rng_state = payload.rng_state;
 
     payload.color = (world_normal + vec3(1.0)) * 0.5;
-    payload.color = vec3(0.75, 0.5, 0.5);
+    payload.color = vec3(0.75);
     payload.ray_origin = offset_position_along_normal(world_position, world_normal);
     payload.ray_direction = reflect_diffuse(world_normal, rng_state);
     payload.hit_sky = false;

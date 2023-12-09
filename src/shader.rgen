@@ -2,6 +2,7 @@
 
 #extension GL_EXT_ray_tracing: require
 #extension GL_EXT_scalar_block_layout: require
+#extension GL_EXT_debug_printf: enable
 
 #include "shader_common.glsl"
 
@@ -37,23 +38,46 @@ void main()
         return;
     }
 
-    const vec3 position = vec3(-0.07, 0.15, 0.2);
-    const vec3 look_at = vec3(-0.02, 0.1, 0.0);
+    #if 1
+    const vec3 camera_position = vec3(278.0, 273.0, -800.0);
+    const vec3 look_at = vec3(278.0, 273.0, 0.0);
     const vec3 up = vec3(0.0, 1.0, 0.0);
-    const float vertical_fov = radians(60.0);
-    const float aspect_ratio = image_size.x / image_size.y;
-    const vec3 camera_position = position;
-    const vec3 camera_local_z = normalize(position - look_at);
+    const float focal_length = 0.035;
+    const float sensor_height = 0.025;
+    const float aspect_ratio = float(image_size.x) / float(image_size.y);
+    const vec3 camera_local_z = normalize(camera_position - look_at);
     const vec3 camera_local_x = normalize(cross(up, camera_local_z));
     const vec3 camera_local_y = cross(camera_local_z, camera_local_x);
-    const float viewport_height = 2.0 * tan(vertical_fov / 2.0);
+    const float viewport_height = sensor_height / focal_length;
     const float viewport_width = aspect_ratio * viewport_height;
     const vec3 camera_horizontal = viewport_width * camera_local_x;
     const vec3 camera_vertical = viewport_height * camera_local_y;
-    const vec3 camera_lower_left_corner = -camera_horizontal / 2.0 - camera_vertical / 2.0 - camera_local_z;
+    const vec3 camera_lower_left_corner = -camera_horizontal * 0.5 - camera_vertical * 0.5 - camera_local_z;
+    #else
+    const vec3 camera_position = vec3(-0.07, 0.15, 0.2);
+    const vec3 look_at = vec3(-0.02, 0.1, 0.0);
+    const vec3 up = vec3(0.0, 1.0, 0.0);
+    const float vertical_fov = radians(60.0);
+    const float aspect_ratio = float(image_size.x) / float(image_size.y);
+    const vec3 camera_local_z = normalize(camera_position - look_at);
+    const vec3 camera_local_x = normalize(cross(up, camera_local_z));
+    const vec3 camera_local_y = normalize(cross(camera_local_z, camera_local_x));
+    const float viewport_height = 2.0 * tan(vertical_fov * 0.5);
+    const float viewport_width = aspect_ratio * viewport_height;
+    const vec3 camera_horizontal = viewport_width * camera_local_x;
+    const vec3 camera_vertical = viewport_height * camera_local_y;
+    const vec3 camera_lower_left_corner = -camera_horizontal * 0.5 - camera_vertical * 0.5 - camera_local_z;
+    #endif
+
+    if (gl_LaunchIDEXT.y == 0 && gl_LaunchIDEXT.x == 0 && push.global_frame_count == 0)
+    {
+        debugPrintfEXT("\nCamera horizontal = [%f %f %f]\nCamera vertical = [%f %f %f]\n",
+                       camera_horizontal.x, camera_horizontal.y, camera_horizontal.z,
+                       camera_vertical.x, camera_vertical.y, camera_vertical.z);
+    }
 
     const uint pixel_index = gl_LaunchIDEXT.y * image_size.x + gl_LaunchIDEXT.x;
-    payload.rng_state = hash(pixel_index) ^ hash(push.global_frame_count);
+    payload.rng_state = hash(pixel_index) ^ hash(push.global_frame_count + 1);
 
     vec3 accumulated_pixel_color = vec3(0.0);
 
@@ -72,7 +96,7 @@ void main()
 
         vec3 transmitted = vec3(1.0);
 
-        for (uint depth = 0; depth < 64; ++depth)
+        for (uint depth = 0; depth < 32; ++depth)
         {
             traceRayEXT(tlas,
                         gl_RayFlagsOpaqueEXT,
@@ -83,7 +107,7 @@ void main()
                         payload.ray_origin,
                         0.0,
                         payload.ray_direction,
-                        1000.0,
+                        10000.0,
                         0);
 
             transmitted *= payload.color;

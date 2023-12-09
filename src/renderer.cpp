@@ -25,7 +25,7 @@ namespace
 struct Push_constants
 {
     std::uint32_t global_frame_count;
-    std::uint32_t frame_count;
+    std::uint32_t sample_count;
     std::uint32_t samples_per_frame;
 };
 static_assert(sizeof(Push_constants) <= 128);
@@ -2652,9 +2652,9 @@ void load_scene(Vulkan_context &context,
     context.in_flight_fences = create_fences(context.device);
 
     context.global_frame_count = 0;
-    context.frame_count = 0;
+    context.samples_to_render = 1000;
+    context.sample_count = 0;
     context.samples_per_frame = 1;
-    context.reset_render = true;
 
     init_imgui(context);
 }
@@ -2701,7 +2701,7 @@ void draw_frame(Vulkan_context &context)
     auto result = context.device.vkWaitForFences(
         context.device.device,
         1,
-        &context.in_flight_fences[context.current_frame],
+        &context.in_flight_fences[context.current_in_flight_frame],
         VK_TRUE,
         std::numeric_limits<std::uint64_t>::max());
     check_result(result, "vkWaitForFences");
@@ -2711,7 +2711,7 @@ void draw_frame(Vulkan_context &context)
         context.device.device,
         context.swapchain.swapchain,
         std::numeric_limits<std::uint64_t>::max(),
-        context.image_available_semaphores[context.current_frame],
+        context.image_available_semaphores[context.current_in_flight_frame],
         {},
         &image_index);
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
@@ -2727,10 +2727,11 @@ void draw_frame(Vulkan_context &context)
     result = context.device.vkResetFences(
         context.device.device,
         1,
-        &context.in_flight_fences[context.current_frame]);
+        &context.in_flight_fences[context.current_in_flight_frame]);
     check_result(result, "vkResetFences");
 
-    const auto command_buffer = context.command_buffers[context.current_frame];
+    const auto command_buffer =
+        context.command_buffers[context.current_in_flight_frame];
 
     result = context.device.vkResetCommandBuffer(command_buffer, {});
     check_result(result, "vkResetCommandBuffer");
@@ -2752,7 +2753,7 @@ void draw_frame(Vulkan_context &context)
         .baseArrayLayer = 0,
         .layerCount = 1};
 
-    if (context.reset_render)
+    if (context.sample_count == 0)
     {
         constexpr VkClearColorValue clear_value {
             .float32 = {0.0f, 0.0f, 0.0f, 1.0f}};
@@ -2787,133 +2788,140 @@ void draw_frame(Vulkan_context &context)
             nullptr,
             1,
             &image_memory_barrier);
-
-        context.reset_render = false;
     }
 
-    context.device.vkCmdBindPipeline(command_buffer,
-                                     VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                                     context.ray_tracing_pipeline);
+    if (context.sample_count < context.samples_to_render)
+    {
+        context.device.vkCmdBindPipeline(command_buffer,
+                                         VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+                                         context.ray_tracing_pipeline);
 
-    context.device.vkCmdBindDescriptorSets(
-        command_buffer,
-        VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-        context.ray_tracing_pipeline_layout,
-        0,
-        1,
-        &context.descriptor_set,
-        0,
-        nullptr);
+        context.device.vkCmdBindDescriptorSets(
+            command_buffer,
+            VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+            context.ray_tracing_pipeline_layout,
+            0,
+            1,
+            &context.descriptor_set,
+            0,
+            nullptr);
 
-    const Push_constants push_constants {
-        .global_frame_count = context.global_frame_count,
-        .frame_count = context.frame_count,
-        .samples_per_frame = context.samples_per_frame};
-    context.device.vkCmdPushConstants(command_buffer,
-                                      context.ray_tracing_pipeline_layout,
-                                      VK_SHADER_STAGE_RAYGEN_BIT_KHR,
-                                      0,
-                                      sizeof(Push_constants),
-                                      &push_constants);
-    ++context.global_frame_count;
-    ++context.frame_count;
+        const auto samples_this_frame =
+            std::min(context.samples_to_render - context.sample_count,
+                     context.samples_per_frame);
+        const Push_constants push_constants {
+            .global_frame_count = context.global_frame_count,
+            .sample_count = context.sample_count,
+            .samples_per_frame = samples_this_frame};
+        context.device.vkCmdPushConstants(command_buffer,
+                                          context.ray_tracing_pipeline_layout,
+                                          VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+                                          0,
+                                          sizeof(Push_constants),
+                                          &push_constants);
+        context.sample_count += samples_this_frame;
 
-    context.device.vkCmdTraceRaysKHR(
-        command_buffer,
-        &context.shader_binding_table.raygen_region,
-        &context.shader_binding_table.miss_region,
-        &context.shader_binding_table.hit_region,
-        &context.shader_binding_table.callable_region,
-        context.storage_image.width,
-        context.storage_image.height,
-        1);
+        context.device.vkCmdTraceRaysKHR(
+            command_buffer,
+            &context.shader_binding_table.raygen_region,
+            &context.shader_binding_table.miss_region,
+            &context.shader_binding_table.hit_region,
+            &context.shader_binding_table.callable_region,
+            context.storage_image.width,
+            context.storage_image.height,
+            1);
 
-    VkImageMemoryBarrier image_memory_barriers[] {
-        {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-         .pNext = {},
-         .srcAccessMask =
-             VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-         .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-         .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-         .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-         .image = context.storage_image.image,
-         .subresourceRange = subresource_range},
-        {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-         .pNext = {},
-         .srcAccessMask = VK_ACCESS_SHADER_READ_BIT,
-         .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-         .oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-         .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-         .image = context.render_target.image,
-         .subresourceRange = subresource_range}};
+        VkImageMemoryBarrier image_memory_barriers[] {
+            {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+             .pNext = {},
+             .srcAccessMask =
+                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+             .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+             .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+             .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+             .image = context.storage_image.image,
+             .subresourceRange = subresource_range},
+            {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+             .pNext = {},
+             .srcAccessMask = VK_ACCESS_SHADER_READ_BIT,
+             .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+             .oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+             .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+             .image = context.render_target.image,
+             .subresourceRange = subresource_range}};
 
-    context.device.vkCmdPipelineBarrier(
-        command_buffer,
-        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR |
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        {},
-        0,
-        nullptr,
-        0,
-        nullptr,
-        static_cast<std::uint32_t>(std::size(image_memory_barriers)),
-        image_memory_barriers);
+        context.device.vkCmdPipelineBarrier(
+            command_buffer,
+            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR |
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            {},
+            0,
+            nullptr,
+            0,
+            nullptr,
+            static_cast<std::uint32_t>(std::size(image_memory_barriers)),
+            image_memory_barriers);
 
-    constexpr VkImageSubresourceLayers subresource_layers {
-        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-        .mipLevel = 0,
-        .baseArrayLayer = 0,
-        .layerCount = 1};
+        constexpr VkImageSubresourceLayers subresource_layers {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1};
 
-    const VkImageBlit image_blit {
-        .srcSubresource = subresource_layers,
-        .srcOffsets = {{0, 0, 0},
-                       {static_cast<std::int32_t>(context.render_target.width),
-                        static_cast<std::int32_t>(context.render_target.height),
-                        1}},
-        .dstSubresource = subresource_layers,
-        .dstOffsets = {{0, 0, 0},
-                       {static_cast<std::int32_t>(context.render_target.width),
-                        static_cast<std::int32_t>(context.render_target.height),
-                        1}}};
+        const VkImageBlit image_blit {
+            .srcSubresource = subresource_layers,
+            .srcOffsets =
+                {{0, 0, 0},
+                 {static_cast<std::int32_t>(context.render_target.width),
+                  static_cast<std::int32_t>(context.render_target.height),
+                  1}},
+            .dstSubresource = subresource_layers,
+            .dstOffsets = {
+                {0, 0, 0},
+                {static_cast<std::int32_t>(context.render_target.width),
+                 static_cast<std::int32_t>(context.render_target.height),
+                 1}}};
 
-    context.device.vkCmdBlitImage(command_buffer,
-                                  context.storage_image.image,
-                                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                  context.render_target.image,
-                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                  1,
-                                  &image_blit,
-                                  VK_FILTER_NEAREST);
+        context.device.vkCmdBlitImage(command_buffer,
+                                      context.storage_image.image,
+                                      VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                      context.render_target.image,
+                                      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                      1,
+                                      &image_blit,
+                                      VK_FILTER_NEAREST);
 
-    image_memory_barriers[0].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    image_memory_barriers[0].dstAccessMask =
-        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-    image_memory_barriers[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    image_memory_barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    image_memory_barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    image_memory_barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    image_memory_barriers[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    image_memory_barriers[1].newLayout =
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        image_memory_barriers[0].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        image_memory_barriers[0].dstAccessMask =
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        image_memory_barriers[0].oldLayout =
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        image_memory_barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        image_memory_barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        image_memory_barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        image_memory_barriers[1].oldLayout =
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        image_memory_barriers[1].newLayout =
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    context.device.vkCmdPipelineBarrier(
-        command_buffer,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR |
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        {},
-        0,
-        nullptr,
-        0,
-        nullptr,
-        static_cast<std::uint32_t>(std::size(image_memory_barriers)),
-        image_memory_barriers);
+        context.device.vkCmdPipelineBarrier(
+            command_buffer,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR |
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            {},
+            0,
+            nullptr,
+            0,
+            nullptr,
+            static_cast<std::uint32_t>(std::size(image_memory_barriers)),
+            image_memory_barriers);
+    }
 
     constexpr VkClearValue clear_value {
         .color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}}};
@@ -2945,19 +2953,21 @@ void draw_frame(Vulkan_context &context)
         .pNext = {},
         .waitSemaphoreCount = 1,
         .pWaitSemaphores =
-            &context.image_available_semaphores[context.current_frame],
+            &context
+                 .image_available_semaphores[context.current_in_flight_frame],
         .pWaitDstStageMask = &wait_stage,
         .commandBufferCount = 1,
         .pCommandBuffers = &command_buffer,
         .signalSemaphoreCount = 1,
         .pSignalSemaphores =
-            &context.render_finished_semaphores[context.current_frame]};
+            &context
+                 .render_finished_semaphores[context.current_in_flight_frame]};
 
     result = context.device.vkQueueSubmit(
         context.graphics_compute_queue,
         1,
         &submit_info,
-        context.in_flight_fences[context.current_frame]);
+        context.in_flight_fences[context.current_in_flight_frame]);
     check_result(result, "vkQueueSubmit");
 
     const VkPresentInfoKHR present_info {
@@ -2965,7 +2975,8 @@ void draw_frame(Vulkan_context &context)
         .pNext = {},
         .waitSemaphoreCount = 1,
         .pWaitSemaphores =
-            &context.render_finished_semaphores[context.current_frame],
+            &context
+                 .render_finished_semaphores[context.current_in_flight_frame],
         .swapchainCount = 1,
         .pSwapchains = &context.swapchain.swapchain,
         .pImageIndices = &image_index,
@@ -2985,8 +2996,9 @@ void draw_frame(Vulkan_context &context)
         check_result(result, "vkQueuePresentKHR");
     }
 
-    context.current_frame =
-        (context.current_frame + 1) % Vulkan_context::frames_in_flight;
+    context.current_in_flight_frame = (context.current_in_flight_frame + 1) %
+                                      Vulkan_context::frames_in_flight;
+    ++context.global_frame_count;
 }
 
 void resize_framebuffer(Vulkan_context &context,
@@ -3000,8 +3012,7 @@ void resize_framebuffer(Vulkan_context &context,
 
 void reset_render(Vulkan_context &context)
 {
-    context.reset_render = true;
-    context.frame_count = 0;
+    context.sample_count = 0;
 }
 
 void write_to_png(const Vulkan_context &context, const char *file_name)

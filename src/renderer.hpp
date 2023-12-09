@@ -198,14 +198,14 @@ struct Vulkan_context
     std::array<VkSemaphore, frames_in_flight> image_available_semaphores;
     std::array<VkSemaphore, frames_in_flight> render_finished_semaphores;
     std::array<VkFence, frames_in_flight> in_flight_fences;
-    std::uint32_t current_frame;
+    std::uint32_t current_in_flight_frame;
     bool framebuffer_resized;
     std::uint32_t framebuffer_width;
     std::uint32_t framebuffer_height;
     std::uint32_t global_frame_count;
-    std::uint32_t frame_count;
+    std::uint32_t samples_to_render;
+    std::uint32_t sample_count;
     std::uint32_t samples_per_frame;
-    bool reset_render;
 };
 
 [[nodiscard]] Vulkan_context create_vulkan_context(struct GLFWwindow *window);
