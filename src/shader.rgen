@@ -23,7 +23,7 @@ layout (binding = 3, scalar) buffer Indices
 layout (push_constant) uniform Push_constants
 {
     uint global_frame_count;
-    uint frame_count;
+    uint sample_count;
     uint samples_per_frame;
 } push;
 
@@ -69,17 +69,10 @@ void main()
     const vec3 camera_lower_left_corner = -camera_horizontal * 0.5 - camera_vertical * 0.5 - camera_local_z;
     #endif
 
-    if (gl_LaunchIDEXT.y == 0 && gl_LaunchIDEXT.x == 0 && push.global_frame_count == 0)
-    {
-        debugPrintfEXT("\nCamera horizontal = [%f %f %f]\nCamera vertical = [%f %f %f]\n",
-                       camera_horizontal.x, camera_horizontal.y, camera_horizontal.z,
-                       camera_vertical.x, camera_vertical.y, camera_vertical.z);
-    }
-
     const uint pixel_index = gl_LaunchIDEXT.y * image_size.x + gl_LaunchIDEXT.x;
     payload.rng_state = hash(pixel_index) ^ hash(push.global_frame_count + 1);
 
-    vec3 accumulated_pixel_color = vec3(0.0);
+    vec4 accumulated_pixel_color = vec4(0.0);
 
     for (uint s = 0; s < push.samples_per_frame; ++s)
     {
@@ -114,14 +107,13 @@ void main()
 
             if (payload.hit_sky)
             {
-                accumulated_pixel_color += transmitted;
+                accumulated_pixel_color += vec4(transmitted, 1.0);
                 break;
             }
         }
     }
 
-    const vec4 this_average_color = vec4(accumulated_pixel_color / push.samples_per_frame, 1.0);
     vec4 average_color = imageLoad(storage_image, ivec2(gl_LaunchIDEXT.xy));
-    average_color = (average_color * push.frame_count + this_average_color) / (push.frame_count + 1);
+    average_color = (average_color * push.sample_count + accumulated_pixel_color) / (push.sample_count + push.samples_per_frame);
     imageStore(storage_image, ivec2(gl_LaunchIDEXT.xy), average_color);
 }

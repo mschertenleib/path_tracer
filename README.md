@@ -1,6 +1,11 @@
 # path_tracer
 
-A path tracer written in C++, using the Vulkan ray tracing extensions.
+A path tracer written in C++ and GLSL, using the Vulkan ray tracing extensions.
+
+A rendered image of
+the [Cornell Box](http://www.graphics.cornell.edu/online/box) (there is clearly
+an issue with the diffuse reflection):
+![](images/cornell_box.png)
 
 ## Build
 
