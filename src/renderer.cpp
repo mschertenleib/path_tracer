@@ -24,6 +24,7 @@ namespace
 
 struct Push_constants
 {
+    std::uint32_t global_frame_count;
     std::uint32_t frame_count;
     std::uint32_t samples_per_frame;
 };
@@ -2608,25 +2609,6 @@ void load_scene(Vulkan_context &context,
                                 VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
         end_one_time_submit_command_buffer(context, command_buffer);
     }
-    {
-        const auto command_buffer =
-            begin_one_time_submit_command_buffer(context);
-        constexpr VkClearColorValue clear_value {
-            .float32 = {0.0f, 0.0f, 0.0f, 1.0f}};
-        constexpr VkImageSubresourceRange subresource_range {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1};
-        context.device.vkCmdClearColorImage(command_buffer,
-                                            context.storage_image.image,
-                                            VK_IMAGE_LAYOUT_GENERAL,
-                                            &clear_value,
-                                            1,
-                                            &subresource_range);
-        end_one_time_submit_command_buffer(context, command_buffer);
-    }
 
     context.render_target_sampler = create_sampler(context.device);
 
@@ -2669,8 +2651,10 @@ void load_scene(Vulkan_context &context,
     context.render_finished_semaphores = create_semaphores(context.device);
     context.in_flight_fences = create_fences(context.device);
 
+    context.global_frame_count = 0;
     context.frame_count = 0;
     context.samples_per_frame = 1;
+    context.reset_render = true;
 
     init_imgui(context);
 }
@@ -2761,6 +2745,52 @@ void draw_frame(Vulkan_context &context)
                                                  &command_buffer_begin_info);
     check_result(result, "vkBeginCommandBuffer");
 
+    constexpr VkImageSubresourceRange subresource_range {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1};
+
+    if (context.reset_render)
+    {
+        constexpr VkClearColorValue clear_value {
+            .float32 = {0.0f, 0.0f, 0.0f, 1.0f}};
+        context.device.vkCmdClearColorImage(command_buffer,
+                                            context.storage_image.image,
+                                            VK_IMAGE_LAYOUT_GENERAL,
+                                            &clear_value,
+                                            1,
+                                            &subresource_range);
+
+        const VkImageMemoryBarrier image_memory_barrier {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .pNext = {},
+            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .dstAccessMask =
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = context.storage_image.image,
+            .subresourceRange = subresource_range};
+
+        context.device.vkCmdPipelineBarrier(
+            command_buffer,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+            {},
+            0,
+            nullptr,
+            0,
+            nullptr,
+            1,
+            &image_memory_barrier);
+
+        context.reset_render = false;
+    }
+
     context.device.vkCmdBindPipeline(command_buffer,
                                      VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
                                      context.ray_tracing_pipeline);
@@ -2775,15 +2805,17 @@ void draw_frame(Vulkan_context &context)
         0,
         nullptr);
 
-    const Push_constants push_constants {.frame_count = context.frame_count,
-                                         .samples_per_frame =
-                                             context.samples_per_frame};
+    const Push_constants push_constants {
+        .global_frame_count = context.global_frame_count,
+        .frame_count = context.frame_count,
+        .samples_per_frame = context.samples_per_frame};
     context.device.vkCmdPushConstants(command_buffer,
                                       context.ray_tracing_pipeline_layout,
                                       VK_SHADER_STAGE_RAYGEN_BIT_KHR,
                                       0,
                                       sizeof(Push_constants),
                                       &push_constants);
+    ++context.global_frame_count;
     ++context.frame_count;
 
     context.device.vkCmdTraceRaysKHR(
@@ -2795,13 +2827,6 @@ void draw_frame(Vulkan_context &context)
         context.storage_image.width,
         context.storage_image.height,
         1);
-
-    constexpr VkImageSubresourceRange subresource_range {
-        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-        .baseMipLevel = 0,
-        .levelCount = 1,
-        .baseArrayLayer = 0,
-        .layerCount = 1};
 
     VkImageMemoryBarrier image_memory_barriers[] {
         {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -2971,6 +2996,12 @@ void resize_framebuffer(Vulkan_context &context,
     context.framebuffer_resized = true;
     context.framebuffer_width = width;
     context.framebuffer_height = height;
+}
+
+void reset_render(Vulkan_context &context)
+{
+    context.reset_render = true;
+    context.frame_count = 0;
 }
 
 void write_to_png(const Vulkan_context &context, const char *file_name)

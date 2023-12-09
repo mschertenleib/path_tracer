@@ -254,6 +254,11 @@ int main(int argc, char *argv[])
                 context.samples_per_frame =
                     static_cast<std::uint32_t>(std::max(samples_per_frame, 1));
 
+                if (ImGui::Button("Reset render"))
+                {
+                    reset_render(context);
+                }
+
                 ImGui::InputText(
                     "##", input_text_buffer, sizeof(input_text_buffer) - 1);
                 if (ImGui::Button("Write to PNG"))

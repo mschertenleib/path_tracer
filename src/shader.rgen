@@ -21,9 +21,10 @@ layout (binding = 3, scalar) buffer Indices
 
 layout (push_constant) uniform Push_constants
 {
+    uint global_frame_count;
     uint frame_count;
     uint samples_per_frame;
-};
+} push;
 
 layout (location = 0) rayPayloadEXT Ray_payload payload;
 
@@ -51,11 +52,12 @@ void main()
     const vec3 camera_vertical = viewport_height * camera_local_y;
     const vec3 camera_lower_left_corner = -camera_horizontal / 2.0 - camera_vertical / 2.0 - camera_local_z;
 
-    payload.rng_state = hash(gl_LaunchIDEXT.y * image_size.x + gl_LaunchIDEXT.x) ^ hash(frame_count);
+    const uint pixel_index = gl_LaunchIDEXT.y * image_size.x + gl_LaunchIDEXT.x;
+    payload.rng_state = hash(pixel_index) ^ hash(push.global_frame_count);
 
     vec3 accumulated_pixel_color = vec3(0.0);
 
-    for (uint s = 0; s < samples_per_frame; ++s)
+    for (uint s = 0; s < push.samples_per_frame; ++s)
     {
         const float u_offset = random(payload.rng_state);
         const float v_offset = random(payload.rng_state);
@@ -94,7 +96,8 @@ void main()
         }
     }
 
+    const vec4 this_average_color = vec4(accumulated_pixel_color / push.samples_per_frame, 1.0);
     vec4 average_color = imageLoad(storage_image, ivec2(gl_LaunchIDEXT.xy));
-    average_color = (average_color * frame_count + vec4(accumulated_pixel_color / samples_per_frame, 1.0)) / (frame_count + 1);
+    average_color = (average_color * push.frame_count + this_average_color) / (push.frame_count + 1);
     imageStore(storage_image, ivec2(gl_LaunchIDEXT.xy), average_color);
 }

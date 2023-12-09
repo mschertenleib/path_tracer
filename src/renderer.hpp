@@ -202,8 +202,10 @@ struct Vulkan_context
     bool framebuffer_resized;
     std::uint32_t framebuffer_width;
     std::uint32_t framebuffer_height;
+    std::uint32_t global_frame_count;
     std::uint32_t frame_count;
     std::uint32_t samples_per_frame;
+    bool reset_render;
 };
 
 [[nodiscard]] Vulkan_context create_vulkan_context(struct GLFWwindow *window);
@@ -222,6 +224,8 @@ void draw_frame(Vulkan_context &context);
 void resize_framebuffer(Vulkan_context &context,
                         std::uint32_t width,
                         std::uint32_t height);
+
+void reset_render(Vulkan_context &context);
 
 void write_to_png(const Vulkan_context &context, const char *file_name);
 
