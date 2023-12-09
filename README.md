@@ -2,9 +2,11 @@
 
 A path tracer written in C++ and GLSL, using the Vulkan ray tracing extensions.
 
-A rendered image of
-the [Cornell Box](http://www.graphics.cornell.edu/online/box):
+The [Cornell Box](http://www.graphics.cornell.edu/online/box):
 ![](images/cornell_box.png)
+
+A metallic [Stanford dragon](https://graphics.stanford.edu/data/3Dscanrep/):
+![](images/dragon.png)
 
 ## Build
 
@@ -44,6 +46,7 @@ cmake --build build --target path_tracer
 - [_Physically Based Rendering: From Theory To
   Implementation_](https://pbr-book.org)
 - [The Cornell Box](http://www.graphics.cornell.edu/online/box)
+- [The Stanford 3D Scanning Repository](https://graphics.stanford.edu/data/3Dscanrep/)
 - [Vulkan-Tutorial](https://vulkan-tutorial.com)
 - [Sascha Willems Vulkan examples](https://github.com/SaschaWillems/Vulkan)
 - Möller, Tomas; Trumbore, Ben (1997). _Fast, Minimum Storage Ray-Triangle

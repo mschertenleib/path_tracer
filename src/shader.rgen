@@ -29,6 +29,52 @@ layout (push_constant) uniform Push_constants
 
 layout (location = 0) rayPayloadEXT Ray_payload payload;
 
+float max_component(vec3 v)
+{
+    return v.x > v.y && v.x > v.z ? v.x : v.y > v.z ? v.y : v.z;
+}
+
+vec3 radiance(inout uint rng_state)
+{
+    vec3 accumulated_color = vec3(0.0);
+    vec3 accumulated_reflectance = vec3(1.0);
+
+    for (uint depth = 0; depth < 32; ++depth)
+    {
+        traceRayEXT(tlas,
+                    gl_RayFlagsOpaqueEXT,
+                    0xFF,
+                    0,
+                    0,
+                    0,
+                    payload.ray_origin,
+                    0.0,
+                    payload.ray_direction,
+                    10000.0,
+                    0);
+
+        accumulated_color += accumulated_reflectance * payload.emissivity;
+        if (payload.hit_sky)
+        {
+            return accumulated_color;
+        }
+
+        vec3 hit_color = payload.color;
+        const float p = max_component(hit_color);
+        if (random(payload.rng_state) < p)
+        {
+            hit_color /= p;
+        }
+        else
+        {
+            return accumulated_color;
+        }
+        accumulated_reflectance *= hit_color;
+    }
+
+    return accumulated_color;
+}
+
 void main()
 {
     const uvec2 image_size = imageSize(storage_image);
@@ -55,9 +101,9 @@ void main()
     const vec3 camera_lower_left_corner = -camera_horizontal * 0.5 - camera_vertical * 0.5 - camera_local_z;
     #else
     const vec3 camera_position = vec3(-0.07, 0.15, 0.2);
-    const vec3 look_at = vec3(-0.02, 0.1, 0.0);
+    const vec3 look_at = vec3(-0.02, 0.12, 0.0);
     const vec3 up = vec3(0.0, 1.0, 0.0);
-    const float vertical_fov = radians(60.0);
+    const float vertical_fov = radians(45.0);
     const float aspect_ratio = float(image_size.x) / float(image_size.y);
     const vec3 camera_local_z = normalize(camera_position - look_at);
     const vec3 camera_local_x = normalize(cross(up, camera_local_z));
@@ -70,14 +116,15 @@ void main()
     #endif
 
     const uint pixel_index = gl_LaunchIDEXT.y * image_size.x + gl_LaunchIDEXT.x;
-    payload.rng_state = hash(pixel_index) ^ hash(push.global_frame_count + 1);
+    uint rng_state = hash(pixel_index) ^ hash(push.global_frame_count + 1);
+    payload.rng_state = rng_state;
 
-    vec4 accumulated_pixel_color = vec4(0.0);
+    vec4 pixel_accumulated_color = vec4(0.0);
 
     for (uint s = 0; s < push.samples_per_frame; ++s)
     {
-        const float u_offset = random(payload.rng_state);
-        const float v_offset = random(payload.rng_state);
+        const float u_offset = random(rng_state);
+        const float v_offset = random(rng_state);
         const float u = (float(gl_LaunchIDEXT.x) + u_offset) / float(image_size.x);
         const float v = (float(image_size.y - 1 - gl_LaunchIDEXT.y) + v_offset) / float(image_size.y);
 
@@ -87,33 +134,10 @@ void main()
             u * camera_horizontal +
             v * camera_vertical);
 
-        vec3 transmitted = vec3(1.0);
-
-        for (uint depth = 0; depth < 32; ++depth)
-        {
-            traceRayEXT(tlas,
-                        gl_RayFlagsOpaqueEXT,
-                        0xFF,
-                        0,
-                        0,
-                        0,
-                        payload.ray_origin,
-                        0.0,
-                        payload.ray_direction,
-                        10000.0,
-                        0);
-
-            transmitted *= payload.color;
-
-            if (payload.hit_sky)
-            {
-                accumulated_pixel_color += vec4(transmitted, 1.0);
-                break;
-            }
-        }
+        pixel_accumulated_color += vec4(radiance(rng_state), 1.0);
     }
 
     vec4 average_color = imageLoad(storage_image, ivec2(gl_LaunchIDEXT.xy));
-    average_color = (average_color * push.sample_count + accumulated_pixel_color) / (push.sample_count + push.samples_per_frame);
+    average_color = (average_color * push.sample_count + pixel_accumulated_color) / (push.sample_count + push.samples_per_frame);
     imageStore(storage_image, ivec2(gl_LaunchIDEXT.xy), average_color);
 }
