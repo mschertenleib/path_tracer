@@ -21,41 +21,6 @@
 namespace
 {
 
-[[nodiscard]] bool is_fullscreen(GLFWwindow *window)
-{
-    return glfwGetWindowMonitor(window) != nullptr;
-}
-
-void set_fullscreen(GLFWwindow *window)
-{
-    // TODO: ideally use the current monitor, not the primary one
-    const auto monitor = glfwGetPrimaryMonitor();
-    const auto video_mode = glfwGetVideoMode(monitor);
-    glfwSetWindowMonitor(window,
-                         monitor,
-                         0,
-                         0,
-                         video_mode->width,
-                         video_mode->height,
-                         video_mode->refreshRate);
-}
-
-void set_windowed(GLFWwindow *window)
-{
-    // TODO: use previous windowed size, scale must be taken into account
-    const auto monitor = glfwGetPrimaryMonitor();
-    const auto video_mode = glfwGetVideoMode(monitor);
-    constexpr int width {1280};
-    constexpr int height {720};
-    glfwSetWindowMonitor(window,
-                         nullptr,
-                         (video_mode->width - width) / 2,
-                         (video_mode->height - height) / 2,
-                         width,
-                         height,
-                         GLFW_DONT_CARE);
-}
-
 void glfw_error_callback(int error, const char *description)
 {
     std::cerr << "GLFW error " << error << ": " << description << '\n';
@@ -68,26 +33,6 @@ void glfw_framebuffer_size_callback(GLFWwindow *window, int width, int height)
     resize_framebuffer(*context,
                        static_cast<std::uint32_t>(width),
                        static_cast<std::uint32_t>(height));
-}
-
-void glfw_key_callback(GLFWwindow *window,
-                       int key,
-                       [[maybe_unused]] int scancode,
-                       int action,
-                       [[maybe_unused]] int mods)
-
-{
-    if (action == GLFW_PRESS && key == GLFW_KEY_F)
-    {
-        if (is_fullscreen(window))
-        {
-            set_windowed(window);
-        }
-        else
-        {
-            set_fullscreen(window);
-        }
-    }
 }
 
 class Timer
@@ -152,7 +97,6 @@ int main(int argc, char *argv[])
         }
         SCOPE_EXIT([window] { glfwDestroyWindow(window); });
 
-        glfwSetKeyCallback(window, &glfw_key_callback);
         glfwSetFramebufferSizeCallback(window, &glfw_framebuffer_size_callback);
 
         IMGUI_CHECKVERSION();
@@ -287,8 +231,6 @@ int main(int argc, char *argv[])
                             1000.0 /
                                 static_cast<double>(ImGui::GetIO().Framerate),
                             static_cast<double>(ImGui::GetIO().Framerate));
-
-                ImGui::Text("Press [F] to toggle fullscreen");
 
                 ImGui::Text("Resolution: %u x %u", render_width, render_height);
 

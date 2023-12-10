@@ -105,7 +105,9 @@ void main()
         payload.ray_origin = push.camera_position;
         payload.ray_direction = normalize(push.camera_dir_z + push.camera_dir_x * u + push.camera_dir_y * v);
 
-        pixel_accumulated_color += vec4(radiance(rng_state), 1.0);
+        // Limit the radiance to [1.0, 1.0, 1.0]. Note that this is probably wrong, but
+        // at least for now it keeps the rendered pixels within [0.0, 1.0]
+        pixel_accumulated_color += vec4(min(radiance(rng_state), vec3(1.0)), 1.0);
     }
 
     vec4 average_color = imageLoad(storage_image, ivec2(gl_LaunchIDEXT.xy));
