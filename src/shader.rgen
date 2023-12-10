@@ -20,11 +20,15 @@ layout (binding = 3, scalar) buffer Indices
     uint indices[];
 };
 
-layout (push_constant) uniform Push_constants
+layout (push_constant, scalar) uniform Push_constants
 {
     uint global_frame_count;
     uint sample_count;
     uint samples_per_frame;
+    vec3 camera_position;
+    vec3 camera_dir_x;
+    vec3 camera_dir_y;
+    vec3 camera_dir_z;
 } push;
 
 layout (location = 0) rayPayloadEXT Ray_payload payload;
@@ -84,37 +88,6 @@ void main()
         return;
     }
 
-    #if 1
-    const vec3 camera_position = vec3(278.0, 273.0, -800.0);
-    const vec3 look_at = vec3(278.0, 273.0, 0.0);
-    const vec3 up = vec3(0.0, 1.0, 0.0);
-    const float focal_length = 0.035;
-    const float sensor_height = 0.025;
-    const float aspect_ratio = float(image_size.x) / float(image_size.y);
-    const vec3 camera_local_z = normalize(camera_position - look_at);
-    const vec3 camera_local_x = normalize(cross(up, camera_local_z));
-    const vec3 camera_local_y = cross(camera_local_z, camera_local_x);
-    const float viewport_height = sensor_height / focal_length;
-    const float viewport_width = aspect_ratio * viewport_height;
-    const vec3 camera_horizontal = viewport_width * camera_local_x;
-    const vec3 camera_vertical = viewport_height * camera_local_y;
-    const vec3 camera_lower_left_corner = -camera_horizontal * 0.5 - camera_vertical * 0.5 - camera_local_z;
-    #else
-    const vec3 camera_position = vec3(-0.07, 0.15, 0.2);
-    const vec3 look_at = vec3(-0.02, 0.12, 0.0);
-    const vec3 up = vec3(0.0, 1.0, 0.0);
-    const float vertical_fov = radians(45.0);
-    const float aspect_ratio = float(image_size.x) / float(image_size.y);
-    const vec3 camera_local_z = normalize(camera_position - look_at);
-    const vec3 camera_local_x = normalize(cross(up, camera_local_z));
-    const vec3 camera_local_y = normalize(cross(camera_local_z, camera_local_x));
-    const float viewport_height = 2.0 * tan(vertical_fov * 0.5);
-    const float viewport_width = aspect_ratio * viewport_height;
-    const vec3 camera_horizontal = viewport_width * camera_local_x;
-    const vec3 camera_vertical = viewport_height * camera_local_y;
-    const vec3 camera_lower_left_corner = -camera_horizontal * 0.5 - camera_vertical * 0.5 - camera_local_z;
-    #endif
-
     const uint pixel_index = gl_LaunchIDEXT.y * image_size.x + gl_LaunchIDEXT.x;
     uint rng_state = hash(pixel_index) ^ hash(push.global_frame_count + 1);
     payload.rng_state = rng_state;
@@ -125,14 +98,12 @@ void main()
     {
         const float u_offset = random(rng_state);
         const float v_offset = random(rng_state);
-        const float u = (float(gl_LaunchIDEXT.x) + u_offset) / float(image_size.x);
-        const float v = (float(image_size.y - 1 - gl_LaunchIDEXT.y) + v_offset) / float(image_size.y);
+        // u, v in [-1, 1]
+        const float u = 2.0 * (float(gl_LaunchIDEXT.x) + u_offset) / float(image_size.x) - 1.0;
+        const float v = 2.0 * (float(gl_LaunchIDEXT.y) + v_offset) / float(image_size.y) - 1.0;
 
-        payload.ray_origin = camera_position;
-        payload.ray_direction = normalize(
-            camera_lower_left_corner +
-            u * camera_horizontal +
-            v * camera_vertical);
+        payload.ray_origin = push.camera_position;
+        payload.ray_direction = normalize(push.camera_dir_z + push.camera_dir_x * u + push.camera_dir_y * v);
 
         pixel_accumulated_color += vec4(radiance(rng_state), 1.0);
     }

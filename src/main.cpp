@@ -12,8 +12,10 @@
 
 #include <chrono>
 #include <iostream>
+#include <numbers>
 #include <stdexcept>
 
+#include <cmath>
 #include <cstdlib>
 
 namespace
@@ -187,6 +189,44 @@ int main(int argc, char *argv[])
         const auto geometry = load_obj(obj_file_name);
         t.stop();
 
+        Camera camera {};
+        if (std::string(obj_file_name).ends_with("cornell_box.obj"))
+        {
+            const vec3 position {278.0f, 273.0f, -800.0f};
+            const vec3 look_at {278.0f, 273.0f, 0.0f};
+            const vec3 world_up {0.0f, 1.0f, 0.0f};
+            const auto aspect_ratio = static_cast<float>(render_width) /
+                                      static_cast<float>(render_height);
+            const float focal_length {0.035f};
+            const float sensor_height {0.025f};
+            const auto sensor_width = aspect_ratio * sensor_height;
+            camera = create_camera(position,
+                                   look_at,
+                                   world_up,
+                                   focal_length,
+                                   sensor_width,
+                                   sensor_height);
+        }
+        else
+        {
+            const vec3 position {-0.07f, 0.15f, 0.2f};
+            const vec3 look_at {-0.02f, 0.12f, 0.0f};
+            const vec3 world_up {0.0f, 1.0f, 0.0f};
+            const auto vertical_fov =
+                45.0f / 180.0f * std::numbers::pi_v<float>;
+            const auto aspect_ratio = static_cast<float>(render_width) /
+                                      static_cast<float>(render_height);
+            const float focal_length {1.0f};
+            const auto sensor_height = 2.0f * std::tan(vertical_fov * 0.5f);
+            const auto sensor_width = aspect_ratio * sensor_height;
+            camera = create_camera(position,
+                                   look_at,
+                                   world_up,
+                                   focal_length,
+                                   sensor_width,
+                                   sensor_height);
+        }
+
         t.start("load_scene");
         load_scene(context, render_width, render_height, geometry);
         SCOPE_EXIT([&] { destroy_scene_resources(context); });
@@ -285,7 +325,7 @@ int main(int argc, char *argv[])
 
             ImGui::Render();
 
-            draw_frame(context);
+            draw_frame(context, camera);
         }
 
         wait_idle(context);

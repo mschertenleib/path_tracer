@@ -219,7 +219,7 @@ void load_scene(Vulkan_context &context,
 
 void destroy_scene_resources(const Vulkan_context &context);
 
-void draw_frame(Vulkan_context &context);
+void draw_frame(Vulkan_context &context, const struct Camera &camera);
 
 void resize_framebuffer(Vulkan_context &context,
                         std::uint32_t width,

@@ -27,6 +27,10 @@ struct Push_constants
     std::uint32_t global_frame_count;
     std::uint32_t sample_count;
     std::uint32_t samples_per_frame;
+    vec3 camera_position;
+    vec3 camera_dir_x;
+    vec3 camera_dir_y;
+    vec3 camera_dir_z;
 };
 static_assert(sizeof(Push_constants) <= 128);
 
@@ -2558,7 +2562,7 @@ void destroy_vulkan_context(Vulkan_context &context)
 void load_scene(Vulkan_context &context,
                 std::uint32_t render_width,
                 std::uint32_t render_height,
-                const struct Geometry &geometry)
+                const Geometry &geometry)
 {
     SCOPE_FAIL([&] { destroy_scene_resources(context); });
 
@@ -2689,7 +2693,7 @@ void destroy_scene_resources(const Vulkan_context &context)
     destroy_image(context.allocator, context.storage_image);
 }
 
-void draw_frame(Vulkan_context &context)
+void draw_frame(Vulkan_context &context, const Camera &camera)
 {
     if (context.framebuffer_width == 0 || context.framebuffer_height == 0)
     {
@@ -2809,10 +2813,16 @@ void draw_frame(Vulkan_context &context)
         const auto samples_this_frame =
             std::min(context.samples_to_render - context.sample_count,
                      context.samples_per_frame);
+
         const Push_constants push_constants {
             .global_frame_count = context.global_frame_count,
             .sample_count = context.sample_count,
-            .samples_per_frame = samples_this_frame};
+            .samples_per_frame = samples_this_frame,
+            .camera_position = camera.position,
+            .camera_dir_x = camera.dir_x,
+            .camera_dir_y = camera.dir_y,
+            .camera_dir_z = camera.dir_z};
+
         context.device.vkCmdPushConstants(command_buffer,
                                           context.ray_tracing_pipeline_layout,
                                           VK_SHADER_STAGE_RAYGEN_BIT_KHR,
