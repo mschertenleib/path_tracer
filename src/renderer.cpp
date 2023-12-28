@@ -1,5 +1,5 @@
 #include "renderer.hpp"
-#include "geometry.hpp"
+#include "scene.hpp"
 #include "utility.hpp"
 
 #include "stb_image_write.h"

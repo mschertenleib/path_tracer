@@ -1,5 +1,7 @@
-#ifndef GEOMETRY_HPP
-#define GEOMETRY_HPP
+#ifndef SCENE_HPP
+#define SCENE_HPP
+
+#include "vec3.hpp"
 
 #include <vector>
 
@@ -10,13 +12,6 @@ struct Geometry
     std::vector<float> vertices;
     std::vector<std::uint32_t> indices;
     std::vector<float> normals;
-};
-
-struct vec3
-{
-    float x;
-    float y;
-    float z;
 };
 
 struct Camera
@@ -36,4 +31,4 @@ struct Camera
                                    float sensor_width,
                                    float sensor_height);
 
-#endif // GEOMETRY_HPP
+#endif // SCENE_HPP

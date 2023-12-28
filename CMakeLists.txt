@@ -55,9 +55,10 @@ set(IMGUI_SOURCES
 )
 add_executable(path_tracer
         src/main.cpp
-        src/geometry.cpp src/geometry.hpp
+        src/scene.cpp src/scene.hpp
         src/renderer.cpp src/renderer.hpp
         src/utility.cpp src/utility.hpp
+        src/vec3.hpp
         src/stb_image.cpp
         src/stb_image_write.cpp
         src/tiny_obj_loader.cpp
