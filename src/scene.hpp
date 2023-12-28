@@ -17,6 +17,7 @@ struct Geometry
 struct Camera
 {
     vec3 position;
+    vec3 look_at;
     vec3 dir_x;
     vec3 dir_y;
     vec3 dir_z;

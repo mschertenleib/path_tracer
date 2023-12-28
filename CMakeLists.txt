@@ -55,6 +55,7 @@ set(IMGUI_SOURCES
 )
 add_executable(path_tracer
         src/main.cpp
+        src/application.cpp src/application.hpp
         src/scene.cpp src/scene.hpp
         src/renderer.cpp src/renderer.hpp
         src/utility.cpp src/utility.hpp

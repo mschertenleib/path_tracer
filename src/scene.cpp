@@ -58,6 +58,7 @@ Camera create_camera(const vec3 &position,
 {
     Camera camera {};
     camera.position = position;
+    camera.look_at = look_at;
     // z points into the scene
     camera.dir_z = normalize(look_at - position);
     // x points to the right
