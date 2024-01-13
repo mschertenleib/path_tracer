@@ -34,12 +34,20 @@ CPMAddPackage(
         GITHUB_REPOSITORY glfw/glfw
         GIT_TAG 3.3.8
 )
-
-
 CPMAddPackage(
         GITHUB_REPOSITORY ocornut/imgui
         GIT_TAG v1.89.8-docking
         DOWNLOAD_ONLY YES
+)
+set(BUILD_SHARED_LIBS OFF)
+set(ASSIMP_NO_EXPORT ON)
+set(ASSIMP_BUILD_ALL_EXPORTERS_BY_DEFAULT OFF)
+set(ASSIMP_BUILD_TESTS OFF)
+set(ASSIMP_WARNINGS_AS_ERRORS OFF)
+set(ASSIMP_INSTALL OFF)
+CPMAddPackage(
+        GITHUB_REPOSITORY assimp/assimp
+        GIT_TAG v5.3.1
 )
 
 
@@ -74,7 +82,7 @@ target_include_directories(path_tracer SYSTEM PRIVATE
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends
 )
-target_link_libraries(path_tracer PRIVATE glfw)
+target_link_libraries(path_tracer PRIVATE glfw assimp)
 
 
 set(SHADER_SOURCES

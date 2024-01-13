@@ -1,5 +1,9 @@
 #include "application.hpp"
 
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
+
 #include <iostream>
 #include <stdexcept>
 
@@ -19,7 +23,21 @@ int main(int argc, char *argv[])
         const std::uint32_t render_width {std::stoul(argv[2])};
         const std::uint32_t render_height {std::stoul(argv[3])};
 
-        application_main(obj_file_name, render_width, render_height);
+        Assimp::Importer importer;
+        const auto *scene = importer.ReadFile(
+            obj_file_name,
+            aiProcess_CalcTangentSpace | aiProcess_Triangulate |
+                aiProcess_JoinIdenticalVertices | aiProcess_SortByPType);
+        if (scene == nullptr)
+        {
+            std::cerr << importer.GetErrorString() << '\n';
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Loaded file \"" << obj_file_name << "\" has "
+                  << scene->mNumMeshes << " meshes\n";
+
+        // application_main(obj_file_name, render_width, render_height);
 
         return EXIT_SUCCESS;
     }
