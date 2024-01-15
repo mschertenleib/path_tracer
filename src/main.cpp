@@ -35,7 +35,7 @@ int main(int argc, char *argv[])
         }
 
         std::cout << "Loaded file \"" << obj_file_name << "\" has "
-                  << scene->mNumMeshes << " meshes\n";
+                  << scene->mNumMeshes << " mesh(es)\n";
 
         // application_main(obj_file_name, render_width, render_height);
 

@@ -39,7 +39,7 @@ CPMAddPackage(
         GIT_TAG v1.89.8-docking
         DOWNLOAD_ONLY YES
 )
-set(BUILD_SHARED_LIBS OFF)
+set(BUILD_SHARED_LIBS ON)
 set(ASSIMP_NO_EXPORT ON)
 set(ASSIMP_BUILD_ALL_EXPORTERS_BY_DEFAULT OFF)
 set(ASSIMP_BUILD_TESTS OFF)
@@ -49,6 +49,8 @@ CPMAddPackage(
         GITHUB_REPOSITORY assimp/assimp
         GIT_TAG v5.3.1
 )
+file(GLOB assimp_dll ${assimp_BINARY_DIR}/bin/*.dll)
+file(COPY ${assimp_dll} DESTINATION ${CMAKE_BINARY_DIR})
 
 
 set(IMGUI_SOURCES
