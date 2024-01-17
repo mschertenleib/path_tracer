@@ -1,52 +1,48 @@
 #include "scene.hpp"
 
-#include "tiny_obj_loader.h"
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
 
 #include <stdexcept>
 
 Geometry load_obj(const char *file_name)
 {
-    tinyobj::ObjReader reader;
-    reader.ParseFromFile(file_name);
-    if (!reader.Valid())
+    Assimp::Importer importer;
+    const auto *scene = importer.ReadFile(file_name,
+                                          aiProcess_Triangulate |
+                                              aiProcess_JoinIdenticalVertices |
+                                              aiProcess_SortByPType);
+    if (scene == nullptr)
     {
-        throw std::runtime_error(reader.Error());
+        throw std::runtime_error(importer.GetErrorString());
     }
 
-    const auto &shapes = reader.GetShapes();
-    if (shapes.size() != 1)
+    if (!scene->HasMeshes())
     {
-        throw std::runtime_error("OBJ file contains more than one shape");
+        throw std::runtime_error("Scene has no meshes");
     }
 
-    const auto &indices = shapes.front().mesh.indices;
+    Geometry geometry {};
 
-    std::vector<std::uint32_t> vertex_indices(indices.size());
-    for (std::size_t i {}; i < indices.size(); ++i)
+    const auto *const mesh = scene->mMeshes[0];
+    geometry.vertices.resize(mesh->mNumVertices * 3);
+    for (unsigned int i{0}; i < mesh->mNumVertices; ++i)
     {
-        vertex_indices[i] = static_cast<std::uint32_t>(indices[i].vertex_index);
+        geometry.vertices[i * 3 + 0] = mesh->mVertices[i].x;
+        geometry.vertices[i * 3 + 1] = mesh->mVertices[i].y;
+        geometry.vertices[i * 3 + 2] = mesh->mVertices[i].z;
     }
 
-    std::vector<float> normals;
-    if (const auto &obj_normals = reader.GetAttrib().normals;
-        !obj_normals.empty())
+    geometry.indices.resize(mesh->mNumFaces * 3);
+    for (unsigned int i{0}; i < mesh->mNumFaces; ++i)
     {
-        normals.resize(reader.GetAttrib().vertices.size());
-        for (const auto index : indices)
-        {
-            const auto vertex_index =
-                static_cast<std::size_t>(index.vertex_index);
-            const auto normal_index =
-                static_cast<std::size_t>(index.normal_index);
-            normals[vertex_index * 3 + 0] = obj_normals[normal_index * 3 + 0];
-            normals[vertex_index * 3 + 1] = obj_normals[normal_index * 3 + 1];
-            normals[vertex_index * 3 + 2] = obj_normals[normal_index * 3 + 2];
-        }
+        geometry.indices[i * 3 + 0] = mesh->mFaces[i].mIndices[0];
+        geometry.indices[i * 3 + 1] = mesh->mFaces[i].mIndices[1];
+        geometry.indices[i * 3 + 2] = mesh->mFaces[i].mIndices[2];
     }
 
-    return Geometry {.vertices = reader.GetAttrib().vertices,
-                     .indices = vertex_indices,
-                     .normals = normals};
+    return geometry;
 }
 
 Camera create_camera(const vec3 &position,

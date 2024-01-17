@@ -26,12 +26,11 @@ cmake --build build --target path_tracer
 
 ## External libraries
 
+- [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
 - [GLFW](https://github.com/glfw/glfw)
 - [Dear ImGui](https://github.com/ocornut/imgui)
 - [stb_image and stb_image_write](https://github.com/nothings/stb)
-- [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader)
 - [Open Asset Import Library (assimp)](https://github.com/assimp/assimp)
-- [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
 
 ## References
 

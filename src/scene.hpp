@@ -11,7 +11,6 @@ struct Geometry
 {
     std::vector<float> vertices;
     std::vector<std::uint32_t> indices;
-    std::vector<float> normals;
 };
 
 struct Camera

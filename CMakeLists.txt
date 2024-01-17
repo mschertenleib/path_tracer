@@ -56,7 +56,6 @@ add_executable(path_tracer
         src/vec3.hpp
         src/stb_image.cpp
         src/stb_image_write.cpp
-        src/tiny_obj_loader.cpp
         src/vk_mem_alloc.cpp
         ${IMGUI_SOURCES}
 )

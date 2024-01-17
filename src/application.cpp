@@ -281,7 +281,7 @@ void ui(Application_state &state)
 
 } // namespace
 
-void application_main(const char *obj_file_name,
+void application_main(const char *file_name,
                       std::uint32_t render_width,
                       std::uint32_t render_height)
 {
@@ -299,9 +299,9 @@ void application_main(const char *obj_file_name,
     state.context = create_vulkan_context(window);
     SCOPE_EXIT([&] { destroy_vulkan_context(state.context); });
 
-    const auto geometry = load_obj(obj_file_name);
+    const auto geometry = load_obj(file_name);
 
-    if (std::string(obj_file_name).ends_with("cornell_box.obj"))
+    if (std::string(file_name).ends_with("cornell_box.obj"))
     {
         const vec3 position {278.0f, 273.0f, -800.0f};
         const vec3 look_at {278.0f, 273.0f, 0.0f};
