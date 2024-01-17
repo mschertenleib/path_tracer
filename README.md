@@ -2,6 +2,36 @@
 
 A path tracer written in C++ and GLSL, using the Vulkan ray tracing extensions.
 
+The aim of this project is to be able to create unbiased path-traced renders of
+a wide range of scenes, using ray tracing hardware on GPUs. The accent will be
+put on the rendering itself (i.e. interesting special materials, volumetric
+scattering, lens effects, etc.). The scene geometry will be fixed and
+not editable from the interface, because this would require a significant amount
+of work if we want "nice" controls, i.e. not just editing the values by hand,
+and this is not the goal of this project anyway. This also means that
+acceleration structures can be optimized for a one-time build of static
+geometry, without the need for updates.
+
+We will however probably add a material
+editor, to be able to test different materials on the same geometry without the
+need to edit it in an external 3D software (and because we might support special
+materials that cannot be easily exported in 3D file formats, for instance for
+volumetric or spectral rendering). Updating materials is easier to do than
+geometry, because it is a simple buffer update, as opposed to an acceleration
+structure update. The editor will also allow the selection of
+an optional environment map, as well as settings for general rendering
+parameters, the camera, etc. Finally, note that lights that are contained within
+the scene will simply be emissive objects. If the need appears, we might add
+explicit dynamic lights such as beams for interesting optics tests, but it is
+not a priority.
+
+We will probably not use instancing for now for simplicity, but this might
+become a natural evolution when we allow the editing of materials for individual
+meshes, because we will have to handle the scene graph anyway (for now, Assimp
+can just pre-transform and merge meshes for us). Note also that instancing might
+be required from a performance/memory point of view if we want to render large
+scenes with lots of objects.
+
 The [Cornell Box](http://www.graphics.cornell.edu/online/box):
 ![](images/cornell_box.png)
 

@@ -355,7 +355,7 @@ void application_main(const char *file_name,
         normalize = true;
     }
 
-    const auto geometry = load_obj(file_name, normalize);
+    const auto geometry = load_geometry(file_name, normalize);
 
     load_scene(state.context, render_width, render_height, geometry);
     SCOPE_EXIT([&] { destroy_scene_resources(state.context); });

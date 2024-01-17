@@ -24,7 +24,7 @@ struct Camera
     vec3 dir_z;
 };
 
-[[nodiscard]] Geometry load_obj(const char *file_name, bool normalize);
+[[nodiscard]] Geometry load_geometry(const char *file_name, bool normalize);
 
 [[nodiscard]] Camera create_camera(const vec3 &position,
                                    const vec3 &look_at,

@@ -6,7 +6,7 @@
 
 #include <stdexcept>
 
-Geometry load_obj(const char *file_name, bool normalize)
+Geometry load_geometry(const char *file_name, bool normalize)
 {
     Assimp::Importer importer;
     importer.SetPropertyBool(AI_CONFIG_PP_PTV_NORMALIZE, true);
