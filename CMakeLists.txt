@@ -3,25 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 project(path_tracer LANGUAGES CXX)
 
 
-set(CPM_DOWNLOAD_VERSION 0.38.2)
-
-if (CPM_SOURCE_CACHE)
-    set(CPM_DOWNLOAD_LOCATION "${CPM_SOURCE_CACHE}/cpm/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
-elseif (DEFINED ENV{CPM_SOURCE_CACHE})
-    set(CPM_DOWNLOAD_LOCATION "$ENV{CPM_SOURCE_CACHE}/cpm/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
-else ()
-    set(CPM_DOWNLOAD_LOCATION "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
-endif ()
-
-if (NOT (EXISTS ${CPM_DOWNLOAD_LOCATION}))
-    message(STATUS "Downloading CPM.cmake to ${CPM_DOWNLOAD_LOCATION}")
-    file(DOWNLOAD
-            https://github.com/TheLartians/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake
-            ${CPM_DOWNLOAD_LOCATION}
-    )
-endif ()
-
-include(${CPM_DOWNLOAD_LOCATION})
+include(cmake/CPM.cmake)
 
 
 find_package(Vulkan REQUIRED)
@@ -34,11 +16,15 @@ CPMAddPackage(
         GITHUB_REPOSITORY glfw/glfw
         GIT_TAG 3.3.8
 )
+
+
 CPMAddPackage(
         GITHUB_REPOSITORY ocornut/imgui
         GIT_TAG v1.89.8-docking
         DOWNLOAD_ONLY YES
 )
+
+
 set(BUILD_SHARED_LIBS ON)
 set(ASSIMP_NO_EXPORT ON)
 set(ASSIMP_BUILD_ALL_EXPORTERS_BY_DEFAULT OFF)
@@ -49,8 +35,6 @@ CPMAddPackage(
         GITHUB_REPOSITORY assimp/assimp
         GIT_TAG v5.3.1
 )
-file(GLOB assimp_dll ${assimp_BINARY_DIR}/bin/*.dll)
-file(COPY ${assimp_dll} DESTINATION ${CMAKE_BINARY_DIR})
 
 
 set(IMGUI_SOURCES
@@ -85,6 +69,9 @@ target_include_directories(path_tracer SYSTEM PRIVATE
         ${imgui_SOURCE_DIR}/backends
 )
 target_link_libraries(path_tracer PRIVATE glfw assimp)
+add_custom_command(TARGET path_tracer POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:assimp> ${CMAKE_CURRENT_BINARY_DIR}
+)
 
 
 set(SHADER_SOURCES
