@@ -6,13 +6,17 @@
 
 #include <stdexcept>
 
-Geometry load_obj(const char *file_name)
+Geometry load_obj(const char *file_name, bool normalize)
 {
     Assimp::Importer importer;
-    const auto *scene = importer.ReadFile(file_name,
-                                          aiProcess_Triangulate |
-                                              aiProcess_JoinIdenticalVertices |
-                                              aiProcess_SortByPType);
+    importer.SetPropertyBool(AI_CONFIG_PP_PTV_NORMALIZE, true);
+
+    const auto *scene = importer.ReadFile(
+        file_name,
+        aiProcess_Triangulate |
+            (normalize ? aiProcess_PreTransformVertices : 0) |
+            aiProcess_GenBoundingBoxes | aiProcess_JoinIdenticalVertices |
+            aiProcess_SortByPType);
     if (scene == nullptr)
     {
         throw std::runtime_error(importer.GetErrorString());
@@ -27,7 +31,7 @@ Geometry load_obj(const char *file_name)
 
     const auto *const mesh = scene->mMeshes[0];
     geometry.vertices.resize(mesh->mNumVertices * 3);
-    for (unsigned int i{0}; i < mesh->mNumVertices; ++i)
+    for (unsigned int i {0}; i < mesh->mNumVertices; ++i)
     {
         geometry.vertices[i * 3 + 0] = mesh->mVertices[i].x;
         geometry.vertices[i * 3 + 1] = mesh->mVertices[i].y;
@@ -35,7 +39,7 @@ Geometry load_obj(const char *file_name)
     }
 
     geometry.indices.resize(mesh->mNumFaces * 3);
-    for (unsigned int i{0}; i < mesh->mNumFaces; ++i)
+    for (unsigned int i {0}; i < mesh->mNumFaces; ++i)
     {
         geometry.indices[i * 3 + 0] = mesh->mFaces[i].mIndices[0];
         geometry.indices[i * 3 + 1] = mesh->mFaces[i].mIndices[1];

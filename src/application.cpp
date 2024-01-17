@@ -299,8 +299,7 @@ void application_main(const char *file_name,
     state.context = create_vulkan_context(window);
     SCOPE_EXIT([&] { destroy_vulkan_context(state.context); });
 
-    const auto geometry = load_obj(file_name);
-
+    bool normalize {false};
     if (std::string(file_name).ends_with("cornell_box.obj"))
     {
         const vec3 position {278.0f, 273.0f, -800.0f};
@@ -318,7 +317,7 @@ void application_main(const char *file_name,
                                      sensor_width,
                                      sensor_height);
     }
-    else
+    else if (std::string(file_name).ends_with("dragon.obj"))
     {
         const vec3 position {-0.07f, 0.15f, 0.2f};
         const vec3 look_at {-0.02f, 0.12f, 0.0f};
@@ -336,6 +335,27 @@ void application_main(const char *file_name,
                                      sensor_width,
                                      sensor_height);
     }
+    else
+    {
+        const vec3 position {2.0f, 1.5f, 2.0f};
+        const vec3 look_at {0.0f, 0.0f, 0.0f};
+        const vec3 world_up {0.0f, 1.0f, 0.0f};
+        const auto vertical_fov = 45.0f / 180.0f * std::numbers::pi_v<float>;
+        const auto aspect_ratio = static_cast<float>(render_width) /
+                                  static_cast<float>(render_height);
+        const float focal_length {1.0f};
+        const auto sensor_height = 2.0f * std::tan(vertical_fov * 0.5f);
+        const auto sensor_width = aspect_ratio * sensor_height;
+        state.camera = create_camera(position,
+                                     look_at,
+                                     world_up,
+                                     focal_length,
+                                     sensor_width,
+                                     sensor_height);
+        normalize = true;
+    }
+
+    const auto geometry = load_obj(file_name, normalize);
 
     load_scene(state.context, render_width, render_height, geometry);
     SCOPE_EXIT([&] { destroy_scene_resources(state.context); });
