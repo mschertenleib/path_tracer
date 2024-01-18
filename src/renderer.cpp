@@ -2660,11 +2660,15 @@ void load_scene(Vulkan_context &context,
     context.samples_per_frame = 1;
 
     init_imgui(context);
+    context.imgui_initialized = true;
 }
 
 void destroy_scene_resources(const Vulkan_context &context)
 {
-    ImGui_ImplVulkan_Shutdown();
+    if (context.imgui_initialized)
+    {
+        ImGui_ImplVulkan_Shutdown();
+    }
     destroy_fences(context.device, context.in_flight_fences);
     destroy_semaphores(context.device, context.render_finished_semaphores);
     destroy_semaphores(context.device, context.image_available_semaphores);

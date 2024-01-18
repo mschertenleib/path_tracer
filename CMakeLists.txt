@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.24)
 
 project(path_tracer LANGUAGES CXX)
 
@@ -69,27 +69,30 @@ target_include_directories(path_tracer SYSTEM PRIVATE
 )
 target_link_libraries(path_tracer PRIVATE glfw assimp)
 add_custom_command(TARGET path_tracer POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:assimp> ${CMAKE_CURRENT_BINARY_DIR}
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:assimp> $<TARGET_FILE_DIR:path_tracer>
 )
 
 
 set(SHADER_SOURCES
-        src/shader.rgen
-        src/shader.rmiss
-        src/shader.rchit
+        shader.rgen
+        shader.rmiss
+        shader.rchit
 )
+cmake_path(APPEND CMAKE_SOURCE_DIR src OUTPUT_VARIABLE GLSL_DIR)
 foreach (SHADER_SOURCE IN LISTS SHADER_SOURCES)
-    cmake_path(ABSOLUTE_PATH SHADER_SOURCE BASE_DIRECTORY ${CMAKE_SOURCE_DIR} OUTPUT_VARIABLE GLSL_SHADER)
-    cmake_path(GET GLSL_SHADER FILENAME SPV_SHADER)
-    cmake_path(APPEND_STRING SPV_SHADER .spv)
-    cmake_path(ABSOLUTE_PATH SPV_SHADER BASE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-    add_custom_command(
-            OUTPUT ${SPV_SHADER}
-            COMMAND ${Vulkan_GLSLC_EXECUTABLE} --target-env=vulkan1.3 -O ${GLSL_SHADER} -o ${SPV_SHADER}
-            DEPENDS ${GLSL_SHADER}
-            COMMENT "Compiling ${SHADER_SOURCE}"
-    )
-    list(APPEND SPV_SHADERS ${SPV_SHADER})
+        cmake_path(ABSOLUTE_PATH SHADER_SOURCE BASE_DIRECTORY ${GLSL_DIR} OUTPUT_VARIABLE GLSL_SHADER)
+        cmake_path(GET GLSL_SHADER FILENAME SPV_SHADER)
+        cmake_path(APPEND_STRING SPV_SHADER .spv)
+        cmake_path(ABSOLUTE_PATH SPV_SHADER BASE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+        add_custom_command(
+                OUTPUT ${SPV_SHADER}
+                COMMAND ${Vulkan_GLSLC_EXECUTABLE} --target-env=vulkan1.3 -O ${GLSL_SHADER} -o ${SPV_SHADER}
+                COMMAND ${CMAKE_COMMAND} -E copy ${SPV_SHADER} $<TARGET_FILE_DIR:path_tracer>
+                MAIN_DEPENDENCY ${GLSL_SHADER}
+                VERBATIM
+                COMMENT "Compiling ${SHADER_SOURCE}"
+        )
+        list(APPEND SPV_SHADERS ${SPV_SHADER})
 endforeach ()
 add_custom_target(shaders ALL DEPENDS ${SPV_SHADERS})
 add_dependencies(path_tracer shaders)

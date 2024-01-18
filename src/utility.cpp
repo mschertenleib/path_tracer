@@ -55,7 +55,7 @@ std::vector<std::uint32_t> read_binary_file(const char *file_name)
 std::ostream &operator<<(std::ostream &os, Text_color color)
 {
 #ifdef _WIN32
-    const auto handle = GetStdHandle(STD_OUTPUT_HANDLE);
+    /*const auto handle = GetStdHandle(STD_OUTPUT_HANDLE);
     switch (color)
     {
     case Text_color::reset: SetConsoleTextAttribute(handle, 0); break;
@@ -63,7 +63,7 @@ std::ostream &operator<<(std::ostream &os, Text_color color)
     case Text_color::yellow: SetConsoleTextAttribute(handle, 6); break;
     case Text_color::red: SetConsoleTextAttribute(handle, 4); break;
     case Text_color::blue: SetConsoleTextAttribute(handle, 1); break;
-    }
+    }*/
 #else
     switch (color)
     {

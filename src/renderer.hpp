@@ -206,6 +206,7 @@ struct Vulkan_context
     std::uint32_t samples_to_render;
     std::uint32_t sample_count;
     std::uint32_t samples_per_frame;
+    bool imgui_initialized;
 };
 
 [[nodiscard]] Vulkan_context create_vulkan_context(struct GLFWwindow *window);
