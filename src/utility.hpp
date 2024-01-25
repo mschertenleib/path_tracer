@@ -85,15 +85,4 @@ template <std::unsigned_integral U>
 [[nodiscard]] std::vector<std::uint32_t>
 read_binary_file(const char *file_name);
 
-enum struct Text_color
-{
-    reset,
-    red,
-    yellow,
-    green,
-    blue
-};
-
-std::ostream &operator<<(std::ostream &os, Text_color color);
-
 #endif // UTILITY_HPP
