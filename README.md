@@ -61,6 +61,7 @@ cmake --build build --target path_tracer
 - [Dear ImGui](https://github.com/ocornut/imgui)
 - [stb_image and stb_image_write](https://github.com/nothings/stb)
 - [Open Asset Import Library (assimp)](https://github.com/assimp/assimp)
+- [tiny file dialogs](https://sourceforge.net/projects/tinyfiledialogs)
 
 ## References
 

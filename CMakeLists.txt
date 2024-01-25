@@ -53,8 +53,17 @@ CPMAddPackage(
 )
 
 
+CPMAddPackage(
+        GIT_REPOSITORY "https://git.code.sf.net/p/tinyfiledialogs/code"
+        NAME tinyfiledialogs
+        GIT_TAG e60005
+        DOWNLOAD_ONLY
+)
+
+
 set(IMGUI_SOURCES
-        ${imgui_SOURCE_DIR}/imgui.cpp ${imgui_SOURCE_DIR}/imgui.h
+        ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui.h
         ${imgui_SOURCE_DIR}/imgui_internal.h
         ${imgui_SOURCE_DIR}/imgui_draw.cpp
         ${imgui_SOURCE_DIR}/imgui_tables.cpp
@@ -65,13 +74,19 @@ set(IMGUI_SOURCES
 )
 add_executable(path_tracer
         src/main.cpp
-        src/application.cpp src/application.hpp
-        src/scene.cpp src/scene.hpp
-        src/renderer.cpp src/renderer.hpp
-        src/utility.cpp src/utility.hpp
+        src/application.cpp
+        src/application.hpp
+        src/scene.cpp
+        src/scene.hpp
+        src/renderer.cpp
+        src/renderer.hpp
+        src/utility.cpp
+        src/utility.hpp
         src/vec3.hpp
         src/stb_image.cpp
         ${IMGUI_SOURCES}
+        ${tinyfiledialogs_SOURCE_DIR}/tinyfiledialogs.c
+        ${tinyfiledialogs_SOURCE_DIR}/tinyfiledialogs.h
 )
 target_compile_features(path_tracer PRIVATE cxx_std_20)
 target_compile_definitions(path_tracer PRIVATE VK_NO_PROTOTYPES)
@@ -80,6 +95,7 @@ target_include_directories(path_tracer SYSTEM PRIVATE
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends
         ${stb_SOURCE_DIR}
+        ${tinyfiledialogs_SOURCE_DIR}
 )
 target_link_libraries(path_tracer PRIVATE
         VulkanMemoryAllocator

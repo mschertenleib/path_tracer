@@ -106,7 +106,7 @@ void glfw_scroll_callback(GLFWwindow *window,
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     const auto window =
-        glfwCreateWindow(1280, 720, "Path tracer", nullptr, nullptr);
+        glfwCreateWindow(1280, 720, "Path Tracer", nullptr, nullptr);
     if (!window)
     {
         throw std::runtime_error("Failed to create GLFW window");
@@ -155,7 +155,7 @@ void shutdown_imgui()
     ImGui::DestroyContext();
 }
 
-void centered_image(ImTextureID texture_id, float aspect_ratio)
+void make_centered_image(ImTextureID texture_id, float aspect_ratio)
 {
     const auto region_size = ImGui::GetContentRegionAvail();
     if (region_size.x > 0.0f && region_size.y > 0.0f)
@@ -181,14 +181,14 @@ void centered_image(ImTextureID texture_id, float aspect_ratio)
     }
 }
 
-void ui(Application_state &state)
+void make_ui(Application_state &state)
 {
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 
     ImGui::PushStyleColor(ImGuiCol_WindowBg, {0.0f, 0.0f, 0.0f, 1.0f});
     if (ImGui::Begin("Viewport"))
     {
-        centered_image(
+        make_centered_image(
             static_cast<ImTextureID>(state.context.final_render_descriptor_set),
             static_cast<float>(state.render_width) /
                 static_cast<float>(state.render_height));
@@ -370,7 +370,7 @@ void application_main(const char *file_name,
         ImGui_ImplVulkan_NewFrame();
         ImGui::NewFrame();
 
-        ui(state);
+        make_ui(state);
 
         ImGui::Render();
 

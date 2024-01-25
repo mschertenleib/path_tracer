@@ -2,7 +2,6 @@
 #define UTILITY_HPP
 
 #include <concepts>
-#include <iosfwd>
 #include <stdexcept>
 #include <utility>
 #include <vector>
