@@ -9,6 +9,15 @@ include(cmake/CPM.cmake)
 find_package(Vulkan REQUIRED)
 
 
+set(VMA_BUILD_SAMPLE OFF)
+set(VMA_STATIC_VULKAN_FUNCTIONS OFF)
+set(VMA_DYNAMIC_VULKAN_FUNCTIONS ON)
+CPMAddPackage(
+        GITHUB_REPOSITORY GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+        GIT_TAG v3.0.1
+)
+
+
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -21,6 +30,13 @@ CPMAddPackage(
 CPMAddPackage(
         GITHUB_REPOSITORY ocornut/imgui
         GIT_TAG v1.89.8-docking
+        DOWNLOAD_ONLY YES
+)
+
+
+CPMAddPackage(
+        GITHUB_REPOSITORY nothings/stb
+        GIT_TAG f4a71b1
         DOWNLOAD_ONLY YES
 )
 
@@ -55,19 +71,20 @@ add_executable(path_tracer
         src/utility.cpp src/utility.hpp
         src/vec3.hpp
         src/stb_image.cpp
-        src/stb_image_write.cpp
-        src/vk_mem_alloc.cpp
         ${IMGUI_SOURCES}
 )
 target_compile_features(path_tracer PRIVATE cxx_std_20)
 target_compile_definitions(path_tracer PRIVATE VK_NO_PROTOTYPES)
 target_include_directories(path_tracer SYSTEM PRIVATE
-        external
         ${Vulkan_INCLUDE_DIRS}
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends
+        ${stb_SOURCE_DIR}
 )
-target_link_libraries(path_tracer PRIVATE glfw assimp)
+target_link_libraries(path_tracer PRIVATE
+        VulkanMemoryAllocator
+        glfw
+        assimp)
 add_custom_command(TARGET path_tracer POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:assimp> $<TARGET_FILE_DIR:path_tracer>
 )

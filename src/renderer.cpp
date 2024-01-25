@@ -44,19 +44,19 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
 {
     if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT)
     {
-        std::cout << Text_color::blue << "[VERBOSE]";
+        std::cout << "[VERBOSE]";
     }
     else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
     {
-        std::cout << Text_color::blue << "[INFO]";
+        std::cout << "[INFO]";
     }
     else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
     {
-        std::cout << Text_color::yellow << "[WARNING]";
+        std::cout << "[WARNING]";
     }
     else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
     {
-        std::cout << Text_color::red << "[ERROR]";
+        std::cout << "[ERROR]";
     }
 
     if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
@@ -77,7 +77,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
         std::cout << "[DEVICE_ADDRESS_BINDING] ";
     }
 
-    std::cout << callback_data->pMessage << Text_color::reset << '\n';
+    std::cout << callback_data->pMessage << '\n';
 
     return VK_FALSE;
 }
@@ -229,14 +229,12 @@ inline void check_result(VkResult result, const char *message)
                                                layer_name) == 0;
                         }))
         {
-            std::cout << Text_color::green << "supported" << Text_color::reset
-                      << '\n';
+            std::cout << "supported" << '\n';
         }
         else
         {
             all_layers_supported = false;
-            std::cout << Text_color::red << "not supported" << Text_color::reset
-                      << '\n';
+            std::cout << "not supported" << '\n';
         }
     }
     if (!all_layers_supported)
@@ -287,14 +285,12 @@ inline void check_result(VkResult result, const char *message)
                                        extension_name) == 0;
                 }))
         {
-            std::cout << Text_color::green << "supported" << Text_color::reset
-                      << '\n';
+            std::cout << "supported" << '\n';
         }
         else
         {
             all_extensions_supported = false;
-            std::cout << Text_color::red << "not supported" << Text_color::reset
-                      << '\n';
+            std::cout << "not supported" << '\n';
         }
     }
     if (!all_extensions_supported)
@@ -480,17 +476,16 @@ get_queue_family_indices(const Vulkan_instance &instance,
         std::numeric_limits<std::uint32_t>::max())
     {
         suitable = false;
-        std::cout << "    " << Text_color::red
+        std::cout << "    "
                   << "No queue family supports graphics and compute operations"
-                  << Text_color::reset << '\n';
+                  << '\n';
     }
     if (queue_family_indices.present ==
         std::numeric_limits<std::uint32_t>::max())
     {
         suitable = false;
-        std::cout << "    " << Text_color::red
-                  << "No queue family supports present operations"
-                  << Text_color::reset << '\n';
+        std::cout << "    "
+                  << "No queue family supports present operations" << '\n';
     }
 
     std::uint32_t extension_property_count {};
@@ -519,14 +514,12 @@ get_queue_family_indices(const Vulkan_instance &instance,
                                        extension_name) == 0;
                 }))
         {
-            std::cout << Text_color::green << "supported" << Text_color::reset
-                      << '\n';
+            std::cout << "supported" << '\n';
         }
         else
         {
             suitable = false;
-            std::cout << Text_color::red << "not supported" << Text_color::reset
-                      << '\n';
+            std::cout << "not supported" << '\n';
         }
     }
 
@@ -556,14 +549,12 @@ get_queue_family_indices(const Vulkan_instance &instance,
     {
         if (condition)
         {
-            std::cout << Text_color::green << "supported" << Text_color::reset
-                      << '\n';
+            std::cout << "supported" << '\n';
         }
         else
         {
             suitable = false;
-            std::cout << Text_color::red << "not supported" << Text_color::reset
-                      << '\n';
+            std::cout << "not supported" << '\n';
         }
     };
 
