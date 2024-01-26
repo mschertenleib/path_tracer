@@ -42,42 +42,56 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
     void *user_data [[maybe_unused]])
 {
+    std::ostringstream message;
+    bool use_stderr {false};
+
     if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT)
     {
-        std::cout << "[VERBOSE]";
+        message << "[VERBOSE]";
     }
     else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
     {
-        std::cout << "[INFO]";
+        message << "[INFO]";
     }
     else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
     {
-        std::cout << "[WARNING]";
+        message << "[WARNING]";
+        use_stderr = true;
     }
     else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
     {
-        std::cout << "[ERROR]";
+        message << "[ERROR]";
+        use_stderr = true;
     }
 
     if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
     {
-        std::cout << "[GENERAL] ";
+        message << "[GENERAL] ";
     }
     else if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
     {
-        std::cout << "[VALIDATION] ";
+        message << "[VALIDATION] ";
     }
     else if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
     {
-        std::cout << "[PERFORMANCE] ";
+        message << "[PERFORMANCE] ";
     }
     else if (message_type &
              VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT)
     {
-        std::cout << "[DEVICE_ADDRESS_BINDING] ";
+        message << "[DEVICE_ADDRESS_BINDING] ";
     }
 
-    std::cout << callback_data->pMessage << '\n';
+    message << callback_data->pMessage;
+
+    if (use_stderr)
+    {
+        std::cerr << message.str() << '\n';
+    }
+    else
+    {
+        std::cout << message.str() << '\n';
+    }
 
     return VK_FALSE;
 }
@@ -155,7 +169,7 @@ std::ostream &operator<<(std::ostream &os, VkResult result)
     return os;
 }
 
-inline void check_result(VkResult result, const char *message)
+void check_result(VkResult result, const char *message)
 {
     if (result != VK_SUCCESS)
     {
