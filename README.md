@@ -56,12 +56,13 @@ cmake --build build --target path_tracer
 
 ## External libraries
 
-- [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
-- [GLFW](https://github.com/glfw/glfw)
-- [Dear ImGui](https://github.com/ocornut/imgui)
-- [stb_image and stb_image_write](https://github.com/nothings/stb)
-- [Open Asset Import Library (assimp)](https://github.com/assimp/assimp)
-- [tiny file dialogs](https://sourceforge.net/projects/tinyfiledialogs)
+- [volk](https://github.com/zeux/volk) for loading Vulkan functions
+- [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) for managing memory allocation for Vulkan
+- [GLFW](https://github.com/glfw/glfw) for the window, surface, input and events
+- [Dear ImGui](https://github.com/ocornut/imgui) for the user interface
+- [stb_image and stb_image_write](https://github.com/nothings/stb) for reading/writing images
+- [Open Asset Import Library (assimp)](https://github.com/assimp/assimp) for loading 3D assets
+- [tiny file dialogs](https://sourceforge.net/projects/tinyfiledialogs) for open/save file dialogs
 
 ## References
 

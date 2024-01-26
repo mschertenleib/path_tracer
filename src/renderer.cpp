@@ -10,6 +10,8 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <volk.h>
+
 #include <algorithm>
 #include <iostream>
 #include <limits>

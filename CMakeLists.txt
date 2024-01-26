@@ -9,6 +9,12 @@ include(cmake/CPM.cmake)
 find_package(Vulkan REQUIRED)
 
 
+CPMAddPackage(
+        GITHUB_REPOSITORY zeux/volk
+        GIT_TAG 1.3.270
+)
+
+
 set(VMA_BUILD_SAMPLE OFF)
 set(VMA_STATIC_VULKAN_FUNCTIONS OFF)
 set(VMA_DYNAMIC_VULKAN_FUNCTIONS ON)
@@ -98,6 +104,7 @@ target_include_directories(path_tracer SYSTEM PRIVATE
         ${tinyfiledialogs_SOURCE_DIR}
 )
 target_link_libraries(path_tracer PRIVATE
+        volk
         VulkanMemoryAllocator
         glfw
         assimp)
