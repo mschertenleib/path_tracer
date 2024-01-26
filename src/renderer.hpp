@@ -16,31 +16,6 @@ struct Vulkan_instance
 #ifndef NDEBUG
     VkDebugUtilsMessengerEXT debug_messenger;
 #endif
-    PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr;
-    PFN_vkEnumerateInstanceLayerProperties vkEnumerateInstanceLayerProperties;
-    PFN_vkEnumerateInstanceExtensionProperties
-        vkEnumerateInstanceExtensionProperties;
-    PFN_vkCreateInstance vkCreateInstance;
-    PFN_vkDestroyInstance vkDestroyInstance;
-#ifndef NDEBUG
-    PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
-    PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT;
-#endif
-    PFN_vkEnumeratePhysicalDevices vkEnumeratePhysicalDevices;
-    PFN_vkGetPhysicalDeviceQueueFamilyProperties
-        vkGetPhysicalDeviceQueueFamilyProperties;
-    PFN_vkEnumerateDeviceExtensionProperties
-        vkEnumerateDeviceExtensionProperties;
-    PFN_vkGetPhysicalDeviceFeatures2 vkGetPhysicalDeviceFeatures2;
-    PFN_vkGetPhysicalDeviceFormatProperties vkGetPhysicalDeviceFormatProperties;
-    PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2;
-    PFN_vkCreateDevice vkCreateDevice;
-    PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr;
-    PFN_vkDestroySurfaceKHR vkDestroySurfaceKHR;
-    PFN_vkGetPhysicalDeviceSurfaceFormatsKHR
-        vkGetPhysicalDeviceSurfaceFormatsKHR;
-    PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR;
 };
 
 struct Vulkan_queue_family_indices
@@ -57,71 +32,6 @@ struct Vulkan_device
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR
         ray_tracing_pipeline_properties;
     VkDevice device;
-    PFN_vkDestroyDevice vkDestroyDevice;
-    PFN_vkGetDeviceQueue vkGetDeviceQueue;
-    PFN_vkCreateCommandPool vkCreateCommandPool;
-    PFN_vkDestroyCommandPool vkDestroyCommandPool;
-    PFN_vkCreateSwapchainKHR vkCreateSwapchainKHR;
-    PFN_vkDestroySwapchainKHR vkDestroySwapchainKHR;
-    PFN_vkGetSwapchainImagesKHR vkGetSwapchainImagesKHR;
-    PFN_vkCreateImageView vkCreateImageView;
-    PFN_vkDestroyImageView vkDestroyImageView;
-    PFN_vkCreateSampler vkCreateSampler;
-    PFN_vkDestroySampler vkDestroySampler;
-    PFN_vkAllocateCommandBuffers vkAllocateCommandBuffers;
-    PFN_vkFreeCommandBuffers vkFreeCommandBuffers;
-    PFN_vkBeginCommandBuffer vkBeginCommandBuffer;
-    PFN_vkEndCommandBuffer vkEndCommandBuffer;
-    PFN_vkQueueSubmit vkQueueSubmit;
-    PFN_vkQueueWaitIdle vkQueueWaitIdle;
-    PFN_vkDeviceWaitIdle vkDeviceWaitIdle;
-    PFN_vkCmdClearColorImage vkCmdClearColorImage;
-    PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier;
-    PFN_vkCmdCopyBuffer vkCmdCopyBuffer;
-    PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
-    PFN_vkCmdBindPipeline vkCmdBindPipeline;
-    PFN_vkCmdBindDescriptorSets vkCmdBindDescriptorSets;
-    PFN_vkCmdPushConstants vkCmdPushConstants;
-    PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
-    PFN_vkCmdBlitImage vkCmdBlitImage;
-    PFN_vkCmdCopyImageToBuffer vkCmdCopyImageToBuffer;
-    PFN_vkCmdBeginRenderPass vkCmdBeginRenderPass;
-    PFN_vkCmdEndRenderPass vkCmdEndRenderPass;
-    PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddress;
-    PFN_vkGetAccelerationStructureDeviceAddressKHR
-        vkGetAccelerationStructureDeviceAddressKHR;
-    PFN_vkGetAccelerationStructureBuildSizesKHR
-        vkGetAccelerationStructureBuildSizesKHR;
-    PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
-    PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR;
-    PFN_vkCreateDescriptorSetLayout vkCreateDescriptorSetLayout;
-    PFN_vkDestroyDescriptorSetLayout vkDestroyDescriptorSetLayout;
-    PFN_vkCreateDescriptorPool vkCreateDescriptorPool;
-    PFN_vkDestroyDescriptorPool vkDestroyDescriptorPool;
-    PFN_vkAllocateDescriptorSets vkAllocateDescriptorSets;
-    PFN_vkFreeDescriptorSets vkFreeDescriptorSets;
-    PFN_vkUpdateDescriptorSets vkUpdateDescriptorSets;
-    PFN_vkCreatePipelineLayout vkCreatePipelineLayout;
-    PFN_vkDestroyPipelineLayout vkDestroyPipelineLayout;
-    PFN_vkCreateShaderModule vkCreateShaderModule;
-    PFN_vkDestroyShaderModule vkDestroyShaderModule;
-    PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
-    PFN_vkDestroyPipeline vkDestroyPipeline;
-    PFN_vkGetRayTracingShaderGroupHandlesKHR
-        vkGetRayTracingShaderGroupHandlesKHR;
-    PFN_vkCreateRenderPass vkCreateRenderPass;
-    PFN_vkDestroyRenderPass vkDestroyRenderPass;
-    PFN_vkCreateFramebuffer vkCreateFramebuffer;
-    PFN_vkDestroyFramebuffer vkDestroyFramebuffer;
-    PFN_vkCreateSemaphore vkCreateSemaphore;
-    PFN_vkDestroySemaphore vkDestroySemaphore;
-    PFN_vkCreateFence vkCreateFence;
-    PFN_vkDestroyFence vkDestroyFence;
-    PFN_vkWaitForFences vkWaitForFences;
-    PFN_vkAcquireNextImageKHR vkAcquireNextImageKHR;
-    PFN_vkResetFences vkResetFences;
-    PFN_vkResetCommandBuffer vkResetCommandBuffer;
-    PFN_vkQueuePresentKHR vkQueuePresentKHR;
 };
 
 struct Vulkan_swapchain
