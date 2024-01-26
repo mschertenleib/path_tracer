@@ -782,8 +782,7 @@ void destroy_image_view(const Vulkan_device &device, VkImageView image_view)
 }
 
 [[nodiscard]] Vulkan_swapchain
-create_swapchain(const Vulkan_instance &instance,
-                 const Vulkan_device &device,
+create_swapchain(const Vulkan_device &device,
                  VkSurfaceKHR surface,
                  std::uint32_t framebuffer_width,
                  std::uint32_t framebuffer_height)
@@ -1038,8 +1037,7 @@ void destroy_image(VmaAllocator allocator, const Vulkan_image &image)
     vmaDestroyImage(allocator, image.image, image.allocation);
 }
 
-void transition_image_layout(const Vulkan_device &device,
-                             VkCommandBuffer command_buffer,
+void transition_image_layout(VkCommandBuffer command_buffer,
                              VkImage image,
                              VkAccessFlags src_access,
                              VkAccessFlags dst_access,
@@ -2362,8 +2360,7 @@ void recreate_swapchain(Vulkan_context &context)
 
     destroy_swapchain(context.device, context.swapchain);
     context.swapchain = {};
-    context.swapchain = create_swapchain(context.instance,
-                                         context.device,
+    context.swapchain = create_swapchain(context.device,
                                          context.surface,
                                          context.framebuffer_width,
                                          context.framebuffer_height);
@@ -2408,8 +2405,7 @@ Vulkan_context create_vulkan_context(GLFWwindow *window)
     glfwGetFramebufferSize(window, &width, &height);
     context.framebuffer_width = static_cast<std::uint32_t>(width);
     context.framebuffer_height = static_cast<std::uint32_t>(height);
-    context.swapchain = create_swapchain(context.instance,
-                                         context.device,
+    context.swapchain = create_swapchain(context.device,
                                          context.surface,
                                          context.framebuffer_width,
                                          context.framebuffer_height);
@@ -2460,8 +2456,7 @@ void load_scene(Vulkan_context &context,
     {
         const auto command_buffer =
             begin_one_time_submit_command_buffer(context);
-        transition_image_layout(context.device,
-                                command_buffer,
+        transition_image_layout(command_buffer,
                                 context.storage_image.image,
                                 VK_ACCESS_NONE,
                                 VK_ACCESS_SHADER_READ_BIT |
@@ -2471,8 +2466,7 @@ void load_scene(Vulkan_context &context,
                                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                                 VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR |
                                     VK_PIPELINE_STAGE_TRANSFER_BIT);
-        transition_image_layout(context.device,
-                                command_buffer,
+        transition_image_layout(command_buffer,
                                 context.render_target.image,
                                 VK_ACCESS_NONE,
                                 VK_ACCESS_SHADER_READ_BIT,
