@@ -2,7 +2,6 @@
 
 #include <iostream>
 #include <stdexcept>
-#include <string>
 
 #include <cstdlib>
 
@@ -10,16 +9,19 @@ int main(int argc, char *argv[])
 {
     try
     {
-        if (argc != 4)
+        if (argc > 2 || (argc == 2 && argv[1][0] == '-'))
         {
-            std::cerr << "Usage: " << argv[0] << " <model> <width> <height>\n";
-            return EXIT_FAILURE;
+            std::cout << "Usage: " << argv[0] << " [<file>]\n";
+            return EXIT_SUCCESS;
         }
-        const auto file_name = argv[1];
-        const std::uint32_t render_width {std::stoul(argv[2])};
-        const std::uint32_t render_height {std::stoul(argv[3])};
 
-        application_main(file_name, render_width, render_height);
+        const char *file_name {nullptr};
+        if (argc == 2)
+        {
+            file_name = argv[1];
+        }
+
+        application_main(file_name);
 
         return EXIT_SUCCESS;
     }

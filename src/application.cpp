@@ -17,6 +17,7 @@
 #include <stdexcept>
 
 #include <cmath>
+#include <cstdint>
 
 namespace
 {
@@ -281,10 +282,16 @@ void make_ui(Application_state &state)
 
 } // namespace
 
-void application_main(const char *file_name,
-                      std::uint32_t render_width,
-                      std::uint32_t render_height)
+void application_main(const char *file_name)
 {
+    // FIXME
+    if (!file_name)
+    {
+        return;
+    }
+    const std::uint32_t render_width {640};
+    const std::uint32_t render_height {480};
+
     auto window = init_glfw();
     SCOPE_EXIT([window] { shutdown_glfw(window); });
 
