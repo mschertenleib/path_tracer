@@ -21,6 +21,10 @@
 #include <cassert>
 #include <cstring>
 
+#ifndef NDEBUG
+#define ENABLE_VALIDATION_LAYERS
+#endif
+
 namespace
 {
 
@@ -36,13 +40,13 @@ struct Push_constants
 };
 static_assert(sizeof(Push_constants) <= 128);
 
-#ifndef NDEBUG
+#ifdef ENABLE_VALIDATION_LAYERS
 
-VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT message_severity [[maybe_unused]],
-    VkDebugUtilsMessageTypeFlagsEXT message_type [[maybe_unused]],
-    const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
-    void *user_data [[maybe_unused]])
+VKAPI_ATTR VkBool32 VKAPI_CALL
+debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+               VkDebugUtilsMessageTypeFlagsEXT message_type,
+               const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
+               void *user_data [[maybe_unused]])
 {
     std::ostringstream message;
     bool use_stderr {false};
@@ -202,7 +206,7 @@ void check_result(VkResult result, const char *message)
     const auto glfw_required_extension_names =
         glfwGetRequiredInstanceExtensions(&glfw_required_extension_count);
 
-#ifndef NDEBUG
+#ifdef ENABLE_VALIDATION_LAYERS
 
     std::uint32_t layer_property_count {};
     result = vkEnumerateInstanceLayerProperties(&layer_property_count, nullptr);
@@ -212,33 +216,17 @@ void check_result(VkResult result, const char *message)
                                                 layer_properties.data());
     check_result(result, "vkEnumerateInstanceLayerProperties");
 
-    constexpr const char *required_layer_names[] {
-        "VK_LAYER_KHRONOS_validation"};
-
-    std::cout << "Instance layers:\n";
-    bool all_layers_supported {true};
-    for (const auto *layer_name : required_layer_names)
+    constexpr auto layer_name = "VK_LAYER_KHRONOS_validation";
+    if (std::none_of(layer_properties.begin(),
+                     layer_properties.end(),
+                     [layer_name](const VkLayerProperties &properties) {
+                         return std::strcmp(properties.layerName, layer_name) ==
+                                0;
+                     }))
     {
-        std::cout << "    " << layer_name << ": ";
-        if (std::any_of(layer_properties.begin(),
-                        layer_properties.end(),
-                        [layer_name](const VkLayerProperties &properties) {
-                            return std::strcmp(properties.layerName,
-                                               layer_name) == 0;
-                        }))
-        {
-            std::cout << "supported" << '\n';
-        }
-        else
-        {
-            all_layers_supported = false;
-            std::cout << "not supported" << '\n';
-        }
-    }
-    if (!all_layers_supported)
-    {
-        throw std::runtime_error(
-            "Not all requested instance layers are supported");
+        std::ostringstream message;
+        message << layer_name << " is not supported\n";
+        throw std::runtime_error(message.str());
     }
 
 #endif
@@ -253,7 +241,7 @@ void check_result(VkResult result, const char *message)
         nullptr, &extension_property_count, extension_properties.data());
     check_result(result, "vkEnumerateInstanceExtensionProperties");
 
-#ifndef NDEBUG
+#ifdef ENABLE_VALIDATION_LAYERS
 
     std::vector<const char *> required_extension_names;
     required_extension_names.reserve(glfw_required_extension_count + 1);
@@ -270,12 +258,11 @@ void check_result(VkResult result, const char *message)
 
 #endif
 
-    std::cout << "Instance extensions:\n";
     bool all_extensions_supported {true};
+    std::ostringstream message;
     for (const auto *extension_name : required_extension_names)
     {
-        std::cout << "    " << extension_name << ": ";
-        if (std::any_of(
+        if (std::none_of(
                 extension_properties.begin(),
                 extension_properties.end(),
                 [extension_name](const VkExtensionProperties &properties) {
@@ -283,21 +270,24 @@ void check_result(VkResult result, const char *message)
                                        extension_name) == 0;
                 }))
         {
-            std::cout << "supported" << '\n';
-        }
-        else
-        {
-            all_extensions_supported = false;
-            std::cout << "not supported" << '\n';
+            if (all_extensions_supported)
+            {
+                all_extensions_supported = false;
+                message << "Unsupported instance extension(s): "
+                        << extension_name;
+            }
+            else
+            {
+                message << ", " << extension_name;
+            }
         }
     }
     if (!all_extensions_supported)
     {
-        throw std::runtime_error(
-            "Not all requested instance extensions are supported");
+        throw std::runtime_error(message.str());
     }
 
-#ifndef NDEBUG
+#ifdef ENABLE_VALIDATION_LAYERS
 
     const VkDebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info {
         .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
@@ -331,9 +321,8 @@ void check_result(VkResult result, const char *message)
         .pNext = &validation_features,
         .flags = {},
         .pApplicationInfo = &application_info,
-        .enabledLayerCount =
-            static_cast<std::uint32_t>(std::size(required_layer_names)),
-        .ppEnabledLayerNames = required_layer_names,
+        .enabledLayerCount = 1,
+        .ppEnabledLayerNames = &layer_name,
         .enabledExtensionCount =
             static_cast<std::uint32_t>(required_extension_names.size()),
         .ppEnabledExtensionNames = required_extension_names.data()};
@@ -359,7 +348,7 @@ void check_result(VkResult result, const char *message)
 
     volkLoadInstanceOnly(instance.instance);
 
-#ifndef NDEBUG
+#ifdef ENABLE_VALIDATION_LAYERS
 
     SCOPE_FAIL([&] { vkDestroyInstance(instance.instance, nullptr); });
 
@@ -378,7 +367,7 @@ void destroy_instance(const Vulkan_instance &instance)
 {
     if (instance.instance)
     {
-#ifndef NDEBUG
+#ifdef ENABLE_VALIDATION_LAYERS
         vkDestroyDebugUtilsMessengerEXT(
             instance.instance, instance.debug_messenger, nullptr);
 #endif
@@ -389,8 +378,7 @@ void destroy_instance(const Vulkan_instance &instance)
 }
 
 [[nodiscard]] Vulkan_queue_family_indices
-get_queue_family_indices(const Vulkan_instance &instance,
-                         VkPhysicalDevice physical_device)
+get_queue_family_indices(VkInstance instance, VkPhysicalDevice physical_device)
 {
     std::uint32_t queue_family_property_count {};
     vkGetPhysicalDeviceQueueFamilyProperties(
@@ -414,7 +402,7 @@ get_queue_family_indices(const Vulkan_instance &instance,
             indices.graphics_compute = i;
         }
         if (glfwGetPhysicalDevicePresentationSupport(
-                instance.instance, physical_device, i))
+                instance, physical_device, i))
         {
             indices.present = i;
         }
@@ -429,7 +417,7 @@ get_queue_family_indices(const Vulkan_instance &instance,
     return indices;
 }
 
-[[nodiscard]] bool is_device_suitable(const Vulkan_instance &instance,
+[[nodiscard]] bool is_device_suitable(VkInstance instance,
                                       VkPhysicalDevice physical_device,
                                       std::uint32_t device_extension_count,
                                       const char *const *device_extension_names)
@@ -442,16 +430,14 @@ get_queue_family_indices(const Vulkan_instance &instance,
         std::numeric_limits<std::uint32_t>::max())
     {
         suitable = false;
-        std::cout << "    "
-                  << "No queue family supports graphics and compute operations"
-                  << '\n';
+        std::cout
+            << "    No queue family supports graphics and compute operations\n";
     }
     if (queue_family_indices.present ==
         std::numeric_limits<std::uint32_t>::max())
     {
         suitable = false;
-        std::cout << "    "
-                  << "No queue family supports present operations" << '\n';
+        std::cout << "    No queue family supports present operations\n";
     }
 
     std::uint32_t extension_property_count {};
@@ -466,12 +452,11 @@ get_queue_family_indices(const Vulkan_instance &instance,
                                                   extension_properties.data());
     check_result(result, "vkEnumerateDeviceExtensionProperties");
 
-    std::cout << "    Extensions:\n";
+    bool all_extensions_supported {true};
     for (std::uint32_t i {}; i < device_extension_count; ++i)
     {
         const auto extension_name = device_extension_names[i];
-        std::cout << "        " << extension_name << ": ";
-        if (std::any_of(
+        if (std::none_of(
                 extension_properties.begin(),
                 extension_properties.end(),
                 [extension_name](const VkExtensionProperties &properties) {
@@ -479,13 +464,22 @@ get_queue_family_indices(const Vulkan_instance &instance,
                                        extension_name) == 0;
                 }))
         {
-            std::cout << "supported" << '\n';
+            if (all_extensions_supported)
+            {
+                all_extensions_supported = false;
+                suitable = false;
+                std::cout << "    Unsupported extension(s): " << extension_name;
+            }
+            else
+            {
+                std::cout << ", " << extension_name;
+            }
         }
-        else
-        {
-            suitable = false;
-            std::cout << "not supported" << '\n';
-        }
+    }
+
+    if (!all_extensions_supported)
+    {
+        std::cout << '\n';
     }
 
     VkPhysicalDeviceRayTracingPipelineFeaturesKHR
@@ -510,43 +504,53 @@ get_queue_family_indices(const Vulkan_instance &instance,
 
     vkGetPhysicalDeviceFeatures2(physical_device, &features_2);
 
-    const auto check_support = [&suitable](bool condition)
+    bool all_features_supported {true};
+
+    const auto check_support =
+        [&](bool feature_supported, const char *feature_name)
     {
-        if (condition)
+        if (!feature_supported)
         {
-            std::cout << "supported" << '\n';
-        }
-        else
-        {
-            suitable = false;
-            std::cout << "not supported" << '\n';
+            if (all_features_supported)
+            {
+                all_features_supported = false;
+                suitable = false;
+                std::cout << "    Unsupported feature(s): " << feature_name;
+            }
+            else
+            {
+                std::cout << ", " << feature_name;
+            }
         }
     };
 
-    std::cout << "    Features:\n";
-    std::cout << "        bufferDeviceAddress: ";
-    check_support(vulkan_1_2_features.bufferDeviceAddress);
-    std::cout << "        scalarBlockLayout: ";
-    check_support(vulkan_1_2_features.scalarBlockLayout);
-    std::cout << "        accelerationStructure: ";
-    check_support(acceleration_structure_features.accelerationStructure);
-    std::cout << "        rayTracingPipeline: ";
-    check_support(ray_tracing_pipeline_features.rayTracingPipeline);
+    check_support(vulkan_1_2_features.bufferDeviceAddress,
+                  "bufferDeviceAddress");
+    check_support(vulkan_1_2_features.scalarBlockLayout, "scalarBlockLayout");
+    check_support(acceleration_structure_features.accelerationStructure,
+                  "accelerationStructure");
+    check_support(ray_tracing_pipeline_features.rayTracingPipeline,
+                  "rayTracingPipeline");
+
+    if (!all_features_supported)
+    {
+        std::cout << '\n';
+    }
 
     return suitable;
 }
 
-[[nodiscard]] Vulkan_device create_device(const Vulkan_instance &instance)
+[[nodiscard]] Vulkan_device create_device(VkInstance instance)
 {
     Vulkan_device device {};
 
     std::uint32_t physical_device_count {};
-    auto result = vkEnumeratePhysicalDevices(
-        instance.instance, &physical_device_count, nullptr);
+    auto result =
+        vkEnumeratePhysicalDevices(instance, &physical_device_count, nullptr);
     check_result(result, "vkEnumeratePhysicalDevices");
     std::vector<VkPhysicalDevice> physical_devices(physical_device_count);
     result = vkEnumeratePhysicalDevices(
-        instance.instance, &physical_device_count, physical_devices.data());
+        instance, &physical_device_count, physical_devices.data());
     check_result(result, "vkEnumeratePhysicalDevices");
 
     constexpr const char *device_extension_names[] {
@@ -676,26 +680,27 @@ void destroy_device(const Vulkan_device &device)
     }
 }
 
-[[nodiscard]] VkSurfaceKHR create_surface(const Vulkan_instance &instance,
+[[nodiscard]] VkSurfaceKHR create_surface(VkInstance instance,
                                           GLFWwindow *window)
 {
     VkSurfaceKHR surface {};
     const auto result =
-        glfwCreateWindowSurface(instance.instance, window, nullptr, &surface);
+        glfwCreateWindowSurface(instance, window, nullptr, &surface);
     check_result(result, "glfwCreateWindowSurface");
     return surface;
 }
 
-void destroy_surface(const Vulkan_instance &instance, VkSurfaceKHR surface)
+void destroy_surface(VkInstance instance, VkSurfaceKHR surface)
 {
     if (surface)
     {
-        vkDestroySurfaceKHR(instance.instance, surface, nullptr);
+        vkDestroySurfaceKHR(instance, surface, nullptr);
     }
 }
 
-[[nodiscard]] VmaAllocator create_allocator(const Vulkan_instance &instance,
-                                            const Vulkan_device &device)
+[[nodiscard]] VmaAllocator create_allocator(VkInstance instance,
+                                            VkPhysicalDevice physical_device,
+                                            VkDevice device)
 {
     VmaVulkanFunctions vulkan_functions {};
     vulkan_functions.vkGetInstanceProcAddr = vkGetInstanceProcAddr,
@@ -704,10 +709,10 @@ void destroy_surface(const Vulkan_instance &instance, VkSurfaceKHR surface)
     VmaAllocatorCreateInfo allocator_create_info {};
     allocator_create_info.flags =
         VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-    allocator_create_info.physicalDevice = device.physical_device;
-    allocator_create_info.device = device.device;
+    allocator_create_info.physicalDevice = physical_device;
+    allocator_create_info.device = device;
     allocator_create_info.pVulkanFunctions = &vulkan_functions;
-    allocator_create_info.instance = instance.instance;
+    allocator_create_info.instance = instance;
     allocator_create_info.vulkanApiVersion = VK_API_VERSION_1_3;
 
     VmaAllocator allocator {};
@@ -717,33 +722,33 @@ void destroy_surface(const Vulkan_instance &instance, VkSurfaceKHR surface)
     return allocator;
 }
 
-[[nodiscard]] VkCommandPool create_command_pool(const Vulkan_device &device)
+[[nodiscard]] VkCommandPool
+create_command_pool(VkDevice device, std::uint32_t queue_family_index)
 {
     const VkCommandPoolCreateInfo create_info {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .pNext = {},
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex = device.queue_family_indices.graphics_compute};
+        .queueFamilyIndex = queue_family_index};
 
     VkCommandPool command_pool {};
-    const auto result = vkCreateCommandPool(
-        device.device, &create_info, nullptr, &command_pool);
+    const auto result =
+        vkCreateCommandPool(device, &create_info, nullptr, &command_pool);
     check_result(result, "vkCreateCommandPool");
 
     return command_pool;
 }
 
-void destroy_command_pool(const Vulkan_device &device,
-                          VkCommandPool command_pool)
+void destroy_command_pool(VkDevice device, VkCommandPool command_pool)
 {
     if (command_pool)
     {
-        vkDestroyCommandPool(device.device, command_pool, nullptr);
+        vkDestroyCommandPool(device, command_pool, nullptr);
     }
 }
 
 [[nodiscard]] VkImageView
-create_image_view(const Vulkan_device &device, VkImage image, VkFormat format)
+create_image_view(VkDevice device, VkImage image, VkFormat format)
 {
     constexpr VkImageSubresourceRange subresource_range {
         .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -767,17 +772,17 @@ create_image_view(const Vulkan_device &device, VkImage image, VkFormat format)
 
     VkImageView image_view {};
     const auto result = vkCreateImageView(
-        device.device, &image_view_create_info, nullptr, &image_view);
+        device, &image_view_create_info, nullptr, &image_view);
     check_result(result, "vkCreateImageView");
 
     return image_view;
 }
 
-void destroy_image_view(const Vulkan_device &device, VkImageView image_view)
+void destroy_image_view(VkDevice device, VkImageView image_view)
 {
     if (image_view)
     {
-        vkDestroyImageView(device.device, image_view, nullptr);
+        vkDestroyImageView(device, image_view, nullptr);
     }
 }
 
@@ -897,13 +902,13 @@ create_swapchain(const Vulkan_device &device,
         {
             for (const auto image_view : swapchain.image_views)
             {
-                destroy_image_view(device, image_view);
+                destroy_image_view(device.device, image_view);
             }
         });
     for (std::uint32_t i {0}; i < image_count; ++i)
     {
-        swapchain.image_views[i] =
-            create_image_view(device, swapchain.images[i], swapchain.format);
+        swapchain.image_views[i] = create_image_view(
+            device.device, swapchain.images[i], swapchain.format);
     }
 
     return swapchain;
@@ -914,7 +919,7 @@ void destroy_swapchain(const Vulkan_device &device,
 {
     for (const auto image_view : swapchain.image_views)
     {
-        destroy_image_view(device, image_view);
+        destroy_image_view(device.device, image_view);
     }
 
     if (swapchain.swapchain)
@@ -2383,7 +2388,7 @@ Vulkan_context create_vulkan_context(GLFWwindow *window)
 
     context.instance = create_instance();
 
-    context.device = create_device(context.instance);
+    context.device = create_device(context.instance.instance);
 
     vkGetDeviceQueue(context.device.device,
                      context.device.queue_family_indices.graphics_compute,
@@ -2394,11 +2399,15 @@ Vulkan_context create_vulkan_context(GLFWwindow *window)
                      0,
                      &context.present_queue);
 
-    context.surface = create_surface(context.instance, window);
+    context.surface = create_surface(context.instance.instance, window);
 
-    context.allocator = create_allocator(context.instance, context.device);
+    context.allocator = create_allocator(context.instance.instance,
+                                         context.device.physical_device,
+                                         context.device.device);
 
-    context.command_pool = create_command_pool(context.device);
+    context.command_pool = create_command_pool(
+        context.device.device,
+        context.device.queue_family_indices.graphics_compute);
 
     int width {};
     int height {};
@@ -2416,9 +2425,9 @@ Vulkan_context create_vulkan_context(GLFWwindow *window)
 void destroy_vulkan_context(Vulkan_context &context)
 {
     destroy_swapchain(context.device, context.swapchain);
-    destroy_command_pool(context.device, context.command_pool);
+    destroy_command_pool(context.device.device, context.command_pool);
     vmaDestroyAllocator(context.allocator);
-    destroy_surface(context.instance, context.surface);
+    destroy_surface(context.instance.instance, context.surface);
     destroy_device(context.device);
     destroy_instance(context.instance);
     context = {};
@@ -2429,6 +2438,9 @@ void load_scene(Vulkan_context &context,
                 std::uint32_t render_height,
                 const Geometry &geometry)
 {
+    // FIXME: a lot of resources here should actually be created in
+    // create_vulkan_context
+
     SCOPE_FAIL([&] { destroy_scene_resources(context); });
 
     constexpr VkFormat storage_image_format {VK_FORMAT_R32G32B32A32_SFLOAT};
@@ -2439,8 +2451,9 @@ void load_scene(Vulkan_context &context,
                                          VK_IMAGE_USAGE_STORAGE_BIT |
                                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                              VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-    context.storage_image_view = create_image_view(
-        context.device, context.storage_image.image, storage_image_format);
+    context.storage_image_view = create_image_view(context.device.device,
+                                                   context.storage_image.image,
+                                                   storage_image_format);
 
     constexpr VkFormat render_target_format {VK_FORMAT_R8G8B8A8_SRGB};
     context.render_target = create_image(context.allocator,
@@ -2450,8 +2463,9 @@ void load_scene(Vulkan_context &context,
                                          VK_IMAGE_USAGE_SAMPLED_BIT |
                                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                              VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-    context.render_target_view = create_image_view(
-        context.device, context.render_target.image, render_target_format);
+    context.render_target_view = create_image_view(context.device.device,
+                                                   context.render_target.image,
+                                                   render_target_format);
 
     {
         const auto command_buffer =
@@ -2554,9 +2568,9 @@ void destroy_scene_resources(const Vulkan_context &context)
     destroy_buffer(context.allocator, context.index_buffer);
     destroy_buffer(context.allocator, context.vertex_buffer);
     destroy_sampler(context.device, context.render_target_sampler);
-    destroy_image_view(context.device, context.render_target_view);
+    destroy_image_view(context.device.device, context.render_target_view);
     destroy_image(context.allocator, context.render_target);
-    destroy_image_view(context.device, context.storage_image_view);
+    destroy_image_view(context.device.device, context.storage_image_view);
     destroy_image(context.allocator, context.storage_image);
 }
 
