@@ -3,18 +3,6 @@
 
 #include "vec3.hpp"
 
-#include <vector>
-
-#include <cstdint>
-
-struct Geometry
-{
-    std::vector<float> vertices;
-    std::vector<std::uint32_t> indices;
-    vec3 aabb_min;
-    vec3 aabb_max;
-};
-
 struct Camera
 {
     vec3 position;
@@ -23,8 +11,6 @@ struct Camera
     vec3 dir_y;
     vec3 dir_z;
 };
-
-[[nodiscard]] Geometry load_geometry(const char *file_name, bool normalize);
 
 [[nodiscard]] Camera create_camera(const vec3 &position,
                                    const vec3 &look_at,

@@ -126,7 +126,7 @@ void destroy_vulkan_context(Vulkan_context &context);
 void load_scene(Vulkan_context &context,
                 std::uint32_t render_width,
                 std::uint32_t render_height,
-                const struct Geometry &geometry);
+                const struct aiScene *scene);
 
 void destroy_scene_resources(const Vulkan_context &context);
 

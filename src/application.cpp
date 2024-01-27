@@ -8,6 +8,10 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
 
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
+
 #include <tinyfiledialogs.h>
 
 #define GLFW_INCLUDE_NONE
@@ -374,9 +378,26 @@ void application_main(const char *file_name)
         normalize = true;
     }
 
-    const auto geometry = load_geometry(file_name, normalize);
+    Assimp::Importer importer;
+    importer.SetPropertyBool(AI_CONFIG_PP_PTV_NORMALIZE, true);
 
-    load_scene(state.context, render_width, render_height, geometry);
+    const auto *const scene = importer.ReadFile(
+        file_name,
+        aiProcess_Triangulate |
+            (normalize ? aiProcess_PreTransformVertices : 0) |
+            aiProcess_GenBoundingBoxes | aiProcess_JoinIdenticalVertices |
+            aiProcess_SortByPType);
+    if (scene == nullptr)
+    {
+        throw std::runtime_error(importer.GetErrorString());
+    }
+
+    if (!scene->HasMeshes())
+    {
+        throw std::runtime_error("Scene has no meshes");
+    }
+
+    load_scene(state.context, render_width, render_height, scene);
     SCOPE_EXIT([&] { destroy_scene_resources(state.context); });
 
     glfwSetWindowUserPointer(window, &state);

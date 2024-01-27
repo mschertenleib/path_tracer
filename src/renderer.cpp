@@ -6,6 +6,8 @@
 
 #include "imgui_impl_vulkan.h"
 
+#include <assimp/scene.h>
+
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -1199,9 +1201,8 @@ create_buffer_from_host_data(const Vulkan_context &context,
     return buffer;
 }
 
-[[nodiscard]] Vulkan_buffer
-create_vertex_buffer(const Vulkan_context &context,
-                     const std::vector<float> &vertices)
+[[nodiscard]] Vulkan_buffer create_vertex_or_index_buffer(
+    const Vulkan_context &context, const void *data, std::size_t size)
 {
     return create_buffer_from_host_data(
         context,
@@ -1209,22 +1210,8 @@ create_vertex_buffer(const Vulkan_context &context,
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
             VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
         VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-        vertices.data(),
-        vertices.size() * sizeof(float));
-}
-
-[[nodiscard]] Vulkan_buffer
-create_index_buffer(const Vulkan_context &context,
-                    const std::vector<std::uint32_t> &indices)
-{
-    return create_buffer_from_host_data(
-        context,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-            VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-        indices.data(),
-        indices.size() * sizeof(std::uint32_t));
+        data,
+        size);
 }
 
 [[nodiscard]] VkDeviceAddress get_device_address(const Vulkan_device &device,
@@ -2436,10 +2423,19 @@ void destroy_vulkan_context(Vulkan_context &context)
 void load_scene(Vulkan_context &context,
                 std::uint32_t render_width,
                 std::uint32_t render_height,
-                const Geometry &geometry)
+                const aiScene *scene)
 {
     // FIXME: a lot of resources here should actually be created in
     // create_vulkan_context
+
+    const auto *const mesh = scene->mMeshes[0];
+    std::vector<std::uint32_t> indices(mesh->mNumFaces * 3);
+    for (unsigned int i {0}; i < mesh->mNumFaces; ++i)
+    {
+        indices[i * 3 + 0] = mesh->mFaces[i].mIndices[0];
+        indices[i * 3 + 1] = mesh->mFaces[i].mIndices[1];
+        indices[i * 3 + 2] = mesh->mFaces[i].mIndices[2];
+    }
 
     SCOPE_FAIL([&] { destroy_scene_resources(context); });
 
@@ -2493,9 +2489,13 @@ void load_scene(Vulkan_context &context,
 
     context.render_target_sampler = create_sampler(context.device);
 
-    context.vertex_buffer = create_vertex_buffer(context, geometry.vertices);
+    context.vertex_buffer = create_vertex_or_index_buffer(
+        context,
+        mesh->mVertices,
+        mesh->mNumVertices * sizeof(mesh->mVertices[0]));
 
-    context.index_buffer = create_index_buffer(context, geometry.indices);
+    context.index_buffer = create_vertex_or_index_buffer(
+        context, indices.data(), indices.size() * sizeof(indices.front()));
 
     context.blas = create_blas(context);
 
