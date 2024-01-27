@@ -187,13 +187,11 @@ void check_result(VkResult result, const char *message)
     }
 }
 
-[[nodiscard]] Vulkan_instance create_instance()
+void create_instance(Vulkan_context &context)
 {
     auto result = volkInitialize();
     check_result(result, "volkInitialize");
     SCOPE_FAIL([] { volkFinalize(); });
-
-    Vulkan_instance instance {};
 
     constexpr VkApplicationInfo application_info {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -345,35 +343,33 @@ void check_result(VkResult result, const char *message)
 #endif
 
     result =
-        vkCreateInstance(&instance_create_info, nullptr, &instance.instance);
+        vkCreateInstance(&instance_create_info, nullptr, &context.instance);
     check_result(result, "vkCreateInstance");
 
-    volkLoadInstanceOnly(instance.instance);
+    volkLoadInstanceOnly(context.instance);
 
 #ifdef ENABLE_VALIDATION_LAYERS
 
-    SCOPE_FAIL([&] { vkDestroyInstance(instance.instance, nullptr); });
+    SCOPE_FAIL([&] { vkDestroyInstance(context.instance, nullptr); });
 
-    result = vkCreateDebugUtilsMessengerEXT(instance.instance,
+    result = vkCreateDebugUtilsMessengerEXT(context.instance,
                                             &debug_utils_messenger_create_info,
                                             nullptr,
-                                            &instance.debug_messenger);
+                                            &context.debug_messenger);
     check_result(result, "vkCreateDebugUtilsMessengerEXT");
 
 #endif
-
-    return instance;
 }
 
-void destroy_instance(const Vulkan_instance &instance)
+void destroy_instance(const Vulkan_context &context)
 {
-    if (instance.instance)
+    if (context.instance)
     {
 #ifdef ENABLE_VALIDATION_LAYERS
         vkDestroyDebugUtilsMessengerEXT(
-            instance.instance, instance.debug_messenger, nullptr);
+            context.instance, context.debug_messenger, nullptr);
 #endif
-        vkDestroyInstance(instance.instance, nullptr);
+        vkDestroyInstance(context.instance, nullptr);
 
         volkFinalize();
     }
@@ -2311,7 +2307,7 @@ void init_imgui(const Vulkan_context &context)
     const auto loader_func = [](const char *function_name, void *user_data)
     {
         const auto ctx = static_cast<const Vulkan_context *>(user_data);
-        return vkGetInstanceProcAddr(ctx->instance.instance, function_name);
+        return vkGetInstanceProcAddr(ctx->instance, function_name);
     };
     ImGui_ImplVulkan_LoadFunctions(loader_func,
                                    const_cast<Vulkan_context *>(&context));
@@ -2320,7 +2316,7 @@ void init_imgui(const Vulkan_context &context)
     { check_result(result, "ImGui Vulkan call"); };
 
     ImGui_ImplVulkan_InitInfo init_info {
-        .Instance = context.instance.instance,
+        .Instance = context.instance,
         .PhysicalDevice = context.device.physical_device,
         .Device = context.device.device,
         .QueueFamily = context.device.queue_family_indices.graphics_compute,
@@ -2373,9 +2369,9 @@ Vulkan_context create_vulkan_context(GLFWwindow *window)
 
     SCOPE_FAIL([&] { destroy_vulkan_context(context); });
 
-    context.instance = create_instance();
+    create_instance(context);
 
-    context.device = create_device(context.instance.instance);
+    context.device = create_device(context.instance);
 
     vkGetDeviceQueue(context.device.device,
                      context.device.queue_family_indices.graphics_compute,
@@ -2386,9 +2382,9 @@ Vulkan_context create_vulkan_context(GLFWwindow *window)
                      0,
                      &context.present_queue);
 
-    context.surface = create_surface(context.instance.instance, window);
+    context.surface = create_surface(context.instance, window);
 
-    context.allocator = create_allocator(context.instance.instance,
+    context.allocator = create_allocator(context.instance,
                                          context.device.physical_device,
                                          context.device.device);
 
@@ -2414,9 +2410,9 @@ void destroy_vulkan_context(Vulkan_context &context)
     destroy_swapchain(context.device, context.swapchain);
     destroy_command_pool(context.device.device, context.command_pool);
     vmaDestroyAllocator(context.allocator);
-    destroy_surface(context.instance.instance, context.surface);
+    destroy_surface(context.instance, context.surface);
     destroy_device(context.device);
-    destroy_instance(context.instance);
+    destroy_instance(context);
     context = {};
 }
 

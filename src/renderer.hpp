@@ -10,14 +10,6 @@
 
 #include <cstdint>
 
-struct Vulkan_instance
-{
-    VkInstance instance;
-#ifndef NDEBUG
-    VkDebugUtilsMessengerEXT debug_messenger;
-#endif
-};
-
 struct Vulkan_queue_family_indices
 {
     std::uint32_t graphics_compute;
@@ -76,7 +68,10 @@ struct Vulkan_shader_binding_table
 
 struct Vulkan_context
 {
-    Vulkan_instance instance;
+    VkInstance instance;
+#ifndef NDEBUG
+    VkDebugUtilsMessengerEXT debug_messenger;
+#endif
     Vulkan_device device;
     VkQueue graphics_compute_queue;
     VkQueue present_queue;
