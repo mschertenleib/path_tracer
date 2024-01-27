@@ -8,10 +8,13 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
 
+#include <tinyfiledialogs.h>
+
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <filesystem>
 #include <iostream>
 #include <numbers>
 #include <stdexcept>
@@ -226,12 +229,21 @@ void make_ui(Application_state &state)
             reset_render(state.context);
         }
 
-        static char filename_buffer[1024] {"image.png"};
-        ImGui::InputText(
-            "File name", filename_buffer, sizeof(filename_buffer) - 1);
-        if (ImGui::Button("Write to PNG"))
+        if (ImGui::Button("Save as PNG"))
         {
-            write_to_png(state.context, filename_buffer);
+            constexpr const char *filter_patterns[] {"*.png"};
+            const auto default_path =
+                std::filesystem::current_path() / "out.png";
+            const auto file_name = tinyfd_saveFileDialog(
+                "Save As",
+                default_path.string().c_str(),
+                static_cast<int>(std::size(filter_patterns)),
+                filter_patterns,
+                nullptr);
+            if (file_name != nullptr)
+            {
+                write_to_png(state.context, file_name);
+            }
         }
 
         ImGui::SeparatorText("Camera");
