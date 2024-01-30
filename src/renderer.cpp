@@ -1305,10 +1305,10 @@ create_blas(const Vulkan_context &context)
 [[nodiscard]] Vulkan_acceleration_structure
 create_tlas(const Vulkan_context &context)
 {
-    VkTransformMatrixKHR transform {};
-    transform.matrix[0][0] = 1.0f;
-    transform.matrix[1][1] = 1.0f;
-    transform.matrix[2][2] = 1.0f;
+    constexpr VkTransformMatrixKHR transform {
+        .matrix = {{1.0f, 0.0f, 0.0f, 0.0f},
+                   {0.0f, 1.0f, 0.0f, 0.0f},
+                   {0.0f, 0.0f, 1.0f, 0.0f}}};
 
     const VkAccelerationStructureInstanceKHR as_instance {
         .transform = transform,

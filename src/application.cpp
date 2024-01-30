@@ -1,7 +1,7 @@
 #include "application.hpp"
 
-#include "renderer.hpp"
 #include "camera.hpp"
+#include "renderer.hpp"
 #include "utility.hpp"
 
 #include "imgui.h"
@@ -37,39 +37,6 @@ struct Application_state
     std::uint32_t render_height;
 };
 
-void zoom_camera(Application_state &state, float distance)
-{
-    state.camera.position =
-        state.camera.target - distance * state.camera.direction_z;
-    reset_render(state.context);
-}
-
-void yaw_camera(Application_state &state, float yaw)
-{
-    // FIXME: we are assuming world Y is up
-    const auto target_vector = state.camera.target - state.camera.position;
-    const auto current_yaw =
-        std::atan2(state.camera.direction_z.z, state.camera.direction_z.x);
-    const auto rotate = [](const vec3 &v, float angle)
-    {
-        return vec3 {std::cos(angle) * v.x - std::sin(angle) * v.z,
-                     v.y,
-                     std::sin(angle) * v.x + std::cos(angle) * v.z};
-    };
-    state.camera.direction_x = rotate(state.camera.direction_x, yaw - current_yaw);
-    state.camera.direction_y = rotate(state.camera.direction_y, yaw - current_yaw);
-    state.camera.direction_z = rotate(state.camera.direction_z, yaw - current_yaw);
-    const auto distance_to_target = norm(target_vector);
-    state.camera.position =
-        state.camera.target - distance_to_target * state.camera.direction_z;
-    reset_render(state.context);
-}
-
-void pitch_camera(Application_state &state, float pitch)
-{
-    reset_render(state.context);
-}
-
 void glfw_error_callback(int error, const char *description)
 {
     std::cerr << "GLFW error " << error << ": " << description << '\n';
@@ -88,12 +55,6 @@ void glfw_scroll_callback(GLFWwindow *window,
                           [[maybe_unused]] double xoffset,
                           double yoffset)
 {
-    const auto state =
-        static_cast<Application_state *>(glfwGetWindowUserPointer(window));
-    const auto distance_to_target =
-        norm(state->camera.target - state->camera.position);
-    zoom_camera(*state,
-                (1.0f + static_cast<float>(yoffset)) * distance_to_target);
 }
 
 [[nodiscard]] GLFWwindow *init_glfw()
@@ -255,7 +216,7 @@ void make_ui(Application_state &state)
                     static_cast<double>(state.camera.position.x),
                     static_cast<double>(state.camera.position.y),
                     static_cast<double>(state.camera.position.z));
-        ImGui::Text("Look at:     %11.5f %11.5f %11.5f",
+        ImGui::Text("Target:      %11.5f %11.5f %11.5f",
                     static_cast<double>(state.camera.target.x),
                     static_cast<double>(state.camera.target.y),
                     static_cast<double>(state.camera.target.z));
@@ -271,26 +232,31 @@ void make_ui(Application_state &state)
                     static_cast<double>(state.camera.direction_z.x),
                     static_cast<double>(state.camera.direction_z.y),
                     static_cast<double>(state.camera.direction_z.z));
+        ImGui::Text("Yaw: %11.5f", static_cast<double>(state.camera.yaw));
+        ImGui::Text("Pitch: %11.5f", static_cast<double>(state.camera.pitch));
         ImGui::SeparatorText("Orbital Camera");
         static const float initial_camera_distance {
             norm(state.camera.target - state.camera.position)};
-        static auto camera_distance = initial_camera_distance;
+        static float camera_distance {initial_camera_distance};
         if (ImGui::SliderFloat("Distance",
                                &camera_distance,
                                0.0f,
                                10.0f * initial_camera_distance))
         {
-            zoom_camera(state, camera_distance);
+            orbital_camera_set_distance(state.camera, camera_distance);
+            reset_render(state.context);
         }
-        static float camera_yaw {0.0f};
+        static float camera_yaw {state.camera.yaw};
         if (ImGui::SliderAngle("Yaw", &camera_yaw))
         {
-            yaw_camera(state, camera_yaw);
+            orbital_camera_set_yaw(state.camera, camera_yaw);
+            reset_render(state.context);
         }
-        static float camera_pitch {0.0f};
-        if (ImGui::SliderAngle("Pitch", &camera_pitch))
+        static float camera_pitch {state.camera.pitch};
+        if (ImGui::SliderAngle("Pitch", &camera_pitch, -90.0f, 90.0f))
         {
-            pitch_camera(state, camera_pitch);
+            orbital_camera_set_pitch(state.camera, camera_pitch);
+            reset_render(state.context);
         }
     }
     ImGui::End();
@@ -327,54 +293,39 @@ void application_main(const char *file_name)
     {
         const vec3 position {278.0f, 273.0f, -800.0f};
         const vec3 look_at {278.0f, 273.0f, 0.0f};
-        const vec3 world_up {0.0f, 1.0f, 0.0f};
         const auto aspect_ratio = static_cast<float>(render_width) /
                                   static_cast<float>(render_height);
         const float focal_length {0.035f};
         const float sensor_height {0.025f};
         const auto sensor_width = aspect_ratio * sensor_height;
-        state.camera = create_camera(position,
-                                     look_at,
-                                     world_up,
-                                     focal_length,
-                                     sensor_width,
-                                     sensor_height);
+        state.camera = create_camera(
+            position, look_at, focal_length, sensor_width, sensor_height);
     }
     else if (std::string(file_name).ends_with("dragon.obj"))
     {
         const vec3 position {-0.07f, 0.15f, 0.2f};
         const vec3 look_at {-0.02f, 0.12f, 0.0f};
-        const vec3 world_up {0.0f, 1.0f, 0.0f};
         const auto vertical_fov = 45.0f / 180.0f * std::numbers::pi_v<float>;
         const auto aspect_ratio = static_cast<float>(render_width) /
                                   static_cast<float>(render_height);
         const float focal_length {1.0f};
         const auto sensor_height = 2.0f * std::tan(vertical_fov * 0.5f);
         const auto sensor_width = aspect_ratio * sensor_height;
-        state.camera = create_camera(position,
-                                     look_at,
-                                     world_up,
-                                     focal_length,
-                                     sensor_width,
-                                     sensor_height);
+        state.camera = create_camera(
+            position, look_at, focal_length, sensor_width, sensor_height);
     }
     else
     {
         const vec3 position {2.0f, 1.5f, 2.0f};
         const vec3 look_at {0.0f, 0.0f, 0.0f};
-        const vec3 world_up {0.0f, 1.0f, 0.0f};
         const auto vertical_fov = 45.0f / 180.0f * std::numbers::pi_v<float>;
         const auto aspect_ratio = static_cast<float>(render_width) /
                                   static_cast<float>(render_height);
         const float focal_length {1.0f};
         const auto sensor_height = 2.0f * std::tan(vertical_fov * 0.5f);
         const auto sensor_width = aspect_ratio * sensor_height;
-        state.camera = create_camera(position,
-                                     look_at,
-                                     world_up,
-                                     focal_length,
-                                     sensor_width,
-                                     sensor_height);
+        state.camera = create_camera(
+            position, look_at, focal_length, sensor_width, sensor_height);
         normalize = true;
     }
 
