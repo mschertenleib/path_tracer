@@ -154,6 +154,31 @@ void make_ui(Application_state &state)
 {
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 
+    if (ImGui::BeginMainMenuBar())
+    {
+        if (ImGui::BeginMenu("File"))
+        {
+            if (ImGui::MenuItem("Save as PNG"))
+            {
+                constexpr const char *filter_patterns[] {"*.png"};
+                const auto default_path =
+                    std::filesystem::current_path() / "out.png";
+                const auto file_name = tinyfd_saveFileDialog(
+                    "Save As",
+                    default_path.string().c_str(),
+                    static_cast<int>(std::size(filter_patterns)),
+                    filter_patterns,
+                    nullptr);
+                if (file_name != nullptr)
+                {
+                    write_to_png(state.context, file_name);
+                }
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMainMenuBar();
+    }
+
     ImGui::PushStyleColor(ImGuiCol_WindowBg, {0.0f, 0.0f, 0.0f, 1.0f});
     if (ImGui::Begin("Viewport"))
     {
@@ -194,46 +219,6 @@ void make_ui(Application_state &state)
             reset_render(state.context);
         }
 
-        if (ImGui::Button("Save as PNG"))
-        {
-            constexpr const char *filter_patterns[] {"*.png"};
-            const auto default_path =
-                std::filesystem::current_path() / "out.png";
-            const auto file_name = tinyfd_saveFileDialog(
-                "Save As",
-                default_path.string().c_str(),
-                static_cast<int>(std::size(filter_patterns)),
-                filter_patterns,
-                nullptr);
-            if (file_name != nullptr)
-            {
-                write_to_png(state.context, file_name);
-            }
-        }
-
-        ImGui::SeparatorText("Camera");
-        ImGui::Text("Position:    %11.5f %11.5f %11.5f",
-                    static_cast<double>(state.camera.position.x),
-                    static_cast<double>(state.camera.position.y),
-                    static_cast<double>(state.camera.position.z));
-        ImGui::Text("Target:      %11.5f %11.5f %11.5f",
-                    static_cast<double>(state.camera.target.x),
-                    static_cast<double>(state.camera.target.y),
-                    static_cast<double>(state.camera.target.z));
-        ImGui::Text("Direction X: %11.5f %11.5f %11.5f",
-                    static_cast<double>(state.camera.direction_x.x),
-                    static_cast<double>(state.camera.direction_x.y),
-                    static_cast<double>(state.camera.direction_x.z));
-        ImGui::Text("Direction Y: %11.5f %11.5f %11.5f",
-                    static_cast<double>(state.camera.direction_y.x),
-                    static_cast<double>(state.camera.direction_y.y),
-                    static_cast<double>(state.camera.direction_y.z));
-        ImGui::Text("Direction Z: %11.5f %11.5f %11.5f",
-                    static_cast<double>(state.camera.direction_z.x),
-                    static_cast<double>(state.camera.direction_z.y),
-                    static_cast<double>(state.camera.direction_z.z));
-        ImGui::Text("Yaw: %11.5f", static_cast<double>(state.camera.yaw));
-        ImGui::Text("Pitch: %11.5f", static_cast<double>(state.camera.pitch));
         ImGui::SeparatorText("Orbital Camera");
         static const float initial_camera_distance {
             norm(state.camera.target - state.camera.position)};
