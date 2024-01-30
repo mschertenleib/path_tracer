@@ -379,14 +379,17 @@ void application_main(const char *file_name)
     }
 
     Assimp::Importer importer;
-    importer.SetPropertyBool(AI_CONFIG_PP_PTV_NORMALIZE, true);
+    if (normalize)
+    {
+        importer.SetPropertyBool(AI_CONFIG_PP_PTV_NORMALIZE, true);
+    }
 
     const auto *const scene = importer.ReadFile(
         file_name,
-        aiProcess_Triangulate |
-            (normalize ? aiProcess_PreTransformVertices : 0) |
+        static_cast<unsigned int>(
+            aiProcess_Triangulate | aiProcess_PreTransformVertices |
             aiProcess_GenBoundingBoxes | aiProcess_JoinIdenticalVertices |
-            aiProcess_SortByPType);
+            aiProcess_SortByPType));
     if (scene == nullptr)
     {
         throw std::runtime_error(importer.GetErrorString());

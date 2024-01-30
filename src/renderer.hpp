@@ -16,26 +16,6 @@ struct Vulkan_queue_family_indices
     std::uint32_t present;
 };
 
-struct Vulkan_device
-{
-    VkPhysicalDevice physical_device;
-    Vulkan_queue_family_indices queue_family_indices;
-    VkPhysicalDeviceProperties properties;
-    VkPhysicalDeviceRayTracingPipelinePropertiesKHR
-        ray_tracing_pipeline_properties;
-    VkDevice device;
-};
-
-struct Vulkan_swapchain
-{
-    VkFormat format;
-    VkExtent2D extent;
-    std::uint32_t min_image_count;
-    VkSwapchainKHR swapchain;
-    std::vector<VkImage> images;
-    std::vector<VkImageView> image_views;
-};
-
 struct Vulkan_image
 {
     std::uint32_t width;
@@ -57,28 +37,29 @@ struct Vulkan_acceleration_structure
     VkAccelerationStructureKHR acceleration_structure;
 };
 
-struct Vulkan_shader_binding_table
-{
-    Vulkan_buffer buffer;
-    VkStridedDeviceAddressRegionKHR raygen_region;
-    VkStridedDeviceAddressRegionKHR miss_region;
-    VkStridedDeviceAddressRegionKHR hit_region;
-    VkStridedDeviceAddressRegionKHR callable_region;
-};
-
 struct Vulkan_context
 {
     VkInstance instance;
 #ifndef NDEBUG
     VkDebugUtilsMessengerEXT debug_messenger;
 #endif
-    Vulkan_device device;
+    VkPhysicalDevice physical_device;
+    Vulkan_queue_family_indices queue_family_indices;
+    VkPhysicalDeviceProperties physical_device_properties;
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR
+        ray_tracing_pipeline_properties;
+    VkDevice device;
     VkQueue graphics_compute_queue;
     VkQueue present_queue;
     VkSurfaceKHR surface;
     VmaAllocator allocator;
     VkCommandPool command_pool;
-    Vulkan_swapchain swapchain;
+    VkFormat swapchain_format;
+    VkExtent2D swapchain_extent;
+    std::uint32_t swapchain_min_image_count;
+    VkSwapchainKHR swapchain;
+    std::vector<VkImage> swapchain_images;
+    std::vector<VkImageView> swapchain_image_views;
     Vulkan_image storage_image;
     VkImageView storage_image_view;
     Vulkan_image render_target;
@@ -95,7 +76,11 @@ struct Vulkan_context
     VkDescriptorSet final_render_descriptor_set;
     VkPipelineLayout ray_tracing_pipeline_layout;
     VkPipeline ray_tracing_pipeline;
-    Vulkan_shader_binding_table shader_binding_table;
+    Vulkan_buffer sbt_buffer;
+    VkStridedDeviceAddressRegionKHR sbt_raygen_region;
+    VkStridedDeviceAddressRegionKHR sbt_miss_region;
+    VkStridedDeviceAddressRegionKHR sbt_hit_region;
+    VkStridedDeviceAddressRegionKHR sbt_callable_region;
     VkRenderPass render_pass;
     std::vector<VkFramebuffer> framebuffers;
     static constexpr std::uint32_t frames_in_flight {2};
