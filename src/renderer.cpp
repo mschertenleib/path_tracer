@@ -1,5 +1,5 @@
 #include "renderer.hpp"
-#include "scene.hpp"
+#include "camera.hpp"
 #include "utility.hpp"
 
 #include "stb_image_write.h"
@@ -2632,9 +2632,9 @@ void draw_frame(Vulkan_context &context, const Camera &camera)
             .sample_count = context.sample_count,
             .samples_per_frame = samples_this_frame,
             .camera_position = camera.position,
-            .camera_dir_x = camera.dir_x,
-            .camera_dir_y = camera.dir_y,
-            .camera_dir_z = camera.dir_z};
+            .camera_dir_x = camera.direction_x,
+            .camera_dir_y = camera.direction_y,
+            .camera_dir_z = camera.direction_z};
 
         vkCmdPushConstants(command_buffer,
                            context.ray_tracing_pipeline_layout,

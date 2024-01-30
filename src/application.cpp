@@ -1,7 +1,7 @@
 #include "application.hpp"
 
 #include "renderer.hpp"
-#include "scene.hpp"
+#include "camera.hpp"
 #include "utility.hpp"
 
 #include "imgui.h"
@@ -40,28 +40,28 @@ struct Application_state
 void zoom_camera(Application_state &state, float distance)
 {
     state.camera.position =
-        state.camera.look_at - distance * state.camera.dir_z;
+        state.camera.target - distance * state.camera.direction_z;
     reset_render(state.context);
 }
 
 void yaw_camera(Application_state &state, float yaw)
 {
     // FIXME: we are assuming world Y is up
-    const auto target_vector = state.camera.look_at - state.camera.position;
+    const auto target_vector = state.camera.target - state.camera.position;
     const auto current_yaw =
-        std::atan2(state.camera.dir_z.z, state.camera.dir_z.x);
+        std::atan2(state.camera.direction_z.z, state.camera.direction_z.x);
     const auto rotate = [](const vec3 &v, float angle)
     {
         return vec3 {std::cos(angle) * v.x - std::sin(angle) * v.z,
                      v.y,
                      std::sin(angle) * v.x + std::cos(angle) * v.z};
     };
-    state.camera.dir_x = rotate(state.camera.dir_x, yaw - current_yaw);
-    state.camera.dir_y = rotate(state.camera.dir_y, yaw - current_yaw);
-    state.camera.dir_z = rotate(state.camera.dir_z, yaw - current_yaw);
+    state.camera.direction_x = rotate(state.camera.direction_x, yaw - current_yaw);
+    state.camera.direction_y = rotate(state.camera.direction_y, yaw - current_yaw);
+    state.camera.direction_z = rotate(state.camera.direction_z, yaw - current_yaw);
     const auto distance_to_target = norm(target_vector);
     state.camera.position =
-        state.camera.look_at - distance_to_target * state.camera.dir_z;
+        state.camera.target - distance_to_target * state.camera.direction_z;
     reset_render(state.context);
 }
 
@@ -91,7 +91,7 @@ void glfw_scroll_callback(GLFWwindow *window,
     const auto state =
         static_cast<Application_state *>(glfwGetWindowUserPointer(window));
     const auto distance_to_target =
-        norm(state->camera.look_at - state->camera.position);
+        norm(state->camera.target - state->camera.position);
     zoom_camera(*state,
                 (1.0f + static_cast<float>(yoffset)) * distance_to_target);
 }
@@ -256,24 +256,24 @@ void make_ui(Application_state &state)
                     static_cast<double>(state.camera.position.y),
                     static_cast<double>(state.camera.position.z));
         ImGui::Text("Look at:     %11.5f %11.5f %11.5f",
-                    static_cast<double>(state.camera.look_at.x),
-                    static_cast<double>(state.camera.look_at.y),
-                    static_cast<double>(state.camera.look_at.z));
+                    static_cast<double>(state.camera.target.x),
+                    static_cast<double>(state.camera.target.y),
+                    static_cast<double>(state.camera.target.z));
         ImGui::Text("Direction X: %11.5f %11.5f %11.5f",
-                    static_cast<double>(state.camera.dir_x.x),
-                    static_cast<double>(state.camera.dir_x.y),
-                    static_cast<double>(state.camera.dir_x.z));
+                    static_cast<double>(state.camera.direction_x.x),
+                    static_cast<double>(state.camera.direction_x.y),
+                    static_cast<double>(state.camera.direction_x.z));
         ImGui::Text("Direction Y: %11.5f %11.5f %11.5f",
-                    static_cast<double>(state.camera.dir_y.x),
-                    static_cast<double>(state.camera.dir_y.y),
-                    static_cast<double>(state.camera.dir_y.z));
+                    static_cast<double>(state.camera.direction_y.x),
+                    static_cast<double>(state.camera.direction_y.y),
+                    static_cast<double>(state.camera.direction_y.z));
         ImGui::Text("Direction Z: %11.5f %11.5f %11.5f",
-                    static_cast<double>(state.camera.dir_z.x),
-                    static_cast<double>(state.camera.dir_z.y),
-                    static_cast<double>(state.camera.dir_z.z));
+                    static_cast<double>(state.camera.direction_z.x),
+                    static_cast<double>(state.camera.direction_z.y),
+                    static_cast<double>(state.camera.direction_z.z));
         ImGui::SeparatorText("Orbital Camera");
         static const float initial_camera_distance {
-            norm(state.camera.look_at - state.camera.position)};
+            norm(state.camera.target - state.camera.position)};
         static auto camera_distance = initial_camera_distance;
         if (ImGui::SliderFloat("Distance",
                                &camera_distance,
