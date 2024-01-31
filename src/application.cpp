@@ -273,7 +273,7 @@ void application_main(const char *file_name)
     state.context = create_vulkan_context(window);
     SCOPE_EXIT([&] { destroy_vulkan_context(state.context); });
 
-    const vec3 position {0.0f, 0.0f, -3.5f};
+    const vec3 position {0.0f, 0.0f, 3.5f};
     const vec3 target {0.0f, 0.0f, 0.0f};
     const auto vertical_fov = 45.0f / 180.0f * std::numbers::pi_v<float>;
     const auto aspect_ratio =
