@@ -871,6 +871,233 @@ void destroy_swapchain(const Vulkan_context &context)
     }
 }
 
+void create_descriptor_pool(Vulkan_context &context)
+{
+    constexpr VkDescriptorPoolSize pool_sizes[] {
+        {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
+        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000},
+        {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1}};
+
+    std::uint32_t max_sets {0};
+    for (const auto pool_size : pool_sizes)
+    {
+        max_sets += pool_size.descriptorCount;
+    }
+
+    const VkDescriptorPoolCreateInfo create_info {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .pNext = {},
+        .flags = {},
+        .maxSets = max_sets,
+        .poolSizeCount = static_cast<std::uint32_t>(std::size(pool_sizes)),
+        .pPoolSizes = pool_sizes};
+
+    const auto result = vkCreateDescriptorPool(
+        context.device, &create_info, nullptr, &context.descriptor_pool);
+    check_result(result, "vkCreateDescriptorPool");
+}
+
+void create_render_pass(Vulkan_context &context)
+{
+    const VkAttachmentDescription attachment_description {
+        .flags = {},
+        .format = context.swapchain_format,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR};
+
+    constexpr VkAttachmentReference attachment_reference {
+        .attachment = 0, .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+
+    const VkSubpassDescription subpass_description {
+        .flags = {},
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .inputAttachmentCount = {},
+        .pInputAttachments = {},
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &attachment_reference,
+        .pResolveAttachments = {},
+        .pDepthStencilAttachment = {},
+        .preserveAttachmentCount = {},
+        .pPreserveAttachments = {}};
+
+    constexpr VkSubpassDependency subpass_dependency {
+        .srcSubpass = VK_SUBPASS_EXTERNAL,
+        .dstSubpass = 0,
+        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .srcAccessMask = VK_ACCESS_NONE,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dependencyFlags = {}};
+
+    const VkRenderPassCreateInfo render_pass_create_info {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .pNext = {},
+        .flags = {},
+        .attachmentCount = 1,
+        .pAttachments = &attachment_description,
+        .subpassCount = 1,
+        .pSubpasses = &subpass_description,
+        .dependencyCount = 1,
+        .pDependencies = &subpass_dependency};
+
+    const auto result = vkCreateRenderPass(context.device,
+                                           &render_pass_create_info,
+                                           nullptr,
+                                           &context.render_pass);
+    check_result(result, "vkCreateRenderPass");
+}
+
+void create_framebuffers(Vulkan_context &context)
+{
+    context.framebuffers.resize(context.swapchain_image_views.size());
+
+    SCOPE_FAIL(
+        [&]
+        {
+            for (const auto framebuffer : context.framebuffers)
+            {
+                if (framebuffer)
+                {
+                    vkDestroyFramebuffer(context.device, framebuffer, nullptr);
+                }
+            }
+        });
+
+    for (std::size_t i {0}; i < context.framebuffers.size(); ++i)
+    {
+        const VkFramebufferCreateInfo framebuffer_create_info {
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .pNext = {},
+            .flags = {},
+            .renderPass = context.render_pass,
+            .attachmentCount = 1,
+            .pAttachments = &context.swapchain_image_views[i],
+            .width = context.swapchain_extent.width,
+            .height = context.swapchain_extent.height,
+            .layers = 1};
+
+        const auto result = vkCreateFramebuffer(context.device,
+                                                &framebuffer_create_info,
+                                                nullptr,
+                                                &context.framebuffers[i]);
+        check_result(result, "vkCreateFramebuffer");
+    }
+}
+
+void destroy_framebuffers(const Vulkan_context &context)
+{
+    for (const auto framebuffer : context.framebuffers)
+    {
+        if (framebuffer)
+        {
+            vkDestroyFramebuffer(context.device, framebuffer, nullptr);
+        }
+    }
+}
+
+void create_command_buffers(Vulkan_context &context)
+{
+    const VkCommandBufferAllocateInfo allocate_info {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = {},
+        .commandPool = context.command_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = Vulkan_context::frames_in_flight};
+
+    const auto result = vkAllocateCommandBuffers(
+        context.device, &allocate_info, context.command_buffers.data());
+    check_result(result, "vkAllocateCommandBuffers");
+}
+
+void create_synchronization_objects(Vulkan_context &context)
+{
+    constexpr VkSemaphoreCreateInfo semaphore_create_info {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = {},
+        .flags = {}};
+
+    // TODO: since we are directly initializing the handles of the context
+    // struct, we could actually omit all the SCOPE_FAILs since we have one
+    // general SCOPE_FAIL in create_context (there are no longer handles local
+    // to the create_* function)
+
+    SCOPE_FAIL(
+        [&]
+        {
+            for (const auto semaphore : context.image_available_semaphores)
+            {
+                if (semaphore)
+                {
+                    vkDestroySemaphore(context.device, semaphore, nullptr);
+                }
+            }
+        });
+
+    for (auto &semaphore : context.image_available_semaphores)
+    {
+        const auto result = vkCreateSemaphore(
+            context.device, &semaphore_create_info, nullptr, &semaphore);
+        check_result(result, "vkCreateSemaphore");
+    }
+
+    SCOPE_FAIL(
+        [&]
+        {
+            for (const auto semaphore : context.render_finished_semaphores)
+            {
+                if (semaphore)
+                {
+                    vkDestroySemaphore(context.device, semaphore, nullptr);
+                }
+            }
+        });
+
+    for (auto &semaphore : context.render_finished_semaphores)
+    {
+        const auto result = vkCreateSemaphore(
+            context.device, &semaphore_create_info, nullptr, &semaphore);
+        check_result(result, "vkCreateSemaphore");
+    }
+
+    constexpr VkFenceCreateInfo fence_create_info {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .pNext = {},
+        .flags = VK_FENCE_CREATE_SIGNALED_BIT};
+
+    SCOPE_FAIL(
+        [&]
+        {
+            for (const auto fence : context.in_flight_fences)
+            {
+                if (fence)
+                {
+                    vkDestroyFence(context.device, fence, nullptr);
+                }
+            }
+        });
+
+    for (auto &fence : context.in_flight_fences)
+    {
+        const auto result =
+            vkCreateFence(context.device, &fence_create_info, nullptr, &fence);
+        check_result(result, "vkCreateFence");
+    }
+}
+
 [[nodiscard]] VkCommandBuffer
 begin_one_time_submit_command_buffer(const Vulkan_context &context)
 {
@@ -933,6 +1160,61 @@ void end_one_time_submit_command_buffer(const Vulkan_context &context,
 
     result = vkQueueWaitIdle(context.graphics_compute_queue);
     check_result(result, "vkQueueWaitIdle");
+}
+
+void init_imgui(Vulkan_context &context)
+{
+    const auto loader_func = [](const char *function_name, void *user_data)
+    {
+        const auto ctx = static_cast<const Vulkan_context *>(user_data);
+        return vkGetInstanceProcAddr(ctx->instance, function_name);
+    };
+    ImGui_ImplVulkan_LoadFunctions(loader_func, &context);
+
+    const auto check_vk_result = [](VkResult result)
+    { check_result(result, "ImGui Vulkan call"); };
+
+    ImGui_ImplVulkan_InitInfo init_info {
+        .Instance = context.instance,
+        .PhysicalDevice = context.physical_device,
+        .Device = context.device,
+        .QueueFamily = context.queue_family_indices.graphics_compute,
+        .Queue = context.graphics_compute_queue,
+        .PipelineCache = VK_NULL_HANDLE,
+        .DescriptorPool = context.descriptor_pool,
+        .Subpass = 0,
+        .MinImageCount = context.swapchain_min_image_count,
+        .ImageCount =
+            static_cast<std::uint32_t>(context.swapchain_images.size()),
+        .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
+        .UseDynamicRendering = false,
+        .ColorAttachmentFormat = context.swapchain_format,
+        .Allocator = nullptr,
+        .CheckVkResultFn = check_vk_result};
+
+    ImGui_ImplVulkan_Init(&init_info, context.render_pass);
+
+    const auto command_buffer = begin_one_time_submit_command_buffer(context);
+    ImGui_ImplVulkan_CreateFontsTexture(command_buffer);
+    end_one_time_submit_command_buffer(context, command_buffer);
+    ImGui_ImplVulkan_DestroyFontUploadObjects();
+
+    context.imgui_initialized = true;
+}
+
+void recreate_swapchain(Vulkan_context &context)
+{
+    const auto result = vkDeviceWaitIdle(context.device);
+    check_result(result, "vkDeviceWaitIdle");
+
+    destroy_swapchain(context);
+    context.swapchain = {};
+    create_swapchain(
+        context, context.framebuffer_width, context.framebuffer_height);
+
+    destroy_framebuffers(context);
+    context.framebuffers = {};
+    create_framebuffers(context);
 }
 
 [[nodiscard]] Vulkan_image create_image(VmaAllocator allocator,
@@ -1557,53 +1839,6 @@ void destroy_descriptor_set_layout(VkDevice device,
     }
 }
 
-[[nodiscard]] VkDescriptorPool create_descriptor_pool(VkDevice device)
-{
-    // TODO: copied from Dear ImGui, this is overkill
-    constexpr VkDescriptorPoolSize pool_sizes[] {
-        {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
-        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000},
-        {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1}};
-
-    std::uint32_t max_sets {0};
-    for (const auto pool_size : pool_sizes)
-    {
-        max_sets += pool_size.descriptorCount;
-    }
-
-    const VkDescriptorPoolCreateInfo create_info {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .pNext = {},
-        .flags = {},
-        .maxSets = max_sets,
-        .poolSizeCount = static_cast<std::uint32_t>(std::size(pool_sizes)),
-        .pPoolSizes = pool_sizes};
-
-    VkDescriptorPool descriptor_pool {};
-    const auto result =
-        vkCreateDescriptorPool(device, &create_info, nullptr, &descriptor_pool);
-    check_result(result, "vkCreateDescriptorPool");
-
-    return descriptor_pool;
-}
-
-void destroy_descriptor_pool(VkDevice device, VkDescriptorPool descriptor_pool)
-{
-    if (descriptor_pool)
-    {
-        vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
-    }
-}
-
 [[nodiscard]] VkDescriptorSet
 create_descriptor_set(const Vulkan_context &context)
 {
@@ -1994,307 +2229,11 @@ void destroy_shader_binding_table(const Vulkan_context &context)
     destroy_buffer(context.allocator, context.sbt_buffer);
 }
 
-[[nodiscard]] VkRenderPass create_render_pass(VkDevice device,
-                                              VkFormat color_attachment_format)
-{
-    const VkAttachmentDescription attachment_description {
-        .flags = {},
-        .format = color_attachment_format,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR};
-
-    constexpr VkAttachmentReference attachment_reference {
-        .attachment = 0, .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-
-    const VkSubpassDescription subpass_description {
-        .flags = {},
-        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-        .inputAttachmentCount = {},
-        .pInputAttachments = {},
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &attachment_reference,
-        .pResolveAttachments = {},
-        .pDepthStencilAttachment = {},
-        .preserveAttachmentCount = {},
-        .pPreserveAttachments = {}};
-
-    constexpr VkSubpassDependency subpass_dependency {
-        .srcSubpass = VK_SUBPASS_EXTERNAL,
-        .dstSubpass = 0,
-        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .srcAccessMask = VK_ACCESS_NONE,
-        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-        .dependencyFlags = {}};
-
-    const VkRenderPassCreateInfo render_pass_create_info {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .pNext = {},
-        .flags = {},
-        .attachmentCount = 1,
-        .pAttachments = &attachment_description,
-        .subpassCount = 1,
-        .pSubpasses = &subpass_description,
-        .dependencyCount = 1,
-        .pDependencies = &subpass_dependency};
-
-    VkRenderPass render_pass {};
-    const auto result = vkCreateRenderPass(
-        device, &render_pass_create_info, nullptr, &render_pass);
-    check_result(result, "vkCreateRenderPass");
-
-    return render_pass;
-}
-
-void destroy_render_pass(VkDevice device, VkRenderPass render_pass)
-{
-    if (render_pass)
-    {
-        vkDestroyRenderPass(device, render_pass, nullptr);
-    }
-}
-
-[[nodiscard]] std::vector<VkFramebuffer>
-create_framebuffers(const Vulkan_context &context)
-{
-    std::vector<VkFramebuffer> framebuffers(
-        context.swapchain_image_views.size());
-
-    SCOPE_FAIL(
-        [&]
-        {
-            for (const auto framebuffer : framebuffers)
-            {
-                if (framebuffer)
-                {
-                    vkDestroyFramebuffer(context.device, framebuffer, nullptr);
-                }
-            }
-        });
-
-    for (std::size_t i {0}; i < framebuffers.size(); ++i)
-    {
-        const VkFramebufferCreateInfo framebuffer_create_info {
-            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .pNext = {},
-            .flags = {},
-            .renderPass = context.render_pass,
-            .attachmentCount = 1,
-            .pAttachments = &context.swapchain_image_views[i],
-            .width = context.swapchain_extent.width,
-            .height = context.swapchain_extent.height,
-            .layers = 1};
-
-        const auto result = vkCreateFramebuffer(context.device,
-                                                &framebuffer_create_info,
-                                                nullptr,
-                                                &framebuffers[i]);
-        check_result(result, "vkCreateFramebuffer");
-    }
-
-    return framebuffers;
-}
-
-void destroy_framebuffers(VkDevice device,
-                          const std::vector<VkFramebuffer> &framebuffers)
-{
-    for (const auto framebuffer : framebuffers)
-    {
-        if (framebuffer)
-        {
-            vkDestroyFramebuffer(device, framebuffer, nullptr);
-        }
-    }
-}
-
-[[nodiscard]] std::array<VkCommandBuffer, Vulkan_context::frames_in_flight>
-create_command_buffers(const Vulkan_context &context)
-{
-    const VkCommandBufferAllocateInfo allocate_info {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .pNext = {},
-        .commandPool = context.command_pool,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = Vulkan_context::frames_in_flight};
-
-    std::array<VkCommandBuffer, Vulkan_context::frames_in_flight>
-        command_buffers {};
-
-    const auto result = vkAllocateCommandBuffers(
-        context.device, &allocate_info, command_buffers.data());
-    check_result(result, "vkAllocateCommandBuffers");
-
-    return command_buffers;
-}
-
-void destroy_command_buffers(
-    const Vulkan_context &context,
-    const std::array<VkCommandBuffer, Vulkan_context::frames_in_flight>
-        &command_buffers)
-{
-    vkFreeCommandBuffers(context.device,
-                         context.command_pool,
-                         static_cast<std::uint32_t>(command_buffers.size()),
-                         command_buffers.data());
-}
-
-[[nodiscard]] std::array<VkSemaphore, Vulkan_context::frames_in_flight>
-create_semaphores(VkDevice device)
-{
-    constexpr VkSemaphoreCreateInfo semaphore_create_info {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        .pNext = {},
-        .flags = {}};
-
-    std::array<VkSemaphore, Vulkan_context::frames_in_flight> semaphores {};
-
-    SCOPE_FAIL(
-        [&]
-        {
-            for (const auto semaphore : semaphores)
-            {
-                if (semaphore)
-                {
-                    vkDestroySemaphore(device, semaphore, nullptr);
-                }
-            }
-        });
-
-    for (auto &semaphore : semaphores)
-    {
-        const auto result = vkCreateSemaphore(
-            device, &semaphore_create_info, nullptr, &semaphore);
-        check_result(result, "vkCreateSemaphore");
-    }
-
-    return semaphores;
-}
-
-void destroy_semaphores(
-    VkDevice device,
-    const std::array<VkSemaphore, Vulkan_context::frames_in_flight> &semaphores)
-{
-    for (const auto semaphore : semaphores)
-    {
-        if (semaphore)
-        {
-            vkDestroySemaphore(device, semaphore, nullptr);
-        }
-    }
-}
-
-[[nodiscard]] std::array<VkFence, Vulkan_context::frames_in_flight>
-create_fences(VkDevice device)
-{
-    constexpr VkFenceCreateInfo fence_create_info {
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .pNext = {},
-        .flags = VK_FENCE_CREATE_SIGNALED_BIT};
-
-    std::array<VkFence, Vulkan_context::frames_in_flight> fences {};
-
-    SCOPE_FAIL(
-        [&]
-        {
-            for (const auto fence : fences)
-            {
-                if (fence)
-                {
-                    vkDestroyFence(device, fence, nullptr);
-                }
-            }
-        });
-
-    for (auto &fence : fences)
-    {
-        const auto result =
-            vkCreateFence(device, &fence_create_info, nullptr, &fence);
-        check_result(result, "vkCreateFence");
-    }
-
-    return fences;
-}
-
-void destroy_fences(
-    VkDevice device,
-    const std::array<VkFence, Vulkan_context::frames_in_flight> &fences)
-{
-    for (const auto fence : fences)
-    {
-        if (fence)
-        {
-            vkDestroyFence(device, fence, nullptr);
-        }
-    }
-}
-
-void init_imgui(const Vulkan_context &context)
-{
-    const auto loader_func = [](const char *function_name, void *user_data)
-    {
-        const auto ctx = static_cast<const Vulkan_context *>(user_data);
-        return vkGetInstanceProcAddr(ctx->instance, function_name);
-    };
-    ImGui_ImplVulkan_LoadFunctions(loader_func,
-                                   const_cast<Vulkan_context *>(&context));
-
-    const auto check_vk_result = [](VkResult result)
-    { check_result(result, "ImGui Vulkan call"); };
-
-    ImGui_ImplVulkan_InitInfo init_info {
-        .Instance = context.instance,
-        .PhysicalDevice = context.physical_device,
-        .Device = context.device,
-        .QueueFamily = context.queue_family_indices.graphics_compute,
-        .Queue = context.graphics_compute_queue,
-        .PipelineCache = VK_NULL_HANDLE,
-        .DescriptorPool = context.descriptor_pool,
-        .Subpass = 0,
-        .MinImageCount = context.swapchain_min_image_count,
-        .ImageCount =
-            static_cast<std::uint32_t>(context.swapchain_images.size()),
-        .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
-        .UseDynamicRendering = false,
-        .ColorAttachmentFormat = context.swapchain_format,
-        .Allocator = nullptr,
-        .CheckVkResultFn = check_vk_result};
-
-    ImGui_ImplVulkan_Init(&init_info, context.render_pass);
-
-    const auto command_buffer = begin_one_time_submit_command_buffer(context);
-    ImGui_ImplVulkan_CreateFontsTexture(command_buffer);
-    end_one_time_submit_command_buffer(context, command_buffer);
-    ImGui_ImplVulkan_DestroyFontUploadObjects();
-}
-
-void recreate_swapchain(Vulkan_context &context)
-{
-    const auto result = vkDeviceWaitIdle(context.device);
-    check_result(result, "vkDeviceWaitIdle");
-
-    destroy_swapchain(context);
-    context.swapchain = {};
-    create_swapchain(
-        context, context.framebuffer_width, context.framebuffer_height);
-
-    destroy_framebuffers(context.device, context.framebuffers);
-    context.framebuffers = {};
-    context.framebuffers = create_framebuffers(context);
-}
-
 } // namespace
 
 Vulkan_context create_vulkan_context(GLFWwindow *window)
 {
     Vulkan_context context {};
-
-    // FIXME: we really should set handles to {} when we
-    // destroy them, to avoid accidental double freeing
 
     SCOPE_FAIL([&] { destroy_vulkan_context(context); });
 
@@ -2320,11 +2259,67 @@ Vulkan_context create_vulkan_context(GLFWwindow *window)
     create_swapchain(
         context, context.framebuffer_width, context.framebuffer_height);
 
+    create_descriptor_pool(context);
+    create_render_pass(context);
+    create_framebuffers(context);
+    create_command_buffers(context);
+    create_synchronization_objects(context);
+
+    init_imgui(context);
+
     return context;
 }
 
 void destroy_vulkan_context(Vulkan_context &context)
 {
+    if (context.imgui_initialized)
+    {
+        ImGui_ImplVulkan_Shutdown();
+    }
+
+    for (const auto semaphore : context.render_finished_semaphores)
+    {
+        if (semaphore)
+        {
+            vkDestroySemaphore(context.device, semaphore, nullptr);
+        }
+    }
+
+    for (const auto semaphore : context.image_available_semaphores)
+    {
+        if (semaphore)
+        {
+            vkDestroySemaphore(context.device, semaphore, nullptr);
+        }
+    }
+
+    for (const auto fence : context.in_flight_fences)
+    {
+        if (fence)
+        {
+            vkDestroyFence(context.device, fence, nullptr);
+        }
+    }
+
+    vkFreeCommandBuffers(
+        context.device,
+        context.command_pool,
+        static_cast<std::uint32_t>(context.command_buffers.size()),
+        context.command_buffers.data());
+
+    destroy_framebuffers(context);
+
+    if (context.render_pass)
+    {
+        vkDestroyRenderPass(context.device, context.render_pass, nullptr);
+    }
+
+    if (context.descriptor_pool)
+    {
+        vkDestroyDescriptorPool(
+            context.device, context.descriptor_pool, nullptr);
+    }
+
     destroy_swapchain(context);
 
     if (context.command_pool)
@@ -2358,14 +2353,347 @@ void destroy_vulkan_context(Vulkan_context &context)
     context = {};
 }
 
-void load_scene(Vulkan_context &context,
-                std::uint32_t render_width,
-                std::uint32_t render_height,
-                const aiScene *scene)
+void draw_frame(Vulkan_context &context, const Camera &camera)
 {
-    // FIXME: a lot of resources here should actually be created in
-    // create_vulkan_context
+    if (context.framebuffer_width == 0 || context.framebuffer_height == 0)
+    {
+        // FIXME: we really shouldn't be waiting here, because we want to
+        // continue tracing when the window is minimized, just not draw to the
+        // framebuffer
+        glfwWaitEvents();
+        return;
+    }
 
+    auto result = vkWaitForFences(
+        context.device,
+        1,
+        &context.in_flight_fences[context.current_frame_in_flight],
+        VK_TRUE,
+        std::numeric_limits<std::uint64_t>::max());
+    check_result(result, "vkWaitForFences");
+
+    std::uint32_t image_index {};
+    result = vkAcquireNextImageKHR(
+        context.device,
+        context.swapchain,
+        std::numeric_limits<std::uint64_t>::max(),
+        context.image_available_semaphores[context.current_frame_in_flight],
+        {},
+        &image_index);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        recreate_swapchain(context);
+        return;
+    }
+    else if (result != VK_SUBOPTIMAL_KHR)
+    {
+        check_result(result, "vkAcquireNextImageKHR");
+    }
+
+    result = vkResetFences(
+        context.device,
+        1,
+        &context.in_flight_fences[context.current_frame_in_flight]);
+    check_result(result, "vkResetFences");
+
+    const auto command_buffer =
+        context.command_buffers[context.current_frame_in_flight];
+
+    result = vkResetCommandBuffer(command_buffer, {});
+    check_result(result, "vkResetCommandBuffer");
+
+    constexpr VkCommandBufferBeginInfo command_buffer_begin_info {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = {},
+        .flags = {},
+        .pInheritanceInfo = {}};
+
+    result = vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
+    check_result(result, "vkBeginCommandBuffer");
+
+    constexpr VkImageSubresourceRange subresource_range {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1};
+
+    // If a scene is loaded
+    if (context.storage_image.image)
+    {
+        if (context.sample_count == 0)
+        {
+            constexpr VkClearColorValue clear_value {
+                .float32 = {0.0f, 0.0f, 0.0f, 1.0f}};
+            vkCmdClearColorImage(command_buffer,
+                                 context.storage_image.image,
+                                 VK_IMAGE_LAYOUT_GENERAL,
+                                 &clear_value,
+                                 1,
+                                 &subresource_range);
+
+            const VkImageMemoryBarrier image_memory_barrier {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .pNext = {},
+                .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                .dstAccessMask =
+                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+                .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = context.storage_image.image,
+                .subresourceRange = subresource_range};
+
+            vkCmdPipelineBarrier(command_buffer,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                                 {},
+                                 0,
+                                 nullptr,
+                                 0,
+                                 nullptr,
+                                 1,
+                                 &image_memory_barrier);
+        }
+
+        if (context.sample_count < context.samples_to_render)
+        {
+            vkCmdBindPipeline(command_buffer,
+                              VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+                              context.ray_tracing_pipeline);
+
+            vkCmdBindDescriptorSets(command_buffer,
+                                    VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+                                    context.ray_tracing_pipeline_layout,
+                                    0,
+                                    1,
+                                    &context.descriptor_set,
+                                    0,
+                                    nullptr);
+
+            const auto samples_this_frame =
+                std::min(context.samples_to_render - context.sample_count,
+                         context.samples_per_frame);
+
+            const Push_constants push_constants {
+                .global_frame_count = context.global_frame_count,
+                .sample_count = context.sample_count,
+                .samples_per_frame = samples_this_frame,
+                .camera_position = camera.position,
+                .camera_dir_x = camera.direction_x,
+                .camera_dir_y = camera.direction_y,
+                .camera_dir_z = camera.direction_z};
+
+            vkCmdPushConstants(command_buffer,
+                               context.ray_tracing_pipeline_layout,
+                               VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+                               0,
+                               sizeof(Push_constants),
+                               &push_constants);
+            context.sample_count += samples_this_frame;
+
+            vkCmdTraceRaysKHR(command_buffer,
+                              &context.sbt_raygen_region,
+                              &context.sbt_miss_region,
+                              &context.sbt_hit_region,
+                              &context.sbt_callable_region,
+                              context.storage_image.width,
+                              context.storage_image.height,
+                              1);
+
+            VkImageMemoryBarrier image_memory_barriers[] {
+                {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                 .pNext = {},
+                 .srcAccessMask =
+                     VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                 .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+                 .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+                 .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                 .image = context.storage_image.image,
+                 .subresourceRange = subresource_range},
+                {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                 .pNext = {},
+                 .srcAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                 .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                 .oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                 .image = context.render_target.image,
+                 .subresourceRange = subresource_range}};
+
+            vkCmdPipelineBarrier(
+                command_buffer,
+                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR |
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                {},
+                0,
+                nullptr,
+                0,
+                nullptr,
+                static_cast<std::uint32_t>(std::size(image_memory_barriers)),
+                image_memory_barriers);
+
+            constexpr VkImageSubresourceLayers subresource_layers {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .mipLevel = 0,
+                .baseArrayLayer = 0,
+                .layerCount = 1};
+
+            const VkImageBlit image_blit {
+                .srcSubresource = subresource_layers,
+                .srcOffsets =
+                    {{0, 0, 0},
+                     {static_cast<std::int32_t>(context.render_target.width),
+                      static_cast<std::int32_t>(context.render_target.height),
+                      1}},
+                .dstSubresource = subresource_layers,
+                .dstOffsets = {
+                    {0, 0, 0},
+                    {static_cast<std::int32_t>(context.render_target.width),
+                     static_cast<std::int32_t>(context.render_target.height),
+                     1}}};
+
+            vkCmdBlitImage(command_buffer,
+                           context.storage_image.image,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           context.render_target.image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           1,
+                           &image_blit,
+                           VK_FILTER_NEAREST);
+
+            image_memory_barriers[0].srcAccessMask =
+                VK_ACCESS_TRANSFER_READ_BIT;
+            image_memory_barriers[0].dstAccessMask =
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            image_memory_barriers[0].oldLayout =
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            image_memory_barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            image_memory_barriers[1].srcAccessMask =
+                VK_ACCESS_TRANSFER_WRITE_BIT;
+            image_memory_barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            image_memory_barriers[1].oldLayout =
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            image_memory_barriers[1].newLayout =
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+            vkCmdPipelineBarrier(
+                command_buffer,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR |
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                {},
+                0,
+                nullptr,
+                0,
+                nullptr,
+                static_cast<std::uint32_t>(std::size(image_memory_barriers)),
+                image_memory_barriers);
+        }
+    }
+
+    constexpr VkClearValue clear_value {
+        .color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}}};
+
+    const VkRenderPassBeginInfo render_pass_begin_info {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .pNext = {},
+        .renderPass = context.render_pass,
+        .framebuffer = context.framebuffers[image_index],
+        .renderArea = {.offset = {0, 0}, .extent = context.swapchain_extent},
+        .clearValueCount = 1,
+        .pClearValues = &clear_value};
+
+    vkCmdBeginRenderPass(
+        command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
+
+    vkCmdEndRenderPass(command_buffer);
+
+    result = vkEndCommandBuffer(command_buffer);
+    check_result(result, "vkEndCommandBuffer");
+
+    constexpr VkPipelineStageFlags wait_stage {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+
+    const VkSubmitInfo submit_info {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = {},
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores =
+            &context
+                 .image_available_semaphores[context.current_frame_in_flight],
+        .pWaitDstStageMask = &wait_stage,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &command_buffer,
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores =
+            &context
+                 .render_finished_semaphores[context.current_frame_in_flight]};
+
+    result = vkQueueSubmit(
+        context.graphics_compute_queue,
+        1,
+        &submit_info,
+        context.in_flight_fences[context.current_frame_in_flight]);
+    check_result(result, "vkQueueSubmit");
+
+    const VkPresentInfoKHR present_info {
+        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+        .pNext = {},
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores =
+            &context
+                 .render_finished_semaphores[context.current_frame_in_flight],
+        .swapchainCount = 1,
+        .pSwapchains = &context.swapchain,
+        .pImageIndices = &image_index,
+        .pResults = {}};
+
+    result = vkQueuePresentKHR(context.present_queue, &present_info);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
+        context.framebuffer_resized)
+    {
+        context.framebuffer_resized = false;
+        recreate_swapchain(context);
+    }
+    else
+    {
+        check_result(result, "vkQueuePresentKHR");
+    }
+
+    context.current_frame_in_flight = (context.current_frame_in_flight + 1) %
+                                      Vulkan_context::frames_in_flight;
+    ++context.global_frame_count;
+}
+
+void resize_framebuffer(Vulkan_context &context,
+                        std::uint32_t width,
+                        std::uint32_t height)
+{
+    context.framebuffer_resized = true;
+    context.framebuffer_width = width;
+    context.framebuffer_height = height;
+}
+
+void wait_idle(const Vulkan_context &context)
+{
+    const auto result = vkDeviceWaitIdle(context.device);
+    check_result(result, "vkDeviceWaitIdle");
+}
+
+void create_scene_resources(Vulkan_context &context,
+                            std::uint32_t render_width,
+                            std::uint32_t render_height,
+                            const aiScene *scene)
+{
     const auto *const mesh = scene->mMeshes[0];
     std::vector<std::uint32_t> indices(mesh->mNumFaces * 3);
     for (unsigned int i {0}; i < mesh->mNumFaces; ++i)
@@ -2443,8 +2771,6 @@ void load_scene(Vulkan_context &context,
     context.final_render_descriptor_set_layout =
         create_final_render_descriptor_set_layout(context.device);
 
-    context.descriptor_pool = create_descriptor_pool(context.device);
-
     context.descriptor_set = create_descriptor_set(context);
 
     context.final_render_descriptor_set =
@@ -2457,43 +2783,17 @@ void load_scene(Vulkan_context &context,
 
     create_shader_binding_table(context);
 
-    context.render_pass =
-        create_render_pass(context.device, context.swapchain_format);
-
-    context.framebuffers = create_framebuffers(context);
-
-    context.command_buffers = create_command_buffers(context);
-
-    context.image_available_semaphores = create_semaphores(context.device);
-    context.render_finished_semaphores = create_semaphores(context.device);
-    context.in_flight_fences = create_fences(context.device);
-
-    context.global_frame_count = 0;
     context.samples_to_render = 1000;
     context.sample_count = 0;
     context.samples_per_frame = 1;
-
-    init_imgui(context);
-    context.imgui_initialized = true;
 }
 
 void destroy_scene_resources(const Vulkan_context &context)
 {
-    if (context.imgui_initialized)
-    {
-        ImGui_ImplVulkan_Shutdown();
-    }
-    destroy_fences(context.device, context.in_flight_fences);
-    destroy_semaphores(context.device, context.render_finished_semaphores);
-    destroy_semaphores(context.device, context.image_available_semaphores);
-    destroy_command_buffers(context, context.command_buffers);
-    destroy_framebuffers(context.device, context.framebuffers);
-    destroy_render_pass(context.device, context.render_pass);
     destroy_shader_binding_table(context);
     destroy_pipeline(context.device, context.ray_tracing_pipeline);
     destroy_pipeline_layout(context.device,
                             context.ray_tracing_pipeline_layout);
-    destroy_descriptor_pool(context.device, context.descriptor_pool);
     destroy_descriptor_set_layout(context.device,
                                   context.final_render_descriptor_set_layout);
     destroy_descriptor_set_layout(context.device,
@@ -2507,328 +2807,6 @@ void destroy_scene_resources(const Vulkan_context &context)
     destroy_image(context.allocator, context.render_target);
     destroy_image_view(context.device, context.storage_image_view);
     destroy_image(context.allocator, context.storage_image);
-}
-
-void draw_frame(Vulkan_context &context, const Camera &camera)
-{
-    if (context.framebuffer_width == 0 || context.framebuffer_height == 0)
-    {
-        // TODO: we shouldn't really be waiting here
-        glfwWaitEvents();
-        return;
-    }
-
-    auto result = vkWaitForFences(
-        context.device,
-        1,
-        &context.in_flight_fences[context.current_in_flight_frame],
-        VK_TRUE,
-        std::numeric_limits<std::uint64_t>::max());
-    check_result(result, "vkWaitForFences");
-
-    std::uint32_t image_index {};
-    result = vkAcquireNextImageKHR(
-        context.device,
-        context.swapchain,
-        std::numeric_limits<std::uint64_t>::max(),
-        context.image_available_semaphores[context.current_in_flight_frame],
-        {},
-        &image_index);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR)
-    {
-        recreate_swapchain(context);
-        return;
-    }
-    else if (result != VK_SUBOPTIMAL_KHR)
-    {
-        check_result(result, "vkAcquireNextImageKHR");
-    }
-
-    result = vkResetFences(
-        context.device,
-        1,
-        &context.in_flight_fences[context.current_in_flight_frame]);
-    check_result(result, "vkResetFences");
-
-    const auto command_buffer =
-        context.command_buffers[context.current_in_flight_frame];
-
-    result = vkResetCommandBuffer(command_buffer, {});
-    check_result(result, "vkResetCommandBuffer");
-
-    constexpr VkCommandBufferBeginInfo command_buffer_begin_info {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .pNext = {},
-        .flags = {},
-        .pInheritanceInfo = {}};
-
-    result = vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
-    check_result(result, "vkBeginCommandBuffer");
-
-    constexpr VkImageSubresourceRange subresource_range {
-        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-        .baseMipLevel = 0,
-        .levelCount = 1,
-        .baseArrayLayer = 0,
-        .layerCount = 1};
-
-    if (context.sample_count == 0)
-    {
-        constexpr VkClearColorValue clear_value {
-            .float32 = {0.0f, 0.0f, 0.0f, 1.0f}};
-        vkCmdClearColorImage(command_buffer,
-                             context.storage_image.image,
-                             VK_IMAGE_LAYOUT_GENERAL,
-                             &clear_value,
-                             1,
-                             &subresource_range);
-
-        const VkImageMemoryBarrier image_memory_barrier {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            .pNext = {},
-            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask =
-                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-            .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-            .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = context.storage_image.image,
-            .subresourceRange = subresource_range};
-
-        vkCmdPipelineBarrier(command_buffer,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                             {},
-                             0,
-                             nullptr,
-                             0,
-                             nullptr,
-                             1,
-                             &image_memory_barrier);
-    }
-
-    if (context.sample_count < context.samples_to_render)
-    {
-        vkCmdBindPipeline(command_buffer,
-                          VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                          context.ray_tracing_pipeline);
-
-        vkCmdBindDescriptorSets(command_buffer,
-                                VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                                context.ray_tracing_pipeline_layout,
-                                0,
-                                1,
-                                &context.descriptor_set,
-                                0,
-                                nullptr);
-
-        const auto samples_this_frame =
-            std::min(context.samples_to_render - context.sample_count,
-                     context.samples_per_frame);
-
-        const Push_constants push_constants {
-            .global_frame_count = context.global_frame_count,
-            .sample_count = context.sample_count,
-            .samples_per_frame = samples_this_frame,
-            .camera_position = camera.position,
-            .camera_dir_x = camera.direction_x,
-            .camera_dir_y = camera.direction_y,
-            .camera_dir_z = camera.direction_z};
-
-        vkCmdPushConstants(command_buffer,
-                           context.ray_tracing_pipeline_layout,
-                           VK_SHADER_STAGE_RAYGEN_BIT_KHR,
-                           0,
-                           sizeof(Push_constants),
-                           &push_constants);
-        context.sample_count += samples_this_frame;
-
-        vkCmdTraceRaysKHR(command_buffer,
-                          &context.sbt_raygen_region,
-                          &context.sbt_miss_region,
-                          &context.sbt_hit_region,
-                          &context.sbt_callable_region,
-                          context.storage_image.width,
-                          context.storage_image.height,
-                          1);
-
-        VkImageMemoryBarrier image_memory_barriers[] {
-            {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-             .pNext = {},
-             .srcAccessMask =
-                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-             .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-             .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-             .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-             .image = context.storage_image.image,
-             .subresourceRange = subresource_range},
-            {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-             .pNext = {},
-             .srcAccessMask = VK_ACCESS_SHADER_READ_BIT,
-             .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-             .oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-             .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-             .image = context.render_target.image,
-             .subresourceRange = subresource_range}};
-
-        vkCmdPipelineBarrier(
-            command_buffer,
-            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR |
-                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-            VK_PIPELINE_STAGE_TRANSFER_BIT,
-            {},
-            0,
-            nullptr,
-            0,
-            nullptr,
-            static_cast<std::uint32_t>(std::size(image_memory_barriers)),
-            image_memory_barriers);
-
-        constexpr VkImageSubresourceLayers subresource_layers {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1};
-
-        const VkImageBlit image_blit {
-            .srcSubresource = subresource_layers,
-            .srcOffsets =
-                {{0, 0, 0},
-                 {static_cast<std::int32_t>(context.render_target.width),
-                  static_cast<std::int32_t>(context.render_target.height),
-                  1}},
-            .dstSubresource = subresource_layers,
-            .dstOffsets = {
-                {0, 0, 0},
-                {static_cast<std::int32_t>(context.render_target.width),
-                 static_cast<std::int32_t>(context.render_target.height),
-                 1}}};
-
-        vkCmdBlitImage(command_buffer,
-                       context.storage_image.image,
-                       VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                       context.render_target.image,
-                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       1,
-                       &image_blit,
-                       VK_FILTER_NEAREST);
-
-        image_memory_barriers[0].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        image_memory_barriers[0].dstAccessMask =
-            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-        image_memory_barriers[0].oldLayout =
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        image_memory_barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-        image_memory_barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        image_memory_barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        image_memory_barriers[1].oldLayout =
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        image_memory_barriers[1].newLayout =
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-        vkCmdPipelineBarrier(
-            command_buffer,
-            VK_PIPELINE_STAGE_TRANSFER_BIT,
-            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR |
-                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-            {},
-            0,
-            nullptr,
-            0,
-            nullptr,
-            static_cast<std::uint32_t>(std::size(image_memory_barriers)),
-            image_memory_barriers);
-    }
-
-    constexpr VkClearValue clear_value {
-        .color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}}};
-
-    const VkRenderPassBeginInfo render_pass_begin_info {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .pNext = {},
-        .renderPass = context.render_pass,
-        .framebuffer = context.framebuffers[image_index],
-        .renderArea = {.offset = {0, 0}, .extent = context.swapchain_extent},
-        .clearValueCount = 1,
-        .pClearValues = &clear_value};
-
-    vkCmdBeginRenderPass(
-        command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
-
-    vkCmdEndRenderPass(command_buffer);
-
-    result = vkEndCommandBuffer(command_buffer);
-    check_result(result, "vkEndCommandBuffer");
-
-    constexpr VkPipelineStageFlags wait_stage {
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-
-    const VkSubmitInfo submit_info {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .pNext = {},
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores =
-            &context
-                 .image_available_semaphores[context.current_in_flight_frame],
-        .pWaitDstStageMask = &wait_stage,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &command_buffer,
-        .signalSemaphoreCount = 1,
-        .pSignalSemaphores =
-            &context
-                 .render_finished_semaphores[context.current_in_flight_frame]};
-
-    result = vkQueueSubmit(
-        context.graphics_compute_queue,
-        1,
-        &submit_info,
-        context.in_flight_fences[context.current_in_flight_frame]);
-    check_result(result, "vkQueueSubmit");
-
-    const VkPresentInfoKHR present_info {
-        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-        .pNext = {},
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores =
-            &context
-                 .render_finished_semaphores[context.current_in_flight_frame],
-        .swapchainCount = 1,
-        .pSwapchains = &context.swapchain,
-        .pImageIndices = &image_index,
-        .pResults = {}};
-
-    result = vkQueuePresentKHR(context.present_queue, &present_info);
-
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
-        context.framebuffer_resized)
-    {
-        context.framebuffer_resized = false;
-        recreate_swapchain(context);
-    }
-    else
-    {
-        check_result(result, "vkQueuePresentKHR");
-    }
-
-    context.current_in_flight_frame = (context.current_in_flight_frame + 1) %
-                                      Vulkan_context::frames_in_flight;
-    ++context.global_frame_count;
-}
-
-void resize_framebuffer(Vulkan_context &context,
-                        std::uint32_t width,
-                        std::uint32_t height)
-{
-    context.framebuffer_resized = true;
-    context.framebuffer_width = width;
-    context.framebuffer_height = height;
 }
 
 void reset_render(Vulkan_context &context)
@@ -2990,10 +2968,4 @@ void write_to_png(const Vulkan_context &context, const char *file_name)
     {
         throw std::runtime_error("Failed to write PNG image");
     }
-}
-
-void wait_idle(const Vulkan_context &context)
-{
-    const auto result = vkDeviceWaitIdle(context.device);
-    check_result(result, "vkDeviceWaitIdle");
 }

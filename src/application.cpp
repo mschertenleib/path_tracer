@@ -32,6 +32,7 @@ namespace
 struct Application_state
 {
     Vulkan_context context;
+    bool scene_loaded;
     Camera camera;
     std::uint32_t render_width;
     std::uint32_t render_height;
@@ -124,6 +125,47 @@ void shutdown_imgui()
     ImGui::DestroyContext();
 }
 
+void load_scene(Application_state &state, const char *file_name)
+{
+    state.render_width = 640;
+    state.render_height = 480;
+
+    const vec3 position {0.0f, 0.0f, 3.5f};
+    const vec3 target {0.0f, 0.0f, 0.0f};
+    const auto vertical_fov = 45.0f / 180.0f * std::numbers::pi_v<float>;
+    const auto aspect_ratio = static_cast<float>(state.render_width) /
+                              static_cast<float>(state.render_height);
+    const float focal_length {1.0f};
+    const auto sensor_height =
+        2.0f * std::tan(vertical_fov * 0.5f) * focal_length;
+    const auto sensor_width = aspect_ratio * sensor_height;
+    state.camera = create_camera(
+        position, target, focal_length, sensor_width, sensor_height);
+
+    Assimp::Importer importer;
+    importer.SetPropertyBool(AI_CONFIG_PP_PTV_NORMALIZE, true);
+
+    const auto *const scene = importer.ReadFile(
+        file_name,
+        static_cast<unsigned int>(
+            aiProcess_Triangulate | aiProcess_PreTransformVertices |
+            aiProcess_GenBoundingBoxes | aiProcess_JoinIdenticalVertices |
+            aiProcess_SortByPType));
+    if (scene == nullptr)
+    {
+        throw std::runtime_error(importer.GetErrorString());
+    }
+
+    if (!scene->HasMeshes())
+    {
+        throw std::runtime_error("Scene has no meshes");
+    }
+
+    create_scene_resources(
+        state.context, state.render_width, state.render_height, scene);
+    state.scene_loaded = true;
+}
+
 void make_centered_image(ImTextureID texture_id, float aspect_ratio)
 {
     const auto region_size = ImGui::GetContentRegionAvail();
@@ -158,7 +200,30 @@ void make_ui(Application_state &state)
     {
         if (ImGui::BeginMenu("File"))
         {
-            if (ImGui::MenuItem("Save as PNG"))
+            if (ImGui::MenuItem("Open"))
+            {
+                const auto default_path = std::filesystem::current_path();
+                const auto file_name =
+                    tinyfd_openFileDialog("Open",
+                                          default_path.string().c_str(),
+                                          0,
+                                          nullptr,
+                                          nullptr,
+                                          0);
+                if (file_name != nullptr)
+                {
+                    wait_idle(state.context);
+                    if (state.scene_loaded)
+                    {
+                        destroy_scene_resources(state.context);
+                        state.scene_loaded = false;
+                    }
+                    load_scene(state, file_name);
+                }
+            }
+            
+            if (ImGui::MenuItem(
+                    "Save as PNG", nullptr, false, state.scene_loaded))
             {
                 constexpr const char *filter_patterns[] {"*.png"};
                 const auto default_path =
@@ -182,10 +247,13 @@ void make_ui(Application_state &state)
     ImGui::PushStyleColor(ImGuiCol_WindowBg, {0.0f, 0.0f, 0.0f, 1.0f});
     if (ImGui::Begin("Viewport"))
     {
-        make_centered_image(
-            static_cast<ImTextureID>(state.context.final_render_descriptor_set),
-            static_cast<float>(state.render_width) /
-                static_cast<float>(state.render_height));
+        if (state.scene_loaded)
+        {
+            make_centered_image(static_cast<ImTextureID>(
+                                    state.context.final_render_descriptor_set),
+                                static_cast<float>(state.render_width) /
+                                    static_cast<float>(state.render_height));
+        }
     }
     ImGui::End();
     ImGui::PopStyleColor();
@@ -196,52 +264,55 @@ void make_ui(Application_state &state)
                     1000.0 / static_cast<double>(ImGui::GetIO().Framerate),
                     static_cast<double>(ImGui::GetIO().Framerate));
 
-        ImGui::Text(
-            "Resolution: %u x %u", state.render_width, state.render_height);
-
-        ImGui::Text("Samples: %u", state.context.sample_count);
-
-        auto samples_to_render =
-            static_cast<int>(state.context.samples_to_render);
-        ImGui::InputInt("Total samples", &samples_to_render);
-        state.context.samples_to_render =
-            static_cast<std::uint32_t>(std::max(samples_to_render, 1));
-
-        auto samples_per_frame =
-            static_cast<int>(state.context.samples_per_frame);
-        ImGui::InputInt("Samples per frame", &samples_per_frame, 1, 10);
-        state.context.samples_per_frame =
-            static_cast<std::uint32_t>(std::max(samples_per_frame, 1));
-
-        if (ImGui::Button("Reset render") ||
-            state.context.samples_to_render < state.context.sample_count)
+        if (state.scene_loaded)
         {
-            reset_render(state.context);
-        }
+            ImGui::Text(
+                "Resolution: %u x %u", state.render_width, state.render_height);
 
-        ImGui::SeparatorText("Orbital Camera");
-        static const float initial_camera_distance {
-            norm(state.camera.target - state.camera.position)};
-        static float camera_distance {initial_camera_distance};
-        if (ImGui::SliderFloat("Distance",
-                               &camera_distance,
-                               0.0f,
-                               10.0f * initial_camera_distance))
-        {
-            orbital_camera_set_distance(state.camera, camera_distance);
-            reset_render(state.context);
-        }
-        static float camera_yaw {state.camera.yaw};
-        if (ImGui::SliderAngle("Yaw", &camera_yaw))
-        {
-            orbital_camera_set_yaw(state.camera, camera_yaw);
-            reset_render(state.context);
-        }
-        static float camera_pitch {state.camera.pitch};
-        if (ImGui::SliderAngle("Pitch", &camera_pitch, -90.0f, 90.0f))
-        {
-            orbital_camera_set_pitch(state.camera, camera_pitch);
-            reset_render(state.context);
+            ImGui::Text("Samples: %u", state.context.sample_count);
+
+            auto samples_to_render =
+                static_cast<int>(state.context.samples_to_render);
+            ImGui::InputInt("Total samples", &samples_to_render);
+            state.context.samples_to_render =
+                static_cast<std::uint32_t>(std::max(samples_to_render, 1));
+
+            auto samples_per_frame =
+                static_cast<int>(state.context.samples_per_frame);
+            ImGui::InputInt("Samples per frame", &samples_per_frame, 1, 10);
+            state.context.samples_per_frame =
+                static_cast<std::uint32_t>(std::max(samples_per_frame, 1));
+
+            if (ImGui::Button("Reset render") ||
+                state.context.samples_to_render < state.context.sample_count)
+            {
+                reset_render(state.context);
+            }
+
+            ImGui::SeparatorText("Orbital Camera");
+            static const float initial_camera_distance {
+                norm(state.camera.target - state.camera.position)};
+            static float camera_distance {initial_camera_distance};
+            if (ImGui::SliderFloat("Distance",
+                                   &camera_distance,
+                                   0.0f,
+                                   10.0f * initial_camera_distance))
+            {
+                orbital_camera_set_distance(state.camera, camera_distance);
+                reset_render(state.context);
+            }
+            static float camera_yaw {state.camera.yaw};
+            if (ImGui::SliderAngle("Yaw", &camera_yaw))
+            {
+                orbital_camera_set_yaw(state.camera, camera_yaw);
+                reset_render(state.context);
+            }
+            static float camera_pitch {state.camera.pitch};
+            if (ImGui::SliderAngle("Pitch", &camera_pitch, -90.0f, 90.0f))
+            {
+                orbital_camera_set_pitch(state.camera, camera_pitch);
+                reset_render(state.context);
+            }
         }
     }
     ImGui::End();
@@ -251,61 +322,29 @@ void make_ui(Application_state &state)
 
 void application_main(const char *file_name)
 {
-    // FIXME
-    if (!file_name)
-    {
-        return;
-    }
-    const std::uint32_t render_width {640};
-    const std::uint32_t render_height {480};
-
-    auto window = init_glfw();
+    const auto window = init_glfw();
     SCOPE_EXIT([window] { shutdown_glfw(window); });
 
     init_imgui(window);
     SCOPE_EXIT([] { shutdown_imgui(); });
 
-    Application_state state {.context = {},
-                             .camera = {},
-                             .render_width = render_width,
-                             .render_height = render_height};
+    Application_state state {};
 
     state.context = create_vulkan_context(window);
     SCOPE_EXIT([&] { destroy_vulkan_context(state.context); });
 
-    const vec3 position {0.0f, 0.0f, 3.5f};
-    const vec3 target {0.0f, 0.0f, 0.0f};
-    const auto vertical_fov = 45.0f / 180.0f * std::numbers::pi_v<float>;
-    const auto aspect_ratio =
-        static_cast<float>(render_width) / static_cast<float>(render_height);
-    const float focal_length {1.0f};
-    const auto sensor_height =
-        2.0f * std::tan(vertical_fov * 0.5f) * focal_length;
-    const auto sensor_width = aspect_ratio * sensor_height;
-    state.camera = create_camera(
-        position, target, focal_length, sensor_width, sensor_height);
-
-    Assimp::Importer importer;
-    importer.SetPropertyBool(AI_CONFIG_PP_PTV_NORMALIZE, true);
-
-    const auto *const scene = importer.ReadFile(
-        file_name,
-        static_cast<unsigned int>(
-            aiProcess_Triangulate | aiProcess_PreTransformVertices |
-            aiProcess_GenBoundingBoxes | aiProcess_JoinIdenticalVertices |
-            aiProcess_SortByPType));
-    if (scene == nullptr)
+    if (file_name != nullptr)
     {
-        throw std::runtime_error(importer.GetErrorString());
+        load_scene(state, file_name);
     }
-
-    if (!scene->HasMeshes())
-    {
-        throw std::runtime_error("Scene has no meshes");
-    }
-
-    load_scene(state.context, render_width, render_height, scene);
-    SCOPE_EXIT([&] { destroy_scene_resources(state.context); });
+    SCOPE_EXIT(
+        [&]
+        {
+            if (state.scene_loaded)
+            {
+                destroy_scene_resources(state.context);
+            }
+        });
 
     glfwSetWindowUserPointer(window, &state);
 

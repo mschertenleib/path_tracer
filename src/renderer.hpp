@@ -39,6 +39,7 @@ struct Vulkan_acceleration_structure
 
 struct Vulkan_context
 {
+    // General resources
     VkInstance instance;
 #ifndef NDEBUG
     VkDebugUtilsMessengerEXT debug_messenger;
@@ -54,12 +55,28 @@ struct Vulkan_context
     VkSurfaceKHR surface;
     VmaAllocator allocator;
     VkCommandPool command_pool;
+    bool framebuffer_resized;
+    std::uint32_t framebuffer_width;
+    std::uint32_t framebuffer_height;
     VkFormat swapchain_format;
     VkExtent2D swapchain_extent;
     std::uint32_t swapchain_min_image_count;
     VkSwapchainKHR swapchain;
     std::vector<VkImage> swapchain_images;
     std::vector<VkImageView> swapchain_image_views;
+    VkDescriptorPool descriptor_pool;
+    VkRenderPass render_pass;
+    std::vector<VkFramebuffer> framebuffers;
+    static constexpr std::uint32_t frames_in_flight {2};
+    std::array<VkCommandBuffer, frames_in_flight> command_buffers;
+    std::array<VkSemaphore, frames_in_flight> image_available_semaphores;
+    std::array<VkSemaphore, frames_in_flight> render_finished_semaphores;
+    std::array<VkFence, frames_in_flight> in_flight_fences;
+    std::uint32_t current_frame_in_flight;
+    std::uint32_t global_frame_count;
+    bool imgui_initialized;
+
+    // Resources related to scene and render
     Vulkan_image storage_image;
     VkImageView storage_image_view;
     Vulkan_image render_target;
@@ -71,7 +88,6 @@ struct Vulkan_context
     Vulkan_acceleration_structure tlas;
     VkDescriptorSetLayout descriptor_set_layout;
     VkDescriptorSetLayout final_render_descriptor_set_layout;
-    VkDescriptorPool descriptor_pool;
     VkDescriptorSet descriptor_set;
     VkDescriptorSet final_render_descriptor_set;
     VkPipelineLayout ray_tracing_pipeline_layout;
@@ -81,34 +97,14 @@ struct Vulkan_context
     VkStridedDeviceAddressRegionKHR sbt_miss_region;
     VkStridedDeviceAddressRegionKHR sbt_hit_region;
     VkStridedDeviceAddressRegionKHR sbt_callable_region;
-    VkRenderPass render_pass;
-    std::vector<VkFramebuffer> framebuffers;
-    static constexpr std::uint32_t frames_in_flight {2};
-    std::array<VkCommandBuffer, frames_in_flight> command_buffers;
-    std::array<VkSemaphore, frames_in_flight> image_available_semaphores;
-    std::array<VkSemaphore, frames_in_flight> render_finished_semaphores;
-    std::array<VkFence, frames_in_flight> in_flight_fences;
-    std::uint32_t current_in_flight_frame;
-    bool framebuffer_resized;
-    std::uint32_t framebuffer_width;
-    std::uint32_t framebuffer_height;
-    std::uint32_t global_frame_count;
     std::uint32_t samples_to_render;
     std::uint32_t sample_count;
     std::uint32_t samples_per_frame;
-    bool imgui_initialized;
 };
 
 [[nodiscard]] Vulkan_context create_vulkan_context(struct GLFWwindow *window);
 
 void destroy_vulkan_context(Vulkan_context &context);
-
-void load_scene(Vulkan_context &context,
-                std::uint32_t render_width,
-                std::uint32_t render_height,
-                const struct aiScene *scene);
-
-void destroy_scene_resources(const Vulkan_context &context);
 
 void draw_frame(Vulkan_context &context, const struct Camera &camera);
 
@@ -116,10 +112,17 @@ void resize_framebuffer(Vulkan_context &context,
                         std::uint32_t width,
                         std::uint32_t height);
 
+void wait_idle(const Vulkan_context &context);
+
+void create_scene_resources(Vulkan_context &context,
+                            std::uint32_t render_width,
+                            std::uint32_t render_height,
+                            const struct aiScene *scene);
+
+void destroy_scene_resources(const Vulkan_context &context);
+
 void reset_render(Vulkan_context &context);
 
 void write_to_png(const Vulkan_context &context, const char *file_name);
-
-void wait_idle(const Vulkan_context &context);
 
 #endif // RENDERER_HPP
