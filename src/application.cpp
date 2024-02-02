@@ -348,6 +348,7 @@ void application_main(const char *file_name)
 
     glfwSetWindowUserPointer(window, &state);
 
+    int i = 0;
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();

@@ -2234,11 +2234,14 @@ void destroy_vulkan_context(Vulkan_context &context)
         }
     }
 
-    vkFreeCommandBuffers(
-        context.device,
-        context.command_pool,
-        static_cast<std::uint32_t>(context.command_buffers.size()),
-        context.command_buffers.data());
+    if (context.command_buffers.front())
+    {
+        vkFreeCommandBuffers(
+            context.device,
+            context.command_pool,
+            static_cast<std::uint32_t>(context.command_buffers.size()),
+            context.command_buffers.data());
+    }
 
     destroy_framebuffers(context);
 
@@ -2296,11 +2299,10 @@ void draw_frame(Vulkan_context &context, const Camera &camera)
 {
     if (context.framebuffer_width == 0 || context.framebuffer_height == 0)
     {
-        // FIXME: we really shouldn't be waiting here, because we want to
+        // FIXME: We want to
         // continue tracing when the window is minimized, just not draw to the
         // framebuffer. But this requires a better separation of the tracing vs
         // drawing code.
-        glfwWaitEvents();
         return;
     }
 
