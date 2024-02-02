@@ -191,7 +191,6 @@ void create_instance(Vulkan_context &context)
 {
     auto result = volkInitialize();
     check_result(result, "volkInitialize");
-    SCOPE_FAIL([] { volkFinalize(); });
 
     constexpr VkApplicationInfo application_info {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -349,8 +348,6 @@ void create_instance(Vulkan_context &context)
     volkLoadInstanceOnly(context.instance);
 
 #ifdef ENABLE_VALIDATION_LAYERS
-
-    SCOPE_FAIL([&] { vkDestroyInstance(context.instance, nullptr); });
 
     result = vkCreateDebugUtilsMessengerEXT(context.instance,
                                             &debug_utils_messenger_create_info,
@@ -825,9 +822,6 @@ void create_swapchain(Vulkan_context &context,
     result = vkCreateSwapchainKHR(
         context.device, &swapchain_create_info, nullptr, &context.swapchain);
     check_result(result, "vkCreateSwapchainKHR");
-    SCOPE_FAIL(
-        [&]
-        { vkDestroySwapchainKHR(context.device, context.swapchain, nullptr); });
 
     std::uint32_t image_count {};
     result = vkGetSwapchainImagesKHR(
@@ -841,14 +835,6 @@ void create_swapchain(Vulkan_context &context,
     check_result(result, "vkGetSwapchainImagesKHR");
 
     context.swapchain_image_views.resize(image_count);
-    SCOPE_FAIL(
-        [&]
-        {
-            for (const auto image_view : context.swapchain_image_views)
-            {
-                destroy_image_view(context.device, image_view);
-            }
-        });
     for (std::uint32_t i {0}; i < image_count; ++i)
     {
         context.swapchain_image_views[i] =
@@ -965,18 +951,6 @@ void create_framebuffers(Vulkan_context &context)
 {
     context.framebuffers.resize(context.swapchain_image_views.size());
 
-    SCOPE_FAIL(
-        [&]
-        {
-            for (const auto framebuffer : context.framebuffers)
-            {
-                if (framebuffer)
-                {
-                    vkDestroyFramebuffer(context.device, framebuffer, nullptr);
-                }
-            }
-        });
-
     for (std::size_t i {0}; i < context.framebuffers.size(); ++i)
     {
         const VkFramebufferCreateInfo framebuffer_create_info {
@@ -1030,41 +1004,12 @@ void create_synchronization_objects(Vulkan_context &context)
         .pNext = {},
         .flags = {}};
 
-    // TODO: since we are directly initializing the handles of the context
-    // struct, we could actually omit all the SCOPE_FAILs since we have one
-    // general SCOPE_FAIL in create_context (there are no longer handles local
-    // to the create_* function)
-
-    SCOPE_FAIL(
-        [&]
-        {
-            for (const auto semaphore : context.image_available_semaphores)
-            {
-                if (semaphore)
-                {
-                    vkDestroySemaphore(context.device, semaphore, nullptr);
-                }
-            }
-        });
-
     for (auto &semaphore : context.image_available_semaphores)
     {
         const auto result = vkCreateSemaphore(
             context.device, &semaphore_create_info, nullptr, &semaphore);
         check_result(result, "vkCreateSemaphore");
     }
-
-    SCOPE_FAIL(
-        [&]
-        {
-            for (const auto semaphore : context.render_finished_semaphores)
-            {
-                if (semaphore)
-                {
-                    vkDestroySemaphore(context.device, semaphore, nullptr);
-                }
-            }
-        });
 
     for (auto &semaphore : context.render_finished_semaphores)
     {
@@ -1077,18 +1022,6 @@ void create_synchronization_objects(Vulkan_context &context)
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
         .pNext = {},
         .flags = VK_FENCE_CREATE_SIGNALED_BIT};
-
-    SCOPE_FAIL(
-        [&]
-        {
-            for (const auto fence : context.in_flight_fences)
-            {
-                if (fence)
-                {
-                    vkDestroyFence(context.device, fence, nullptr);
-                }
-            }
-        });
 
     for (auto &fence : context.in_flight_fences)
     {
@@ -2339,17 +2272,23 @@ void destroy_vulkan_context(Vulkan_context &context)
         vkDestroyDevice(context.device, nullptr);
     }
 
-    if (context.instance)
-    {
 #ifdef ENABLE_VALIDATION_LAYERS
+    if (context.debug_messenger)
+    {
         vkDestroyDebugUtilsMessengerEXT(
             context.instance, context.debug_messenger, nullptr);
+    }
 #endif
-        vkDestroyInstance(context.instance, nullptr);
 
-        volkFinalize();
+    if (context.instance)
+    {
+        vkDestroyInstance(context.instance, nullptr);
     }
 
+    volkFinalize();
+
+    // This also resets all handles for scene resources, does not seem the best
+    // of ideas...
     context = {};
 }
 
@@ -2359,7 +2298,8 @@ void draw_frame(Vulkan_context &context, const Camera &camera)
     {
         // FIXME: we really shouldn't be waiting here, because we want to
         // continue tracing when the window is minimized, just not draw to the
-        // framebuffer
+        // framebuffer. But this requires a better separation of the tracing vs
+        // drawing code.
         glfwWaitEvents();
         return;
     }
