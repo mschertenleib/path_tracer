@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(path_tracer LANGUAGES CXX C)
+project(path_tracer LANGUAGES CXX)
 
 
 include(cmake/CPM.cmake)
@@ -20,7 +20,7 @@ set(VMA_STATIC_VULKAN_FUNCTIONS OFF)
 set(VMA_DYNAMIC_VULKAN_FUNCTIONS ON)
 CPMAddPackage(
         GITHUB_REPOSITORY GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
-        GIT_TAG a13c193
+        GIT_TAG v3.0.1
 )
 
 

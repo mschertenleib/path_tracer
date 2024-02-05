@@ -205,7 +205,7 @@ void make_ui(Application_state &state)
                 const auto default_path = std::filesystem::current_path();
                 const auto file_name =
                     tinyfd_openFileDialog("Open",
-                                          default_path.string().c_str(),
+                                          nullptr,
                                           0,
                                           nullptr,
                                           nullptr,
@@ -221,16 +221,14 @@ void make_ui(Application_state &state)
                     load_scene(state, file_name);
                 }
             }
-            
+
             if (ImGui::MenuItem(
                     "Save as PNG", nullptr, false, state.scene_loaded))
             {
                 constexpr const char *filter_patterns[] {"*.png"};
-                const auto default_path =
-                    std::filesystem::current_path() / "out.png";
                 const auto file_name = tinyfd_saveFileDialog(
                     "Save As",
-                    default_path.string().c_str(),
+                    nullptr,
                     static_cast<int>(std::size(filter_patterns)),
                     filter_patterns,
                     nullptr);
