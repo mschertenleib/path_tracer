@@ -358,9 +358,16 @@ void create_instance(Vulkan_context &context)
 #endif
 }
 
-[[nodiscard]] Vulkan_queue_family_indices
-get_queue_family_indices(VkInstance instance, VkPhysicalDevice physical_device)
+void get_queue_family_indices(
+    VkInstance instance,
+    VkPhysicalDevice physical_device,
+    std::uint32_t &graphics_compute_queue_family_index,
+    std::uint32_t &present_queue_family_index)
 {
+    graphics_compute_queue_family_index =
+        std::numeric_limits<std::uint32_t>::max();
+    present_queue_family_index = std::numeric_limits<std::uint32_t>::max();
+
     std::uint32_t queue_family_property_count {};
     vkGetPhysicalDeviceQueueFamilyProperties(
         physical_device, &queue_family_property_count, nullptr);
@@ -370,32 +377,27 @@ get_queue_family_indices(VkInstance instance, VkPhysicalDevice physical_device)
                                              &queue_family_property_count,
                                              queue_family_properties.data());
 
-    Vulkan_queue_family_indices indices {
-        std::numeric_limits<std::uint32_t>::max(),
-        std::numeric_limits<std::uint32_t>::max()};
-
     for (std::uint32_t i {0}; i < queue_family_property_count; ++i)
     {
         if ((queue_family_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
             (queue_family_properties[i].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
             (queue_family_properties[i].queueCount > 0))
         {
-            indices.graphics_compute = i;
+            graphics_compute_queue_family_index = i;
         }
         if (glfwGetPhysicalDevicePresentationSupport(
                 instance, physical_device, i))
         {
-            indices.present = i;
+            present_queue_family_index = i;
         }
-        if (indices.graphics_compute !=
+        if (graphics_compute_queue_family_index !=
                 std::numeric_limits<std::uint32_t>::max() &&
-            indices.present != std::numeric_limits<std::uint32_t>::max())
+            present_queue_family_index !=
+                std::numeric_limits<std::uint32_t>::max())
         {
-            break;
+            return;
         }
     }
-
-    return indices;
 }
 
 [[nodiscard]] bool is_device_suitable(VkInstance instance,
@@ -405,17 +407,20 @@ get_queue_family_indices(VkInstance instance, VkPhysicalDevice physical_device)
 {
     bool suitable {true};
 
-    const auto queue_family_indices =
-        get_queue_family_indices(instance, physical_device);
-    if (queue_family_indices.graphics_compute ==
+    std::uint32_t graphics_compute_queue_family_index;
+    std::uint32_t present_queue_family_index;
+    get_queue_family_indices(instance,
+                             physical_device,
+                             graphics_compute_queue_family_index,
+                             present_queue_family_index);
+    if (graphics_compute_queue_family_index ==
         std::numeric_limits<std::uint32_t>::max())
     {
         suitable = false;
         std::cout
             << "    No queue family supports graphics and compute operations\n";
     }
-    if (queue_family_indices.present ==
-        std::numeric_limits<std::uint32_t>::max())
+    if (present_queue_family_index == std::numeric_limits<std::uint32_t>::max())
     {
         suitable = false;
         std::cout << "    No queue family supports present operations\n";
@@ -567,8 +572,11 @@ void create_device(Vulkan_context &context)
         {
             selected_device_index = i;
             context.physical_device = physical_devices[i];
-            context.queue_family_indices =
-                get_queue_family_indices(context.instance, physical_devices[i]);
+            get_queue_family_indices(
+                context.instance,
+                physical_devices[i],
+                context.graphics_compute_queue_family_index,
+                context.present_queue_family_index);
             context.physical_device_properties = properties_2.properties;
             context.ray_tracing_pipeline_properties =
                 ray_tracing_pipeline_properties;
@@ -590,19 +598,19 @@ void create_device(Vulkan_context &context)
         {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
          .pNext = {},
          .flags = {},
-         .queueFamilyIndex = context.queue_family_indices.graphics_compute,
+         .queueFamilyIndex = context.graphics_compute_queue_family_index,
          .queueCount = 1,
          .pQueuePriorities = &queue_priority},
         {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
          .pNext = {},
          .flags = {},
-         .queueFamilyIndex = context.queue_family_indices.present,
+         .queueFamilyIndex = context.present_queue_family_index,
          .queueCount = 1,
          .pQueuePriorities = &queue_priority}};
 
     const std::uint32_t queue_create_info_count {
-        context.queue_family_indices.graphics_compute ==
-                context.queue_family_indices.present
+        context.graphics_compute_queue_family_index ==
+                context.present_queue_family_index
             ? 1u
             : 2u};
 
@@ -683,7 +691,7 @@ void create_command_pool(Vulkan_context &context)
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .pNext = {},
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex = context.queue_family_indices.graphics_compute};
+        .queueFamilyIndex = context.graphics_compute_queue_family_index};
 
     const auto result = vkCreateCommandPool(
         context.device, &create_info, nullptr, &context.command_pool);
@@ -729,9 +737,7 @@ void destroy_image_view(VkDevice device, VkImageView image_view)
     }
 }
 
-void create_swapchain(Vulkan_context &context,
-                      std::uint32_t framebuffer_width,
-                      std::uint32_t framebuffer_height)
+void create_swapchain(Vulkan_context &context)
 {
     std::uint32_t surface_format_count {};
     auto result = vkGetPhysicalDeviceSurfaceFormatsKHR(context.physical_device,
@@ -764,8 +770,8 @@ void create_swapchain(Vulkan_context &context,
         context.physical_device, context.surface, &surface_capabilities);
     check_result(result, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
 
-    context.swapchain_extent.width = framebuffer_width;
-    context.swapchain_extent.height = framebuffer_height;
+    context.swapchain_extent.width = context.framebuffer_width;
+    context.swapchain_extent.height = context.framebuffer_height;
     if (surface_capabilities.currentExtent.width !=
         std::numeric_limits<std::uint32_t>::max())
     {
@@ -789,15 +795,15 @@ void create_swapchain(Vulkan_context &context,
 
     VkSharingMode sharing_mode {VK_SHARING_MODE_EXCLUSIVE};
     std::uint32_t queue_family_index_count {1};
-    if (context.queue_family_indices.graphics_compute !=
-        context.queue_family_indices.present)
+    if (context.graphics_compute_queue_family_index !=
+        context.present_queue_family_index)
     {
         sharing_mode = VK_SHARING_MODE_CONCURRENT;
         queue_family_index_count = 2;
     }
     const std::uint32_t queue_family_indices[] {
-        context.queue_family_indices.graphics_compute,
-        context.queue_family_indices.present};
+        context.graphics_compute_queue_family_index,
+        context.present_queue_family_index};
 
     const VkSwapchainCreateInfoKHR swapchain_create_info {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -1111,7 +1117,7 @@ void init_imgui(Vulkan_context &context)
         .Instance = context.instance,
         .PhysicalDevice = context.physical_device,
         .Device = context.device,
-        .QueueFamily = context.queue_family_indices.graphics_compute,
+        .QueueFamily = context.graphics_compute_queue_family_index,
         .Queue = context.graphics_compute_queue,
         .PipelineCache = VK_NULL_HANDLE,
         .DescriptorPool = context.descriptor_pool,
@@ -1142,8 +1148,7 @@ void recreate_swapchain(Vulkan_context &context)
 
     destroy_swapchain(context);
     context.swapchain = {};
-    create_swapchain(
-        context, context.framebuffer_width, context.framebuffer_height);
+    create_swapchain(context);
 
     destroy_framebuffers(context);
     context.framebuffers = {};
@@ -2186,11 +2191,11 @@ Vulkan_context create_context(GLFWwindow *window)
     create_instance(context);
     create_device(context);
     vkGetDeviceQueue(context.device,
-                     context.queue_family_indices.graphics_compute,
+                     context.graphics_compute_queue_family_index,
                      0,
                      &context.graphics_compute_queue);
     vkGetDeviceQueue(context.device,
-                     context.queue_family_indices.present,
+                     context.present_queue_family_index,
                      0,
                      &context.present_queue);
     create_surface(context, window);
@@ -2202,8 +2207,7 @@ Vulkan_context create_context(GLFWwindow *window)
     glfwGetFramebufferSize(window, &width, &height);
     context.framebuffer_width = static_cast<std::uint32_t>(width);
     context.framebuffer_height = static_cast<std::uint32_t>(height);
-    create_swapchain(
-        context, context.framebuffer_width, context.framebuffer_height);
+    create_swapchain(context);
 
     create_descriptor_pool(context);
     create_render_pass(context);

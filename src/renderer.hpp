@@ -10,12 +10,6 @@
 
 #include <cstdint>
 
-struct Vulkan_queue_family_indices
-{
-    std::uint32_t graphics_compute;
-    std::uint32_t present;
-};
-
 struct Vulkan_image
 {
     std::uint32_t width;
@@ -44,7 +38,8 @@ struct Vulkan_context
     VkDebugUtilsMessengerEXT debug_messenger;
 #endif
     VkPhysicalDevice physical_device;
-    Vulkan_queue_family_indices queue_family_indices;
+    std::uint32_t graphics_compute_queue_family_index;
+    std::uint32_t present_queue_family_index;
     VkPhysicalDeviceProperties physical_device_properties;
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR
         ray_tracing_pipeline_properties;
