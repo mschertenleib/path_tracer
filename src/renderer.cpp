@@ -1393,9 +1393,8 @@ get_device_address(VkDevice device,
     return vkGetAccelerationStructureDeviceAddressKHR(device, &address_info);
 }
 
-[[nodiscard]] Vulkan_acceleration_structure
-create_blas(const Vulkan_context &context,
-            const Vulkan_render_resources &render_resources)
+void create_blas(const Vulkan_context &context,
+                 Vulkan_render_resources &render_resources)
 {
     const auto vertex_buffer_address = get_device_address(
         context.device, render_resources.vertex_buffer.buffer);
@@ -1461,8 +1460,7 @@ create_blas(const Vulkan_context &context,
         &build_range_info.primitiveCount,
         &build_sizes_info);
 
-    Vulkan_acceleration_structure blas {};
-    blas.buffer =
+    render_resources.blas.buffer =
         create_buffer(context.allocator,
                       build_sizes_info.accelerationStructureSize,
                       VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
@@ -1470,30 +1468,34 @@ create_blas(const Vulkan_context &context,
                       {},
                       VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
                       nullptr);
-    SCOPE_FAIL([&] { destroy_buffer(context.allocator, blas.buffer); });
+    SCOPE_FAIL(
+        [&]
+        { destroy_buffer(context.allocator, render_resources.blas.buffer); });
 
     const VkAccelerationStructureCreateInfoKHR
         acceleration_structure_create_info {
             .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
             .pNext = {},
             .createFlags = {},
-            .buffer = blas.buffer.buffer,
+            .buffer = render_resources.blas.buffer.buffer,
             .offset = {},
             .size = build_sizes_info.accelerationStructureSize,
             .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
             .deviceAddress = {}};
 
-    const auto result =
-        vkCreateAccelerationStructureKHR(context.device,
-                                         &acceleration_structure_create_info,
-                                         nullptr,
-                                         &blas.acceleration_structure);
+    const auto result = vkCreateAccelerationStructureKHR(
+        context.device,
+        &acceleration_structure_create_info,
+        nullptr,
+        &render_resources.blas.acceleration_structure);
     check_result(result, "vkCreateAccelerationStructureKHR");
     SCOPE_FAIL(
         [&]
         {
             vkDestroyAccelerationStructureKHR(
-                context.device, blas.acceleration_structure, nullptr);
+                context.device,
+                render_resources.blas.acceleration_structure,
+                nullptr);
         });
 
     const auto scratch_buffer =
@@ -1509,7 +1511,8 @@ create_blas(const Vulkan_context &context,
     const auto scratch_buffer_address =
         get_device_address(context.device, scratch_buffer.buffer);
 
-    build_geometry_info.dstAccelerationStructure = blas.acceleration_structure;
+    build_geometry_info.dstAccelerationStructure =
+        render_resources.blas.acceleration_structure;
     build_geometry_info.scratchData.deviceAddress = scratch_buffer_address;
 
     const auto command_buffer = begin_one_time_submit_command_buffer(context);
@@ -1520,13 +1523,10 @@ create_blas(const Vulkan_context &context,
         command_buffer, 1, &build_geometry_info, &p_build_range_info);
 
     end_one_time_submit_command_buffer(context, command_buffer);
-
-    return blas;
 }
 
-[[nodiscard]] Vulkan_acceleration_structure
-create_tlas(const Vulkan_context &context,
-            const Vulkan_render_resources &render_resources)
+void create_tlas(const Vulkan_context &context,
+                 Vulkan_render_resources &render_resources)
 {
     constexpr VkTransformMatrixKHR transform {
         .matrix = {{1.0f, 0.0f, 0.0f, 0.0f},
@@ -1615,8 +1615,7 @@ create_tlas(const Vulkan_context &context,
         &primitive_count,
         &build_sizes_info);
 
-    Vulkan_acceleration_structure tlas {};
-    tlas.buffer =
+    render_resources.tlas.buffer =
         create_buffer(context.allocator,
                       build_sizes_info.accelerationStructureSize,
                       VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
@@ -1624,30 +1623,34 @@ create_tlas(const Vulkan_context &context,
                       {},
                       VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
                       nullptr);
-    SCOPE_FAIL([&] { destroy_buffer(context.allocator, tlas.buffer); });
+    SCOPE_FAIL(
+        [&]
+        { destroy_buffer(context.allocator, render_resources.tlas.buffer); });
 
     const VkAccelerationStructureCreateInfoKHR
         acceleration_structure_create_info {
             .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
             .pNext = {},
             .createFlags = {},
-            .buffer = tlas.buffer.buffer,
+            .buffer = render_resources.tlas.buffer.buffer,
             .offset = {},
             .size = build_sizes_info.accelerationStructureSize,
             .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
             .deviceAddress = {}};
 
-    const auto result =
-        vkCreateAccelerationStructureKHR(context.device,
-                                         &acceleration_structure_create_info,
-                                         nullptr,
-                                         &tlas.acceleration_structure);
+    const auto result = vkCreateAccelerationStructureKHR(
+        context.device,
+        &acceleration_structure_create_info,
+        nullptr,
+        &render_resources.tlas.acceleration_structure);
     check_result(result, "vkCreateAccelerationStructureKHR");
     SCOPE_FAIL(
         [&]
         {
             vkDestroyAccelerationStructureKHR(
-                context.device, tlas.acceleration_structure, nullptr);
+                context.device,
+                render_resources.tlas.acceleration_structure,
+                nullptr);
         });
 
     const auto scratch_buffer =
@@ -1663,7 +1666,8 @@ create_tlas(const Vulkan_context &context,
     const auto scratch_buffer_address =
         get_device_address(context.device, scratch_buffer.buffer);
 
-    build_geometry_info.dstAccelerationStructure = tlas.acceleration_structure;
+    build_geometry_info.dstAccelerationStructure =
+        render_resources.tlas.acceleration_structure;
     build_geometry_info.scratchData.deviceAddress = scratch_buffer_address;
 
     constexpr VkAccelerationStructureBuildRangeInfoKHR build_range_info {
@@ -1678,8 +1682,6 @@ create_tlas(const Vulkan_context &context,
         command_buffer, 1, &build_geometry_info, &p_build_range_info);
 
     end_one_time_submit_command_buffer(context, command_buffer);
-
-    return tlas;
 }
 
 void destroy_acceleration_structure(
@@ -1780,9 +1782,8 @@ void destroy_descriptor_set_layout(VkDevice device,
     }
 }
 
-[[nodiscard]] VkDescriptorSet
-create_descriptor_set(const Vulkan_context &context,
-                      const Vulkan_render_resources &render_resources)
+void create_descriptor_set(const Vulkan_context &context,
+                           Vulkan_render_resources &render_resources)
 {
     const VkDescriptorSetAllocateInfo descriptor_set_allocate_info {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -1791,9 +1792,10 @@ create_descriptor_set(const Vulkan_context &context,
         .descriptorSetCount = 1,
         .pSetLayouts = &render_resources.descriptor_set_layout};
 
-    VkDescriptorSet descriptor_set {};
-    const auto result = vkAllocateDescriptorSets(
-        context.device, &descriptor_set_allocate_info, &descriptor_set);
+    const auto result =
+        vkAllocateDescriptorSets(context.device,
+                                 &descriptor_set_allocate_info,
+                                 &render_resources.descriptor_set);
     check_result(result, "vkAllocateDescriptorSets");
 
     const VkDescriptorImageInfo descriptor_storage_image {
@@ -1823,7 +1825,7 @@ create_descriptor_set(const Vulkan_context &context,
     const VkWriteDescriptorSet descriptor_writes[4] {
         {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
          .pNext = {},
-         .dstSet = descriptor_set,
+         .dstSet = render_resources.descriptor_set,
          .dstBinding = 0,
          .dstArrayElement = 0,
          .descriptorCount = 1,
@@ -1833,7 +1835,7 @@ create_descriptor_set(const Vulkan_context &context,
          .pTexelBufferView = {}},
         {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
          .pNext = &descriptor_acceleration_structure,
-         .dstSet = descriptor_set,
+         .dstSet = render_resources.descriptor_set,
          .dstBinding = 1,
          .dstArrayElement = 0,
          .descriptorCount = 1,
@@ -1843,7 +1845,7 @@ create_descriptor_set(const Vulkan_context &context,
          .pTexelBufferView = {}},
         {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
          .pNext = {},
-         .dstSet = descriptor_set,
+         .dstSet = render_resources.descriptor_set,
          .dstBinding = 2,
          .dstArrayElement = 0,
          .descriptorCount = 1,
@@ -1853,7 +1855,7 @@ create_descriptor_set(const Vulkan_context &context,
          .pTexelBufferView = {}},
         {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
          .pNext = {},
-         .dstSet = descriptor_set,
+         .dstSet = render_resources.descriptor_set,
          .dstBinding = 3,
          .dstArrayElement = 0,
          .descriptorCount = 1,
@@ -1868,13 +1870,10 @@ create_descriptor_set(const Vulkan_context &context,
         descriptor_writes,
         0,
         nullptr);
-
-    return descriptor_set;
 }
 
-[[nodiscard]] VkDescriptorSet create_final_render_descriptor_set(
-    const Vulkan_context &context,
-    const Vulkan_render_resources &render_resources)
+void create_final_render_descriptor_set(
+    const Vulkan_context &context, Vulkan_render_resources &render_resources)
 {
     const VkDescriptorSetAllocateInfo descriptor_set_allocate_info {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -1883,9 +1882,10 @@ create_descriptor_set(const Vulkan_context &context,
         .descriptorSetCount = 1,
         .pSetLayouts = &render_resources.final_render_descriptor_set_layout};
 
-    VkDescriptorSet descriptor_set {};
-    const auto result = vkAllocateDescriptorSets(
-        context.device, &descriptor_set_allocate_info, &descriptor_set);
+    const auto result =
+        vkAllocateDescriptorSets(context.device,
+                                 &descriptor_set_allocate_info,
+                                 &render_resources.final_render_descriptor_set);
     check_result(result, "vkAllocateDescriptorSets");
 
     const VkDescriptorImageInfo descriptor_render_target {
@@ -1896,7 +1896,7 @@ create_descriptor_set(const Vulkan_context &context,
     const VkWriteDescriptorSet descriptor_write {
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         .pNext = {},
-        .dstSet = descriptor_set,
+        .dstSet = render_resources.final_render_descriptor_set,
         .dstBinding = 0,
         .dstArrayElement = 0,
         .descriptorCount = 1,
@@ -1906,13 +1906,10 @@ create_descriptor_set(const Vulkan_context &context,
         .pTexelBufferView = {}};
 
     vkUpdateDescriptorSets(context.device, 1, &descriptor_write, 0, nullptr);
-
-    return descriptor_set;
 }
 
-[[nodiscard]] VkPipelineLayout create_ray_tracing_pipeline_layout(
-    const Vulkan_context &context,
-    const Vulkan_render_resources &render_resources)
+void create_ray_tracing_pipeline_layout(
+    const Vulkan_context &context, Vulkan_render_resources &render_resources)
 {
     constexpr VkPushConstantRange push_constant_range {
         .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
@@ -1928,14 +1925,12 @@ create_descriptor_set(const Vulkan_context &context,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &push_constant_range};
 
-    VkPipelineLayout pipeline_layout {};
-    const auto result = vkCreatePipelineLayout(context.device,
-                                               &pipeline_layout_create_info,
-                                               nullptr,
-                                               &pipeline_layout);
+    const auto result =
+        vkCreatePipelineLayout(context.device,
+                               &pipeline_layout_create_info,
+                               nullptr,
+                               &render_resources.ray_tracing_pipeline_layout);
     check_result(result, "vkCreatePipelineLayout");
-
-    return pipeline_layout;
 }
 
 void destroy_pipeline_layout(VkDevice device, VkPipelineLayout pipeline_layout)
@@ -1974,9 +1969,8 @@ void destroy_shader_module(VkDevice device, VkShaderModule shader_module)
     }
 }
 
-[[nodiscard]] VkPipeline
-create_ray_tracing_pipeline(const Vulkan_context &context,
-                            const Vulkan_render_resources &render_resources)
+void create_ray_tracing_pipeline(const Vulkan_context &context,
+                                 Vulkan_render_resources &render_resources)
 {
     const auto rgen_shader_module =
         create_shader_module(context.device, "shader.rgen.spv");
@@ -2058,7 +2052,6 @@ create_ray_tracing_pipeline(const Vulkan_context &context,
         .basePipelineHandle = {},
         .basePipelineIndex = {}};
 
-    VkPipeline ray_tracing_pipeline {};
     const auto result =
         vkCreateRayTracingPipelinesKHR(context.device,
                                        {},
@@ -2066,10 +2059,8 @@ create_ray_tracing_pipeline(const Vulkan_context &context,
                                        1,
                                        &ray_tracing_pipeline_create_info,
                                        nullptr,
-                                       &ray_tracing_pipeline);
+                                       &render_resources.ray_tracing_pipeline);
     check_result(result, "vkCreateRayTracingPipelinesKHR");
-
-    return ray_tracing_pipeline;
 }
 
 void destroy_pipeline(VkDevice device, VkPipeline pipeline)
@@ -2386,9 +2377,8 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
     render_resources.index_buffer = create_vertex_or_index_buffer(
         context, indices.data(), indices.size() * sizeof(indices.front()));
 
-    render_resources.blas = create_blas(context, render_resources);
-
-    render_resources.tlas = create_tlas(context, render_resources);
+    create_blas(context, render_resources);
+    create_tlas(context, render_resources);
 
     render_resources.descriptor_set_layout =
         create_descriptor_set_layout(context.device);
@@ -2396,18 +2386,10 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
     render_resources.final_render_descriptor_set_layout =
         create_final_render_descriptor_set_layout(context.device);
 
-    render_resources.descriptor_set =
-        create_descriptor_set(context, render_resources);
-
-    render_resources.final_render_descriptor_set =
-        create_final_render_descriptor_set(context, render_resources);
-
-    render_resources.ray_tracing_pipeline_layout =
-        create_ray_tracing_pipeline_layout(context, render_resources);
-
-    render_resources.ray_tracing_pipeline =
-        create_ray_tracing_pipeline(context, render_resources);
-
+    create_descriptor_set(context, render_resources);
+    create_final_render_descriptor_set(context, render_resources);
+    create_ray_tracing_pipeline_layout(context, render_resources);
+    create_ray_tracing_pipeline(context, render_resources);
     create_shader_binding_table(render_resources, context);
 
     render_resources.samples_to_render = 1000;
