@@ -39,7 +39,6 @@ struct Vulkan_acceleration_structure
 
 struct Vulkan_context
 {
-    // General resources
     VkInstance instance;
 #ifndef NDEBUG
     VkDebugUtilsMessengerEXT debug_messenger;
@@ -75,8 +74,10 @@ struct Vulkan_context
     std::uint32_t current_frame_in_flight;
     std::uint32_t global_frame_count;
     bool imgui_initialized;
+};
 
-    // Resources related to scene and render
+struct Vulkan_render_resources
+{
     Vulkan_image storage_image;
     VkImageView storage_image_view;
     Vulkan_image render_target;
@@ -102,11 +103,22 @@ struct Vulkan_context
     std::uint32_t samples_per_frame;
 };
 
-[[nodiscard]] Vulkan_context create_vulkan_context(struct GLFWwindow *window);
+[[nodiscard]] Vulkan_context create_context(struct GLFWwindow *window);
 
-void destroy_vulkan_context(Vulkan_context &context);
+void destroy_context(const Vulkan_context &context);
 
-void draw_frame(Vulkan_context &context, const struct Camera &camera);
+[[nodiscard]] Vulkan_render_resources
+create_render_resources(const Vulkan_context &context,
+                        std::uint32_t render_width,
+                        std::uint32_t render_height,
+                        const struct aiScene *scene);
+
+void destroy_render_resources(const Vulkan_context &context,
+                              const Vulkan_render_resources &render_resources);
+
+void draw_frame(Vulkan_context &context,
+                Vulkan_render_resources &render_resources,
+                const struct Camera &camera);
 
 void resize_framebuffer(Vulkan_context &context,
                         std::uint32_t width,
@@ -114,15 +126,10 @@ void resize_framebuffer(Vulkan_context &context,
 
 void wait_idle(const Vulkan_context &context);
 
-void create_scene_resources(Vulkan_context &context,
-                            std::uint32_t render_width,
-                            std::uint32_t render_height,
-                            const struct aiScene *scene);
+void reset_render(Vulkan_render_resources &render_resources);
 
-void destroy_scene_resources(const Vulkan_context &context);
-
-void reset_render(Vulkan_context &context);
-
-void write_to_png(const Vulkan_context &context, const char *file_name);
+void write_to_png(const Vulkan_context &context,
+                  const Vulkan_render_resources &render_resources,
+                  const char *file_name);
 
 #endif // RENDERER_HPP

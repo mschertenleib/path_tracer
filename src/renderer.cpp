@@ -1389,16 +1389,18 @@ get_device_address(VkDevice device,
 }
 
 [[nodiscard]] Vulkan_acceleration_structure
-create_blas(const Vulkan_context &context)
+create_blas(const Vulkan_context &context,
+            const Vulkan_render_resources &render_resources)
 {
-    const auto vertex_buffer_address =
-        get_device_address(context.device, context.vertex_buffer.buffer);
+    const auto vertex_buffer_address = get_device_address(
+        context.device, render_resources.vertex_buffer.buffer);
     constexpr auto vertex_size = 3 * sizeof(float);
-    const auto vertex_count = context.vertex_buffer.size / vertex_size;
+    const auto vertex_count = render_resources.vertex_buffer.size / vertex_size;
 
-    const auto index_buffer_address =
-        get_device_address(context.device, context.index_buffer.buffer);
-    const auto index_count = context.index_buffer.size / sizeof(std::uint32_t);
+    const auto index_buffer_address = get_device_address(
+        context.device, render_resources.index_buffer.buffer);
+    const auto index_count =
+        render_resources.index_buffer.size / sizeof(std::uint32_t);
     const auto primitive_count = index_count / 3;
 
     const VkAccelerationStructureGeometryTrianglesDataKHR triangles {
@@ -1518,7 +1520,8 @@ create_blas(const Vulkan_context &context)
 }
 
 [[nodiscard]] Vulkan_acceleration_structure
-create_tlas(const Vulkan_context &context)
+create_tlas(const Vulkan_context &context,
+            const Vulkan_render_resources &render_resources)
 {
     constexpr VkTransformMatrixKHR transform {
         .matrix = {{1.0f, 0.0f, 0.0f, 0.0f},
@@ -1532,7 +1535,7 @@ create_tlas(const Vulkan_context &context)
         .instanceShaderBindingTableRecordOffset = 0,
         .flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
         .accelerationStructureReference = get_device_address(
-            context.device, context.blas.acceleration_structure)};
+            context.device, render_resources.blas.acceleration_structure)};
 
     const auto instance_buffer = create_buffer_from_host_data(
         context,
@@ -1773,14 +1776,15 @@ void destroy_descriptor_set_layout(VkDevice device,
 }
 
 [[nodiscard]] VkDescriptorSet
-create_descriptor_set(const Vulkan_context &context)
+create_descriptor_set(const Vulkan_context &context,
+                      const Vulkan_render_resources &render_resources)
 {
     const VkDescriptorSetAllocateInfo descriptor_set_allocate_info {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .pNext = {},
         .descriptorPool = context.descriptor_pool,
         .descriptorSetCount = 1,
-        .pSetLayouts = &context.descriptor_set_layout};
+        .pSetLayouts = &render_resources.descriptor_set_layout};
 
     VkDescriptorSet descriptor_set {};
     const auto result = vkAllocateDescriptorSets(
@@ -1789,7 +1793,7 @@ create_descriptor_set(const Vulkan_context &context)
 
     const VkDescriptorImageInfo descriptor_storage_image {
         .sampler = VK_NULL_HANDLE,
-        .imageView = context.storage_image_view,
+        .imageView = render_resources.storage_image_view,
         .imageLayout = VK_IMAGE_LAYOUT_GENERAL};
 
     const VkWriteDescriptorSetAccelerationStructureKHR
@@ -1798,17 +1802,18 @@ create_descriptor_set(const Vulkan_context &context)
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
             .pNext = {},
             .accelerationStructureCount = 1,
-            .pAccelerationStructures = &context.tlas.acceleration_structure};
+            .pAccelerationStructures =
+                &render_resources.tlas.acceleration_structure};
 
     const VkDescriptorBufferInfo descriptor_vertices {
-        .buffer = context.vertex_buffer.buffer,
+        .buffer = render_resources.vertex_buffer.buffer,
         .offset = 0,
-        .range = context.vertex_buffer.size};
+        .range = render_resources.vertex_buffer.size};
 
     const VkDescriptorBufferInfo descriptor_indices {
-        .buffer = context.index_buffer.buffer,
+        .buffer = render_resources.index_buffer.buffer,
         .offset = 0,
-        .range = context.index_buffer.size};
+        .range = render_resources.index_buffer.size};
 
     const VkWriteDescriptorSet descriptor_writes[4] {
         {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -1862,15 +1867,16 @@ create_descriptor_set(const Vulkan_context &context)
     return descriptor_set;
 }
 
-[[nodiscard]] VkDescriptorSet
-create_final_render_descriptor_set(const Vulkan_context &context)
+[[nodiscard]] VkDescriptorSet create_final_render_descriptor_set(
+    const Vulkan_context &context,
+    const Vulkan_render_resources &render_resources)
 {
     const VkDescriptorSetAllocateInfo descriptor_set_allocate_info {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .pNext = {},
         .descriptorPool = context.descriptor_pool,
         .descriptorSetCount = 1,
-        .pSetLayouts = &context.final_render_descriptor_set_layout};
+        .pSetLayouts = &render_resources.final_render_descriptor_set_layout};
 
     VkDescriptorSet descriptor_set {};
     const auto result = vkAllocateDescriptorSets(
@@ -1878,8 +1884,8 @@ create_final_render_descriptor_set(const Vulkan_context &context)
     check_result(result, "vkAllocateDescriptorSets");
 
     const VkDescriptorImageInfo descriptor_render_target {
-        .sampler = context.render_target_sampler,
-        .imageView = context.render_target_view,
+        .sampler = render_resources.render_target_sampler,
+        .imageView = render_resources.render_target_view,
         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 
     const VkWriteDescriptorSet descriptor_write {
@@ -1899,8 +1905,9 @@ create_final_render_descriptor_set(const Vulkan_context &context)
     return descriptor_set;
 }
 
-[[nodiscard]] VkPipelineLayout
-create_ray_tracing_pipeline_layout(const Vulkan_context &context)
+[[nodiscard]] VkPipelineLayout create_ray_tracing_pipeline_layout(
+    const Vulkan_context &context,
+    const Vulkan_render_resources &render_resources)
 {
     constexpr VkPushConstantRange push_constant_range {
         .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
@@ -1912,7 +1919,7 @@ create_ray_tracing_pipeline_layout(const Vulkan_context &context)
         .pNext = {},
         .flags = {},
         .setLayoutCount = 1,
-        .pSetLayouts = &context.descriptor_set_layout,
+        .pSetLayouts = &render_resources.descriptor_set_layout,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &push_constant_range};
 
@@ -1963,7 +1970,8 @@ void destroy_shader_module(VkDevice device, VkShaderModule shader_module)
 }
 
 [[nodiscard]] VkPipeline
-create_ray_tracing_pipeline(const Vulkan_context &context)
+create_ray_tracing_pipeline(const Vulkan_context &context,
+                            const Vulkan_render_resources &render_resources)
 {
     const auto rgen_shader_module =
         create_shader_module(context.device, "shader.rgen.spv");
@@ -2041,7 +2049,7 @@ create_ray_tracing_pipeline(const Vulkan_context &context)
         .pLibraryInfo = {},
         .pLibraryInterface = {},
         .pDynamicState = {},
-        .layout = context.ray_tracing_pipeline_layout,
+        .layout = render_resources.ray_tracing_pipeline_layout,
         .basePipelineHandle = {},
         .basePipelineIndex = {}};
 
@@ -2067,7 +2075,8 @@ void destroy_pipeline(VkDevice device, VkPipeline pipeline)
     }
 }
 
-void create_shader_binding_table(Vulkan_context &context)
+void create_shader_binding_table(Vulkan_render_resources &render_resources,
+                                 const Vulkan_context &context)
 {
     const auto handle_size =
         context.ray_tracing_pipeline_properties.shaderGroupHandleSize;
@@ -2081,35 +2090,37 @@ void create_shader_binding_table(Vulkan_context &context)
     constexpr std::uint32_t hit_count {1};
     constexpr std::uint32_t handle_count {1 + miss_count + hit_count};
 
-    context.sbt_raygen_region.stride =
+    render_resources.sbt_raygen_region.stride =
         align_up(handle_size_aligned, base_alignment);
-    context.sbt_raygen_region.size = context.sbt_raygen_region.stride;
+    render_resources.sbt_raygen_region.size =
+        render_resources.sbt_raygen_region.stride;
 
-    context.sbt_miss_region.stride = handle_size_aligned;
-    context.sbt_miss_region.size =
+    render_resources.sbt_miss_region.stride = handle_size_aligned;
+    render_resources.sbt_miss_region.size =
         align_up(miss_count * handle_size_aligned, base_alignment);
 
-    context.sbt_hit_region.stride = handle_size_aligned;
-    context.sbt_hit_region.size =
+    render_resources.sbt_hit_region.stride = handle_size_aligned;
+    render_resources.sbt_hit_region.size =
         align_up(hit_count * handle_size_aligned, base_alignment);
 
     const auto data_size = handle_count * handle_size;
     std::vector<std::uint8_t> handles(data_size);
-    const auto result =
-        vkGetRayTracingShaderGroupHandlesKHR(context.device,
-                                             context.ray_tracing_pipeline,
-                                             0,
-                                             handle_count,
-                                             data_size,
-                                             handles.data());
+    const auto result = vkGetRayTracingShaderGroupHandlesKHR(
+        context.device,
+        render_resources.ray_tracing_pipeline,
+        0,
+        handle_count,
+        data_size,
+        handles.data());
     check_result(result, "vkGetRayTracingShaderGroupHandlesKHR");
 
-    const auto sbt_size =
-        context.sbt_raygen_region.size + context.sbt_miss_region.size +
-        context.sbt_hit_region.size + context.sbt_callable_region.size;
+    const auto sbt_size = render_resources.sbt_raygen_region.size +
+                          render_resources.sbt_miss_region.size +
+                          render_resources.sbt_hit_region.size +
+                          render_resources.sbt_callable_region.size;
 
     VmaAllocationInfo sbt_allocation_info {};
-    context.sbt_buffer =
+    render_resources.sbt_buffer =
         create_buffer(context.allocator,
                       sbt_size,
                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
@@ -2123,13 +2134,13 @@ void create_shader_binding_table(Vulkan_context &context)
         static_cast<std::uint8_t *>(sbt_allocation_info.pMappedData);
 
     const auto sbt_address =
-        get_device_address(context.device, context.sbt_buffer.buffer);
-    context.sbt_raygen_region.deviceAddress = sbt_address;
-    context.sbt_miss_region.deviceAddress =
-        sbt_address + context.sbt_raygen_region.size;
-    context.sbt_hit_region.deviceAddress = sbt_address +
-                                           context.sbt_raygen_region.size +
-                                           context.sbt_miss_region.size;
+        get_device_address(context.device, render_resources.sbt_buffer.buffer);
+    render_resources.sbt_raygen_region.deviceAddress = sbt_address;
+    render_resources.sbt_miss_region.deviceAddress =
+        sbt_address + render_resources.sbt_raygen_region.size;
+    render_resources.sbt_hit_region.deviceAddress =
+        sbt_address + render_resources.sbt_raygen_region.size +
+        render_resources.sbt_miss_region.size;
 
     const auto get_handle_pointer = [&](std::uint32_t i)
     { return handles.data() + i * handle_size; };
@@ -2139,36 +2150,38 @@ void create_shader_binding_table(Vulkan_context &context)
         sbt_buffer_mapped, get_handle_pointer(handle_index), handle_size);
     ++handle_index;
 
-    auto p_data = sbt_buffer_mapped + context.sbt_raygen_region.size;
+    auto p_data = sbt_buffer_mapped + render_resources.sbt_raygen_region.size;
     for (std::uint32_t i {}; i < miss_count; ++i)
     {
         std::memcpy(p_data, get_handle_pointer(handle_index), handle_size);
         ++handle_index;
-        p_data += context.sbt_miss_region.stride;
+        p_data += render_resources.sbt_miss_region.stride;
     }
 
-    p_data = sbt_buffer_mapped + context.sbt_raygen_region.size +
-             context.sbt_miss_region.size;
+    p_data = sbt_buffer_mapped + render_resources.sbt_raygen_region.size +
+             render_resources.sbt_miss_region.size;
     for (std::uint32_t i {}; i < hit_count; ++i)
     {
         std::memcpy(p_data, get_handle_pointer(handle_index), handle_size);
         ++handle_index;
-        p_data += context.sbt_hit_region.stride;
+        p_data += render_resources.sbt_hit_region.stride;
     }
 }
 
-void destroy_shader_binding_table(const Vulkan_context &context)
+void destroy_shader_binding_table(
+    const Vulkan_render_resources &render_resources,
+    const Vulkan_context &context)
 {
-    destroy_buffer(context.allocator, context.sbt_buffer);
+    destroy_buffer(context.allocator, render_resources.sbt_buffer);
 }
 
 } // namespace
 
-Vulkan_context create_vulkan_context(GLFWwindow *window)
+Vulkan_context create_context(GLFWwindow *window)
 {
     Vulkan_context context {};
 
-    SCOPE_FAIL([&] { destroy_vulkan_context(context); });
+    SCOPE_FAIL([&] { destroy_context(context); });
 
     create_instance(context);
     create_device(context);
@@ -2203,7 +2216,7 @@ Vulkan_context create_vulkan_context(GLFWwindow *window)
     return context;
 }
 
-void destroy_vulkan_context(Vulkan_context &context)
+void destroy_context(const Vulkan_context &context)
 {
     if (context.imgui_initialized)
     {
@@ -2289,13 +2302,142 @@ void destroy_vulkan_context(Vulkan_context &context)
     }
 
     volkFinalize();
-
-    // This also resets all handles for scene resources, does not seem the best
-    // of ideas...
-    context = {};
 }
 
-void draw_frame(Vulkan_context &context, const Camera &camera)
+Vulkan_render_resources create_render_resources(const Vulkan_context &context,
+                                                std::uint32_t render_width,
+                                                std::uint32_t render_height,
+                                                const aiScene *scene)
+{
+    Vulkan_render_resources render_resources {};
+
+    const auto *const mesh = scene->mMeshes[0];
+    std::vector<std::uint32_t> indices(mesh->mNumFaces * 3);
+    for (unsigned int i {0}; i < mesh->mNumFaces; ++i)
+    {
+        indices[i * 3 + 0] = mesh->mFaces[i].mIndices[0];
+        indices[i * 3 + 1] = mesh->mFaces[i].mIndices[1];
+        indices[i * 3 + 2] = mesh->mFaces[i].mIndices[2];
+    }
+
+    SCOPE_FAIL([&] { destroy_render_resources(context, render_resources); });
+
+    constexpr VkFormat storage_image_format {VK_FORMAT_R32G32B32A32_SFLOAT};
+    render_resources.storage_image = create_image(
+        context.allocator,
+        render_width,
+        render_height,
+        storage_image_format,
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+    render_resources.storage_image_view =
+        create_image_view(context.device,
+                          render_resources.storage_image.image,
+                          storage_image_format);
+
+    constexpr VkFormat render_target_format {VK_FORMAT_R8G8B8A8_SRGB};
+    render_resources.render_target = create_image(
+        context.allocator,
+        render_width,
+        render_height,
+        render_target_format,
+        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+    render_resources.render_target_view =
+        create_image_view(context.device,
+                          render_resources.render_target.image,
+                          render_target_format);
+
+    {
+        const auto command_buffer =
+            begin_one_time_submit_command_buffer(context);
+        transition_image_layout(command_buffer,
+                                render_resources.storage_image.image,
+                                VK_ACCESS_NONE,
+                                VK_ACCESS_SHADER_READ_BIT |
+                                    VK_ACCESS_SHADER_WRITE_BIT,
+                                VK_IMAGE_LAYOUT_UNDEFINED,
+                                VK_IMAGE_LAYOUT_GENERAL,
+                                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR |
+                                    VK_PIPELINE_STAGE_TRANSFER_BIT);
+        transition_image_layout(command_buffer,
+                                render_resources.render_target.image,
+                                VK_ACCESS_NONE,
+                                VK_ACCESS_SHADER_READ_BIT,
+                                VK_IMAGE_LAYOUT_UNDEFINED,
+                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+        end_one_time_submit_command_buffer(context, command_buffer);
+    }
+
+    render_resources.render_target_sampler = create_sampler(context.device);
+
+    render_resources.vertex_buffer = create_vertex_or_index_buffer(
+        context,
+        mesh->mVertices,
+        mesh->mNumVertices * sizeof(mesh->mVertices[0]));
+
+    render_resources.index_buffer = create_vertex_or_index_buffer(
+        context, indices.data(), indices.size() * sizeof(indices.front()));
+
+    render_resources.blas = create_blas(context, render_resources);
+
+    render_resources.tlas = create_tlas(context, render_resources);
+
+    render_resources.descriptor_set_layout =
+        create_descriptor_set_layout(context.device);
+
+    render_resources.final_render_descriptor_set_layout =
+        create_final_render_descriptor_set_layout(context.device);
+
+    render_resources.descriptor_set =
+        create_descriptor_set(context, render_resources);
+
+    render_resources.final_render_descriptor_set =
+        create_final_render_descriptor_set(context, render_resources);
+
+    render_resources.ray_tracing_pipeline_layout =
+        create_ray_tracing_pipeline_layout(context, render_resources);
+
+    render_resources.ray_tracing_pipeline =
+        create_ray_tracing_pipeline(context, render_resources);
+
+    create_shader_binding_table(render_resources, context);
+
+    render_resources.samples_to_render = 1000;
+    render_resources.sample_count = 0;
+    render_resources.samples_per_frame = 1;
+
+    return render_resources;
+}
+
+void destroy_render_resources(const Vulkan_context &context,
+                              const Vulkan_render_resources &render_resources)
+{
+    destroy_shader_binding_table(render_resources, context);
+    destroy_pipeline(context.device, render_resources.ray_tracing_pipeline);
+    destroy_pipeline_layout(context.device,
+                            render_resources.ray_tracing_pipeline_layout);
+    destroy_descriptor_set_layout(
+        context.device, render_resources.final_render_descriptor_set_layout);
+    destroy_descriptor_set_layout(context.device,
+                                  render_resources.descriptor_set_layout);
+    destroy_acceleration_structure(context, render_resources.tlas);
+    destroy_acceleration_structure(context, render_resources.blas);
+    destroy_buffer(context.allocator, render_resources.index_buffer);
+    destroy_buffer(context.allocator, render_resources.vertex_buffer);
+    destroy_sampler(context.device, render_resources.render_target_sampler);
+    destroy_image_view(context.device, render_resources.render_target_view);
+    destroy_image(context.allocator, render_resources.render_target);
+    destroy_image_view(context.device, render_resources.storage_image_view);
+    destroy_image(context.allocator, render_resources.storage_image);
+}
+
+void draw_frame(Vulkan_context &context,
+                Vulkan_render_resources &render_resources,
+                const Camera &camera)
 {
     if (context.framebuffer_width == 0 || context.framebuffer_height == 0)
     {
@@ -2361,14 +2503,14 @@ void draw_frame(Vulkan_context &context, const Camera &camera)
         .layerCount = 1};
 
     // If a scene is loaded
-    if (context.storage_image.image)
+    if (render_resources.storage_image.image)
     {
-        if (context.sample_count == 0)
+        if (render_resources.sample_count == 0)
         {
             constexpr VkClearColorValue clear_value {
                 .float32 = {0.0f, 0.0f, 0.0f, 1.0f}};
             vkCmdClearColorImage(command_buffer,
-                                 context.storage_image.image,
+                                 render_resources.storage_image.image,
                                  VK_IMAGE_LAYOUT_GENERAL,
                                  &clear_value,
                                  1,
@@ -2384,7 +2526,7 @@ void draw_frame(Vulkan_context &context, const Camera &camera)
                 .newLayout = VK_IMAGE_LAYOUT_GENERAL,
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = context.storage_image.image,
+                .image = render_resources.storage_image.image,
                 .subresourceRange = subresource_range};
 
             vkCmdPipelineBarrier(command_buffer,
@@ -2399,28 +2541,30 @@ void draw_frame(Vulkan_context &context, const Camera &camera)
                                  &image_memory_barrier);
         }
 
-        if (context.sample_count < context.samples_to_render)
+        if (render_resources.sample_count < render_resources.samples_to_render)
         {
             vkCmdBindPipeline(command_buffer,
                               VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                              context.ray_tracing_pipeline);
+                              render_resources.ray_tracing_pipeline);
 
-            vkCmdBindDescriptorSets(command_buffer,
-                                    VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                                    context.ray_tracing_pipeline_layout,
-                                    0,
-                                    1,
-                                    &context.descriptor_set,
-                                    0,
-                                    nullptr);
+            vkCmdBindDescriptorSets(
+                command_buffer,
+                VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+                render_resources.ray_tracing_pipeline_layout,
+                0,
+                1,
+                &render_resources.descriptor_set,
+                0,
+                nullptr);
 
             const auto samples_this_frame =
-                std::min(context.samples_to_render - context.sample_count,
-                         context.samples_per_frame);
+                std::min(render_resources.samples_to_render -
+                             render_resources.sample_count,
+                         render_resources.samples_per_frame);
 
             const Push_constants push_constants {
                 .global_frame_count = context.global_frame_count,
-                .sample_count = context.sample_count,
+                .sample_count = render_resources.sample_count,
                 .samples_per_frame = samples_this_frame,
                 .camera_position = camera.position,
                 .camera_dir_x = camera.direction_x,
@@ -2428,20 +2572,20 @@ void draw_frame(Vulkan_context &context, const Camera &camera)
                 .camera_dir_z = camera.direction_z};
 
             vkCmdPushConstants(command_buffer,
-                               context.ray_tracing_pipeline_layout,
+                               render_resources.ray_tracing_pipeline_layout,
                                VK_SHADER_STAGE_RAYGEN_BIT_KHR,
                                0,
                                sizeof(Push_constants),
                                &push_constants);
-            context.sample_count += samples_this_frame;
+            render_resources.sample_count += samples_this_frame;
 
             vkCmdTraceRaysKHR(command_buffer,
-                              &context.sbt_raygen_region,
-                              &context.sbt_miss_region,
-                              &context.sbt_hit_region,
-                              &context.sbt_callable_region,
-                              context.storage_image.width,
-                              context.storage_image.height,
+                              &render_resources.sbt_raygen_region,
+                              &render_resources.sbt_miss_region,
+                              &render_resources.sbt_hit_region,
+                              &render_resources.sbt_callable_region,
+                              render_resources.storage_image.width,
+                              render_resources.storage_image.height,
                               1);
 
             VkImageMemoryBarrier image_memory_barriers[] {
@@ -2454,7 +2598,7 @@ void draw_frame(Vulkan_context &context, const Camera &camera)
                  .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                  .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                  .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .image = context.storage_image.image,
+                 .image = render_resources.storage_image.image,
                  .subresourceRange = subresource_range},
                 {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
                  .pNext = {},
@@ -2464,7 +2608,7 @@ void draw_frame(Vulkan_context &context, const Camera &camera)
                  .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                  .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                  .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .image = context.render_target.image,
+                 .image = render_resources.render_target.image,
                  .subresourceRange = subresource_range}};
 
             vkCmdPipelineBarrier(
@@ -2488,22 +2632,24 @@ void draw_frame(Vulkan_context &context, const Camera &camera)
 
             const VkImageBlit image_blit {
                 .srcSubresource = subresource_layers,
-                .srcOffsets =
-                    {{0, 0, 0},
-                     {static_cast<std::int32_t>(context.render_target.width),
-                      static_cast<std::int32_t>(context.render_target.height),
-                      1}},
+                .srcOffsets = {{0, 0, 0},
+                               {static_cast<std::int32_t>(
+                                    render_resources.render_target.width),
+                                static_cast<std::int32_t>(
+                                    render_resources.render_target.height),
+                                1}},
                 .dstSubresource = subresource_layers,
-                .dstOffsets = {
-                    {0, 0, 0},
-                    {static_cast<std::int32_t>(context.render_target.width),
-                     static_cast<std::int32_t>(context.render_target.height),
-                     1}}};
+                .dstOffsets = {{0, 0, 0},
+                               {static_cast<std::int32_t>(
+                                    render_resources.render_target.width),
+                                static_cast<std::int32_t>(
+                                    render_resources.render_target.height),
+                                1}}};
 
             vkCmdBlitImage(command_buffer,
-                           context.storage_image.image,
+                           render_resources.storage_image.image,
                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                           context.render_target.image,
+                           render_resources.render_target.image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            1,
                            &image_blit,
@@ -2631,138 +2777,20 @@ void wait_idle(const Vulkan_context &context)
     check_result(result, "vkDeviceWaitIdle");
 }
 
-void create_scene_resources(Vulkan_context &context,
-                            std::uint32_t render_width,
-                            std::uint32_t render_height,
-                            const aiScene *scene)
+void reset_render(Vulkan_render_resources &render_resources)
 {
-    const auto *const mesh = scene->mMeshes[0];
-    std::vector<std::uint32_t> indices(mesh->mNumFaces * 3);
-    for (unsigned int i {0}; i < mesh->mNumFaces; ++i)
-    {
-        indices[i * 3 + 0] = mesh->mFaces[i].mIndices[0];
-        indices[i * 3 + 1] = mesh->mFaces[i].mIndices[1];
-        indices[i * 3 + 2] = mesh->mFaces[i].mIndices[2];
-    }
-
-    SCOPE_FAIL([&] { destroy_scene_resources(context); });
-
-    constexpr VkFormat storage_image_format {VK_FORMAT_R32G32B32A32_SFLOAT};
-    context.storage_image = create_image(context.allocator,
-                                         render_width,
-                                         render_height,
-                                         storage_image_format,
-                                         VK_IMAGE_USAGE_STORAGE_BIT |
-                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                             VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-    context.storage_image_view = create_image_view(
-        context.device, context.storage_image.image, storage_image_format);
-
-    constexpr VkFormat render_target_format {VK_FORMAT_R8G8B8A8_SRGB};
-    context.render_target = create_image(context.allocator,
-                                         render_width,
-                                         render_height,
-                                         render_target_format,
-                                         VK_IMAGE_USAGE_SAMPLED_BIT |
-                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                             VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-    context.render_target_view = create_image_view(
-        context.device, context.render_target.image, render_target_format);
-
-    {
-        const auto command_buffer =
-            begin_one_time_submit_command_buffer(context);
-        transition_image_layout(command_buffer,
-                                context.storage_image.image,
-                                VK_ACCESS_NONE,
-                                VK_ACCESS_SHADER_READ_BIT |
-                                    VK_ACCESS_SHADER_WRITE_BIT,
-                                VK_IMAGE_LAYOUT_UNDEFINED,
-                                VK_IMAGE_LAYOUT_GENERAL,
-                                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR |
-                                    VK_PIPELINE_STAGE_TRANSFER_BIT);
-        transition_image_layout(command_buffer,
-                                context.render_target.image,
-                                VK_ACCESS_NONE,
-                                VK_ACCESS_SHADER_READ_BIT,
-                                VK_IMAGE_LAYOUT_UNDEFINED,
-                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
-        end_one_time_submit_command_buffer(context, command_buffer);
-    }
-
-    context.render_target_sampler = create_sampler(context.device);
-
-    context.vertex_buffer = create_vertex_or_index_buffer(
-        context,
-        mesh->mVertices,
-        mesh->mNumVertices * sizeof(mesh->mVertices[0]));
-
-    context.index_buffer = create_vertex_or_index_buffer(
-        context, indices.data(), indices.size() * sizeof(indices.front()));
-
-    context.blas = create_blas(context);
-
-    context.tlas = create_tlas(context);
-
-    context.descriptor_set_layout =
-        create_descriptor_set_layout(context.device);
-
-    context.final_render_descriptor_set_layout =
-        create_final_render_descriptor_set_layout(context.device);
-
-    context.descriptor_set = create_descriptor_set(context);
-
-    context.final_render_descriptor_set =
-        create_final_render_descriptor_set(context);
-
-    context.ray_tracing_pipeline_layout =
-        create_ray_tracing_pipeline_layout(context);
-
-    context.ray_tracing_pipeline = create_ray_tracing_pipeline(context);
-
-    create_shader_binding_table(context);
-
-    context.samples_to_render = 1000;
-    context.sample_count = 0;
-    context.samples_per_frame = 1;
+    render_resources.sample_count = 0;
 }
 
-void destroy_scene_resources(const Vulkan_context &context)
-{
-    destroy_shader_binding_table(context);
-    destroy_pipeline(context.device, context.ray_tracing_pipeline);
-    destroy_pipeline_layout(context.device,
-                            context.ray_tracing_pipeline_layout);
-    destroy_descriptor_set_layout(context.device,
-                                  context.final_render_descriptor_set_layout);
-    destroy_descriptor_set_layout(context.device,
-                                  context.descriptor_set_layout);
-    destroy_acceleration_structure(context, context.tlas);
-    destroy_acceleration_structure(context, context.blas);
-    destroy_buffer(context.allocator, context.index_buffer);
-    destroy_buffer(context.allocator, context.vertex_buffer);
-    destroy_sampler(context.device, context.render_target_sampler);
-    destroy_image_view(context.device, context.render_target_view);
-    destroy_image(context.allocator, context.render_target);
-    destroy_image_view(context.device, context.storage_image_view);
-    destroy_image(context.allocator, context.storage_image);
-}
-
-void reset_render(Vulkan_context &context)
-{
-    context.sample_count = 0;
-}
-
-void write_to_png(const Vulkan_context &context, const char *file_name)
+void write_to_png(const Vulkan_context &context,
+                  const Vulkan_render_resources &render_resources,
+                  const char *file_name)
 {
     constexpr auto format = VK_FORMAT_R8G8B8A8_SRGB;
 
     const auto final_image = create_image(context.allocator,
-                                          context.storage_image.width,
-                                          context.storage_image.height,
+                                          render_resources.storage_image.width,
+                                          render_resources.storage_image.height,
                                           format,
                                           VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                               VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
@@ -2804,7 +2832,7 @@ void write_to_png(const Vulkan_context &context, const char *file_name)
          .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-         .image = context.storage_image.image,
+         .image = render_resources.storage_image.image,
          .subresourceRange = subresource_range},
         {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
          .pNext = {},
@@ -2849,7 +2877,7 @@ void write_to_png(const Vulkan_context &context, const char *file_name)
                         1}}};
 
     vkCmdBlitImage(command_buffer,
-                   context.storage_image.image,
+                   render_resources.storage_image.image,
                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                    final_image.image,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,

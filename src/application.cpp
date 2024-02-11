@@ -18,7 +18,6 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include <filesystem>
 #include <iostream>
 #include <numbers>
 #include <stdexcept>
@@ -32,6 +31,7 @@ namespace
 struct Application_state
 {
     Vulkan_context context;
+    Vulkan_render_resources render_resources;
     bool scene_loaded;
     Camera camera;
     std::uint32_t render_width;
@@ -161,7 +161,7 @@ void load_scene(Application_state &state, const char *file_name)
         throw std::runtime_error("Scene has no meshes");
     }
 
-    create_scene_resources(
+    state.render_resources = create_render_resources(
         state.context, state.render_width, state.render_height, scene);
     state.scene_loaded = true;
 }
@@ -202,20 +202,15 @@ void make_ui(Application_state &state)
         {
             if (ImGui::MenuItem("Open"))
             {
-                const auto default_path = std::filesystem::current_path();
-                const auto file_name =
-                    tinyfd_openFileDialog("Open",
-                                          nullptr,
-                                          0,
-                                          nullptr,
-                                          nullptr,
-                                          0);
+                const auto file_name = tinyfd_openFileDialog(
+                    "Open", nullptr, 0, nullptr, nullptr, 0);
                 if (file_name != nullptr)
                 {
                     wait_idle(state.context);
                     if (state.scene_loaded)
                     {
-                        destroy_scene_resources(state.context);
+                        destroy_render_resources(state.context,
+                                                 state.render_resources);
                         state.scene_loaded = false;
                     }
                     load_scene(state, file_name);
@@ -234,7 +229,8 @@ void make_ui(Application_state &state)
                     nullptr);
                 if (file_name != nullptr)
                 {
-                    write_to_png(state.context, file_name);
+                    write_to_png(
+                        state.context, state.render_resources, file_name);
                 }
             }
             ImGui::EndMenu();
@@ -247,10 +243,11 @@ void make_ui(Application_state &state)
     {
         if (state.scene_loaded)
         {
-            make_centered_image(static_cast<ImTextureID>(
-                                    state.context.final_render_descriptor_set),
-                                static_cast<float>(state.render_width) /
-                                    static_cast<float>(state.render_height));
+            make_centered_image(
+                static_cast<ImTextureID>(
+                    state.render_resources.final_render_descriptor_set),
+                static_cast<float>(state.render_width) /
+                    static_cast<float>(state.render_height));
         }
     }
     ImGui::End();
@@ -267,24 +264,25 @@ void make_ui(Application_state &state)
             ImGui::Text(
                 "Resolution: %u x %u", state.render_width, state.render_height);
 
-            ImGui::Text("Samples: %u", state.context.sample_count);
+            ImGui::Text("Samples: %u", state.render_resources.sample_count);
 
             auto samples_to_render =
-                static_cast<int>(state.context.samples_to_render);
+                static_cast<int>(state.render_resources.samples_to_render);
             ImGui::InputInt("Total samples", &samples_to_render);
-            state.context.samples_to_render =
+            state.render_resources.samples_to_render =
                 static_cast<std::uint32_t>(std::max(samples_to_render, 1));
 
             auto samples_per_frame =
-                static_cast<int>(state.context.samples_per_frame);
+                static_cast<int>(state.render_resources.samples_per_frame);
             ImGui::InputInt("Samples per frame", &samples_per_frame, 1, 10);
-            state.context.samples_per_frame =
+            state.render_resources.samples_per_frame =
                 static_cast<std::uint32_t>(std::max(samples_per_frame, 1));
 
             if (ImGui::Button("Reset render") ||
-                state.context.samples_to_render < state.context.sample_count)
+                state.render_resources.samples_to_render <
+                    state.render_resources.sample_count)
             {
-                reset_render(state.context);
+                reset_render(state.render_resources);
             }
 
             ImGui::SeparatorText("Orbital Camera");
@@ -297,19 +295,19 @@ void make_ui(Application_state &state)
                                    10.0f * initial_camera_distance))
             {
                 orbital_camera_set_distance(state.camera, camera_distance);
-                reset_render(state.context);
+                reset_render(state.render_resources);
             }
             static float camera_yaw {state.camera.yaw};
             if (ImGui::SliderAngle("Yaw", &camera_yaw))
             {
                 orbital_camera_set_yaw(state.camera, camera_yaw);
-                reset_render(state.context);
+                reset_render(state.render_resources);
             }
             static float camera_pitch {state.camera.pitch};
             if (ImGui::SliderAngle("Pitch", &camera_pitch, -90.0f, 90.0f))
             {
                 orbital_camera_set_pitch(state.camera, camera_pitch);
-                reset_render(state.context);
+                reset_render(state.render_resources);
             }
         }
     }
@@ -328,8 +326,8 @@ void application_main(const char *file_name)
 
     Application_state state {};
 
-    state.context = create_vulkan_context(window);
-    SCOPE_EXIT([&] { destroy_vulkan_context(state.context); });
+    state.context = create_context(window);
+    SCOPE_EXIT([&] { destroy_context(state.context); });
 
     if (file_name != nullptr)
     {
@@ -340,7 +338,7 @@ void application_main(const char *file_name)
         {
             if (state.scene_loaded)
             {
-                destroy_scene_resources(state.context);
+                destroy_render_resources(state.context, state.render_resources);
             }
         });
 
@@ -358,7 +356,7 @@ void application_main(const char *file_name)
 
         ImGui::Render();
 
-        draw_frame(state.context, state.camera);
+        draw_frame(state.context, state.render_resources, state.camera);
     }
 
     wait_idle(state.context);
