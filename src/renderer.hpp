@@ -10,6 +10,10 @@
 
 #include <cstdint>
 
+#ifndef NDEBUG
+#define ENABLE_VALIDATION
+#endif
+
 struct Vulkan_image
 {
     std::uint32_t width;
@@ -34,7 +38,7 @@ struct Vulkan_acceleration_structure
 struct Vulkan_context
 {
     VkInstance instance;
-#ifndef NDEBUG
+#ifdef ENABLE_VALIDATION
     VkDebugUtilsMessengerEXT debug_messenger;
 #endif
     VkPhysicalDevice physical_device;
