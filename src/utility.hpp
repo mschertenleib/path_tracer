@@ -73,7 +73,7 @@ private:
 #define SCOPE_EXIT(f) const Scope_exit CONCATENATE(scope_exit_, __LINE__)(f)
 #define SCOPE_FAIL(f) const Scope_fail CONCATENATE(scope_fail_, __LINE__)(f)
 
-// alignment MUST be a power of 2
+// alignment must be a power of 2
 template <std::unsigned_integral U>
 [[nodiscard]] constexpr U align_up(U value, U alignment) noexcept
 {
@@ -83,5 +83,10 @@ template <std::unsigned_integral U>
 
 [[nodiscard]] std::vector<std::uint32_t>
 read_binary_file(const char *file_name);
+
+void write_png(const char *file_name,
+               const std::uint8_t *data,
+               int width,
+               int height);
 
 #endif // UTILITY_HPP

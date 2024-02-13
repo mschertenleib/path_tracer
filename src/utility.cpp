@@ -1,9 +1,15 @@
 #include "utility.hpp"
 
+#define STBI_FAILURE_USERMSG
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 #include <filesystem>
 #include <fstream>
 #include <sstream>
-#include <stdexcept>
 
 std::vector<std::uint32_t> read_binary_file(const char *file_name)
 {
@@ -40,4 +46,19 @@ std::vector<std::uint32_t> read_binary_file(const char *file_name)
     }
 
     return buffer;
+}
+
+void write_png(const char *file_name,
+               const std::uint8_t *data,
+               int width,
+               int height)
+{
+    const auto write_result =
+        stbi_write_png(file_name, width, height, 4, data, width * 4);
+    if (write_result == 0)
+    {
+        std::ostringstream message;
+        message << "Failed to write PNG image to \"" << file_name << '\"';
+        throw std::runtime_error(message.str());
+    }
 }

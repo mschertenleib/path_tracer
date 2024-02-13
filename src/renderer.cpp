@@ -2,8 +2,6 @@
 #include "camera.hpp"
 #include "utility.hpp"
 
-#include "stb_image_write.h"
-
 #include "imgui_impl_vulkan.h"
 
 #include <assimp/scene.h>
@@ -15,13 +13,13 @@
 #include <volk.h>
 
 #include <algorithm>
+#include <cassert>
+#include <cstring>
 #include <iostream>
 #include <limits>
 #include <sstream>
 #include <vector>
 
-#include <cassert>
-#include <cstring>
 
 namespace
 {
@@ -2794,17 +2792,8 @@ void write_to_png(const Vulkan_context &context,
 
     end_one_time_submit_command_buffer(context, command_buffer);
 
-    const auto write_result = stbi_write_png(
-        file_name,
-        static_cast<int>(render_resources.render_target.width),
-        static_cast<int>(render_resources.render_target.height),
-        4,
-        mapped_data,
-        static_cast<int>(render_resources.render_target.width * 4));
-    if (write_result == 0)
-    {
-        std::ostringstream message;
-        message << "Failed to write PNG image \"" << file_name << '\"';
-        throw std::runtime_error(message.str());
-    }
+    write_png(file_name,
+              mapped_data,
+              static_cast<int>(render_resources.render_target.width),
+              static_cast<int>(render_resources.render_target.height));
 }

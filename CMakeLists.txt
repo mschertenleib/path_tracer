@@ -89,7 +89,6 @@ add_executable(path_tracer
         src/utility.cpp
         src/utility.hpp
         src/vec3.hpp
-        src/stb_image.cpp
         ${IMGUI_SOURCES}
         ${tinyfiledialogs_SOURCE_DIR}/tinyfiledialogs.c
         ${tinyfiledialogs_SOURCE_DIR}/tinyfiledialogs.h
