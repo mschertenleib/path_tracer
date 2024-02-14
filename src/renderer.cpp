@@ -2085,7 +2085,7 @@ Vulkan_context create_context(GLFWwindow *window)
     return context;
 }
 
-void destroy_context(const Vulkan_context &context)
+void destroy_context(Vulkan_context &context)
 {
     if (context.imgui_initialized)
     {
@@ -2171,6 +2171,8 @@ void destroy_context(const Vulkan_context &context)
     }
 
     volkFinalize();
+
+    context = {};
 }
 
 Vulkan_render_resources create_render_resources(const Vulkan_context &context,
@@ -2295,7 +2297,7 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
 }
 
 void destroy_render_resources(const Vulkan_context &context,
-                              const Vulkan_render_resources &render_resources)
+                              Vulkan_render_resources &render_resources)
 {
     destroy_buffer(context.allocator, render_resources.sbt_buffer);
 
@@ -2357,6 +2359,8 @@ void destroy_render_resources(const Vulkan_context &context,
     destroy_image(context.allocator, render_resources.render_target);
     destroy_image_view(context.device, render_resources.storage_image_view);
     destroy_image(context.allocator, render_resources.storage_image);
+
+    render_resources = {};
 }
 
 void draw_frame(Vulkan_context &context,
@@ -2700,9 +2704,9 @@ void reset_render(Vulkan_render_resources &render_resources)
     render_resources.sample_count = 0;
 }
 
-void write_to_png(const Vulkan_context &context,
-                  const Vulkan_render_resources &render_resources,
-                  const char *file_name)
+std::string write_to_png(const Vulkan_context &context,
+                         const Vulkan_render_resources &render_resources,
+                         const char *file_name)
 {
     VmaAllocationInfo staging_allocation_info {};
     const auto staging_buffer =
@@ -2791,8 +2795,8 @@ void write_to_png(const Vulkan_context &context,
 
     end_one_time_submit_command_buffer(context, command_buffer);
 
-    write_png(file_name,
-              mapped_data,
-              static_cast<int>(render_resources.render_target.width),
-              static_cast<int>(render_resources.render_target.height));
+    return write_png(file_name,
+                     mapped_data,
+                     static_cast<int>(render_resources.render_target.width),
+                     static_cast<int>(render_resources.render_target.height));
 }

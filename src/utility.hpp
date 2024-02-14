@@ -1,13 +1,14 @@
 #ifndef UTILITY_HPP
 #define UTILITY_HPP
 
+#include <cassert>
 #include <concepts>
+#include <cstdint>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
-#include <cassert>
-#include <cstdint>
 
 template <typename F>
 class Scope_exit
@@ -84,9 +85,10 @@ template <std::unsigned_integral U>
 [[nodiscard]] std::vector<std::uint32_t>
 read_binary_file(const char *file_name);
 
-void write_png(const char *file_name,
-               const std::uint8_t *data,
-               int width,
-               int height);
+// On failure, returns an error message. On success, returns an empty string.
+[[nodiscard]] std::string write_png(const char *file_name,
+                                    const std::uint8_t *data,
+                                    int width,
+                                    int height);
 
 #endif // UTILITY_HPP

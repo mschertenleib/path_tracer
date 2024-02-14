@@ -17,10 +17,12 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <numbers>
+#include <ranges>
 #include <stdexcept>
 
 namespace
@@ -123,8 +125,34 @@ void shutdown_imgui()
     ImGui::DestroyContext();
 }
 
-void load_scene(Application_state &state, const char *file_name)
+void open_scene(Application_state &state, const char *file_name)
 {
+    Assimp::Importer importer;
+    importer.SetPropertyBool(AI_CONFIG_PP_PTV_NORMALIZE, true);
+
+    const auto *const scene = importer.ReadFile(
+        file_name,
+        static_cast<unsigned int>(
+            aiProcess_Triangulate | aiProcess_PreTransformVertices |
+            aiProcess_GenBoundingBoxes | aiProcess_JoinIdenticalVertices |
+            aiProcess_SortByPType));
+    if (scene == nullptr)
+    {
+        // Messages can not contain quotes
+        std::string importer_error {importer.GetErrorString()};
+        auto filtered_message = std::views::filter(
+            importer_error, [](auto c) { return c != '\'' && c != '\"'; });
+        importer_error.assign(filtered_message.begin(), filtered_message.end());
+        tinyfd_messageBox("Error", importer_error.c_str(), "ok", "error", 1);
+        return;
+    }
+
+    if (!scene->HasMeshes())
+    {
+        tinyfd_messageBox("Error", "Scene has no meshes", "ok", "error", 1);
+        return;
+    }
+
     state.render_width = 640;
     state.render_height = 480;
 
@@ -140,28 +168,59 @@ void load_scene(Application_state &state, const char *file_name)
     state.camera = create_camera(
         position, target, focal_length, sensor_width, sensor_height);
 
-    Assimp::Importer importer;
-    importer.SetPropertyBool(AI_CONFIG_PP_PTV_NORMALIZE, true);
-
-    const auto *const scene = importer.ReadFile(
-        file_name,
-        static_cast<unsigned int>(
-            aiProcess_Triangulate | aiProcess_PreTransformVertices |
-            aiProcess_GenBoundingBoxes | aiProcess_JoinIdenticalVertices |
-            aiProcess_SortByPType));
-    if (scene == nullptr)
+    wait_idle(state.context);
+    if (state.scene_loaded)
     {
-        throw std::runtime_error(importer.GetErrorString());
+        destroy_render_resources(state.context, state.render_resources);
     }
-
-    if (!scene->HasMeshes())
-    {
-        throw std::runtime_error("Scene has no meshes");
-    }
-
     state.render_resources = create_render_resources(
         state.context, state.render_width, state.render_height, scene);
     state.scene_loaded = true;
+}
+
+void open_scene_with_dialog(Application_state &state)
+{
+    const auto file_name =
+        tinyfd_openFileDialog("Open scene", nullptr, 0, nullptr, nullptr, 0);
+    if (file_name != nullptr)
+    {
+        open_scene(state, file_name);
+    }
+}
+
+void close_scene(Application_state &state)
+{
+    if (state.scene_loaded)
+    {
+        wait_idle(state.context);
+        destroy_render_resources(state.context, state.render_resources);
+        state.scene_loaded = false;
+    }
+}
+
+void save_as_png_with_dialog(Application_state &state)
+{
+    constexpr const char *filter_patterns[] {"*.png"};
+    const auto file_name =
+        tinyfd_saveFileDialog("Save As",
+                              nullptr,
+                              static_cast<int>(std::size(filter_patterns)),
+                              filter_patterns,
+                              nullptr);
+    if (file_name != nullptr)
+    {
+        auto error_message =
+            write_to_png(state.context, state.render_resources, file_name);
+        if (!error_message.empty())
+        {
+            // Messages can not contain quotes
+            auto filtered_message = std::views::filter(
+                error_message, [](auto c) { return c != '\'' && c != '\"'; });
+            error_message.assign(filtered_message.begin(),
+                                 filtered_message.end());
+            tinyfd_messageBox("Error", error_message.c_str(), "ok", "error", 1);
+        }
+    }
 }
 
 void make_centered_image(ImTextureID texture_id, float aspect_ratio)
@@ -198,48 +257,29 @@ void make_ui(Application_state &state)
     {
         if (ImGui::BeginMenu("File"))
         {
-            if (ImGui::MenuItem("Open"))
+            if (ImGui::MenuItem("Open", nullptr))
             {
-                const auto file_name = tinyfd_openFileDialog(
-                    "Open", nullptr, 0, nullptr, nullptr, 0);
-                if (file_name != nullptr)
-                {
-                    wait_idle(state.context);
-                    if (state.scene_loaded)
-                    {
-                        destroy_render_resources(state.context,
-                                                 state.render_resources);
-                        state.scene_loaded = false;
-                    }
-                    load_scene(state, file_name);
-                }
+                open_scene_with_dialog(state);
             }
-
+            if (ImGui::MenuItem("Close", nullptr, false, state.scene_loaded))
+            {
+                close_scene(state);
+            }
             if (ImGui::MenuItem(
                     "Save as PNG", nullptr, false, state.scene_loaded))
             {
-                constexpr const char *filter_patterns[] {"*.png"};
-                const auto file_name = tinyfd_saveFileDialog(
-                    "Save As",
-                    nullptr,
-                    static_cast<int>(std::size(filter_patterns)),
-                    filter_patterns,
-                    nullptr);
-                if (file_name != nullptr)
-                {
-                    write_to_png(
-                        state.context, state.render_resources, file_name);
-                }
+                save_as_png_with_dialog(state);
             }
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
     }
 
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, {0.0f, 0.0f, 0.0f, 1.0f});
-    if (ImGui::Begin("Viewport"))
+    if (state.scene_loaded)
     {
-        if (state.scene_loaded)
+        ImGui::SetNextWindowSize({640, 480}, ImGuiCond_FirstUseEver);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, {0.0f, 0.0f, 0.0f, 1.0f});
+        if (ImGui::Begin("Viewport"))
         {
             make_centered_image(
                 static_cast<ImTextureID>(
@@ -247,9 +287,9 @@ void make_ui(Application_state &state)
                 static_cast<float>(state.render_width) /
                     static_cast<float>(state.render_height));
         }
+        ImGui::End();
+        ImGui::PopStyleColor();
     }
-    ImGui::End();
-    ImGui::PopStyleColor();
 
     if (ImGui::Begin("Parameters"))
     {
@@ -329,7 +369,7 @@ void run(const char *file_name)
 
     if (file_name != nullptr)
     {
-        load_scene(state, file_name);
+        open_scene(state, file_name);
     }
     SCOPE_EXIT(
         [&]

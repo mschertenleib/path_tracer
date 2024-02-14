@@ -6,9 +6,9 @@
 #include <vulkan/vulkan.h>
 
 #include <array>
-#include <vector>
-
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #ifndef NDEBUG
 #define ENABLE_VALIDATION
@@ -104,7 +104,7 @@ struct Vulkan_render_resources
 
 [[nodiscard]] Vulkan_context create_context(struct GLFWwindow *window);
 
-void destroy_context(const Vulkan_context &context);
+void destroy_context(Vulkan_context &context);
 
 [[nodiscard]] Vulkan_render_resources
 create_render_resources(const Vulkan_context &context,
@@ -113,7 +113,7 @@ create_render_resources(const Vulkan_context &context,
                         const struct aiScene *scene);
 
 void destroy_render_resources(const Vulkan_context &context,
-                              const Vulkan_render_resources &render_resources);
+                              Vulkan_render_resources &render_resources);
 
 void draw_frame(Vulkan_context &context,
                 Vulkan_render_resources &render_resources,
@@ -127,8 +127,10 @@ void wait_idle(const Vulkan_context &context);
 
 void reset_render(Vulkan_render_resources &render_resources);
 
-void write_to_png(const Vulkan_context &context,
-                  const Vulkan_render_resources &render_resources,
-                  const char *file_name);
+// On failure, returns an error message. On success, returns an empty string.
+[[nodiscard]] std::string
+write_to_png(const Vulkan_context &context,
+             const Vulkan_render_resources &render_resources,
+             const char *file_name);
 
 #endif // RENDERER_HPP

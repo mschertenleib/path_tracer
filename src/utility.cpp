@@ -48,10 +48,10 @@ std::vector<std::uint32_t> read_binary_file(const char *file_name)
     return buffer;
 }
 
-void write_png(const char *file_name,
-               const std::uint8_t *data,
-               int width,
-               int height)
+std::string write_png(const char *file_name,
+                      const std::uint8_t *data,
+                      int width,
+                      int height)
 {
     const auto write_result =
         stbi_write_png(file_name, width, height, 4, data, width * 4);
@@ -59,6 +59,10 @@ void write_png(const char *file_name,
     {
         std::ostringstream message;
         message << "Failed to write PNG image to \"" << file_name << '\"';
-        throw std::runtime_error(message.str());
+        return message.str();
+    }
+    else
+    {
+        return {};
     }
 }
