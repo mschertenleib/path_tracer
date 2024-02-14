@@ -1,9 +1,8 @@
 #include "application.hpp"
 
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
-
-#include <cstdlib>
 
 int main(int argc, char *argv[])
 {
@@ -21,7 +20,7 @@ int main(int argc, char *argv[])
             file_name = argv[1];
         }
 
-        application_main(file_name);
+        run(file_name);
 
         return EXIT_SUCCESS;
     }

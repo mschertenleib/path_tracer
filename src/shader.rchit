@@ -83,7 +83,7 @@ void main()
     uint rng_state = payload.rng_state;
 
     payload.ray_origin = offset_position_along_normal(world_position, world_normal);
-    if (gl_PrimitiveID >= 22)
+    if (gl_PrimitiveID >= 22 && gl_PrimitiveID <= 31)
     {
         payload.ray_direction = reflect_specular(world_normal, rng_state);
         payload.color = vec3(0.75);
