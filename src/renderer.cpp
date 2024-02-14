@@ -1408,7 +1408,7 @@ void create_blas(const Vulkan_context &context,
         &build_range_info.primitiveCount,
         &build_sizes_info);
 
-    render_resources.blas.buffer =
+    render_resources.blas_buffer =
         create_buffer(context.allocator,
                       build_sizes_info.accelerationStructureSize,
                       VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
@@ -1422,17 +1422,17 @@ void create_blas(const Vulkan_context &context,
             .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
             .pNext = {},
             .createFlags = {},
-            .buffer = render_resources.blas.buffer.buffer,
+            .buffer = render_resources.blas_buffer.buffer,
             .offset = {},
             .size = build_sizes_info.accelerationStructureSize,
             .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
             .deviceAddress = {}};
 
-    const auto result = vkCreateAccelerationStructureKHR(
-        context.device,
-        &acceleration_structure_create_info,
-        nullptr,
-        &render_resources.blas.acceleration_structure);
+    const auto result =
+        vkCreateAccelerationStructureKHR(context.device,
+                                         &acceleration_structure_create_info,
+                                         nullptr,
+                                         &render_resources.blas);
     check_result(result, "vkCreateAccelerationStructureKHR");
 
     const auto scratch_buffer =
@@ -1448,8 +1448,7 @@ void create_blas(const Vulkan_context &context,
     const auto scratch_buffer_address =
         get_device_address(context.device, scratch_buffer.buffer);
 
-    build_geometry_info.dstAccelerationStructure =
-        render_resources.blas.acceleration_structure;
+    build_geometry_info.dstAccelerationStructure = render_resources.blas;
     build_geometry_info.scratchData.deviceAddress = scratch_buffer_address;
 
     const auto command_buffer = begin_one_time_submit_command_buffer(context);
@@ -1476,8 +1475,8 @@ void create_tlas(const Vulkan_context &context,
         .mask = 0xFF,
         .instanceShaderBindingTableRecordOffset = 0,
         .flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
-        .accelerationStructureReference = get_device_address(
-            context.device, render_resources.blas.acceleration_structure)};
+        .accelerationStructureReference =
+            get_device_address(context.device, render_resources.blas)};
 
     const auto instance_buffer = create_buffer_from_host_data(
         context,
@@ -1552,7 +1551,7 @@ void create_tlas(const Vulkan_context &context,
         &primitive_count,
         &build_sizes_info);
 
-    render_resources.tlas.buffer =
+    render_resources.tlas_buffer =
         create_buffer(context.allocator,
                       build_sizes_info.accelerationStructureSize,
                       VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
@@ -1566,17 +1565,17 @@ void create_tlas(const Vulkan_context &context,
             .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
             .pNext = {},
             .createFlags = {},
-            .buffer = render_resources.tlas.buffer.buffer,
+            .buffer = render_resources.tlas_buffer.buffer,
             .offset = {},
             .size = build_sizes_info.accelerationStructureSize,
             .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
             .deviceAddress = {}};
 
-    const auto result = vkCreateAccelerationStructureKHR(
-        context.device,
-        &acceleration_structure_create_info,
-        nullptr,
-        &render_resources.tlas.acceleration_structure);
+    const auto result =
+        vkCreateAccelerationStructureKHR(context.device,
+                                         &acceleration_structure_create_info,
+                                         nullptr,
+                                         &render_resources.tlas);
     check_result(result, "vkCreateAccelerationStructureKHR");
 
     const auto scratch_buffer =
@@ -1592,8 +1591,7 @@ void create_tlas(const Vulkan_context &context,
     const auto scratch_buffer_address =
         get_device_address(context.device, scratch_buffer.buffer);
 
-    build_geometry_info.dstAccelerationStructure =
-        render_resources.tlas.acceleration_structure;
+    build_geometry_info.dstAccelerationStructure = render_resources.tlas;
     build_geometry_info.scratchData.deviceAddress = scratch_buffer_address;
 
     constexpr VkAccelerationStructureBuildRangeInfoKHR build_range_info {
@@ -1706,8 +1704,7 @@ void create_descriptor_set(const Vulkan_context &context,
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
             .pNext = {},
             .accelerationStructureCount = 1,
-            .pAccelerationStructures =
-                &render_resources.tlas.acceleration_structure};
+            .pAccelerationStructures = &render_resources.tlas};
 
     const VkDescriptorBufferInfo descriptor_vertices {
         .buffer = render_resources.vertex_buffer.buffer,
@@ -2328,23 +2325,19 @@ void destroy_render_resources(const Vulkan_context &context,
             context.device, render_resources.descriptor_set_layout, nullptr);
     }
 
-    if (render_resources.tlas.acceleration_structure)
+    if (render_resources.tlas)
     {
         vkDestroyAccelerationStructureKHR(
-            context.device,
-            render_resources.tlas.acceleration_structure,
-            nullptr);
+            context.device, render_resources.tlas, nullptr);
     }
-    destroy_buffer(context.allocator, render_resources.tlas.buffer);
+    destroy_buffer(context.allocator, render_resources.tlas_buffer);
 
-    if (render_resources.blas.acceleration_structure)
+    if (render_resources.blas)
     {
         vkDestroyAccelerationStructureKHR(
-            context.device,
-            render_resources.blas.acceleration_structure,
-            nullptr);
+            context.device, render_resources.blas, nullptr);
     }
-    destroy_buffer(context.allocator, render_resources.blas.buffer);
+    destroy_buffer(context.allocator, render_resources.blas_buffer);
 
     destroy_buffer(context.allocator, render_resources.index_buffer);
     destroy_buffer(context.allocator, render_resources.vertex_buffer);

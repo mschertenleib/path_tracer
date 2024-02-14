@@ -29,12 +29,6 @@ struct Vulkan_buffer
     VmaAllocation allocation;
 };
 
-struct Vulkan_acceleration_structure
-{
-    Vulkan_buffer buffer;
-    VkAccelerationStructureKHR acceleration_structure;
-};
-
 struct Vulkan_context
 {
     VkInstance instance;
@@ -84,8 +78,10 @@ struct Vulkan_render_resources
     VkSampler render_target_sampler;
     Vulkan_buffer vertex_buffer;
     Vulkan_buffer index_buffer;
-    Vulkan_acceleration_structure blas;
-    Vulkan_acceleration_structure tlas;
+    Vulkan_buffer blas_buffer;
+    VkAccelerationStructureKHR blas;
+    Vulkan_buffer tlas_buffer;
+    VkAccelerationStructureKHR tlas;
     VkDescriptorSetLayout descriptor_set_layout;
     VkDescriptorSetLayout final_render_descriptor_set_layout;
     VkDescriptorSet descriptor_set;
