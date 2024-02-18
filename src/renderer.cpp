@@ -879,7 +879,7 @@ void create_descriptor_pool(Vulkan_context &context)
     const VkDescriptorPoolCreateInfo create_info {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .pNext = {},
-        .flags = {},
+        .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
         .maxSets = max_sets,
         .poolSizeCount = static_cast<std::uint32_t>(std::size(pool_sizes)),
         .pPoolSizes = pool_sizes};
@@ -1110,24 +1110,21 @@ void init_imgui(Vulkan_context &context)
         .Device = context.device,
         .QueueFamily = context.graphics_compute_queue_family_index,
         .Queue = context.graphics_compute_queue,
-        .PipelineCache = VK_NULL_HANDLE,
         .DescriptorPool = context.descriptor_pool,
-        .Subpass = 0,
+        .RenderPass = context.render_pass,
         .MinImageCount = context.swapchain_min_image_count,
         .ImageCount =
             static_cast<std::uint32_t>(context.swapchain_images.size()),
         .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
+        .PipelineCache = VK_NULL_HANDLE,
+        .Subpass = 0,
         .UseDynamicRendering = false,
-        .ColorAttachmentFormat = context.swapchain_format,
         .Allocator = nullptr,
-        .CheckVkResultFn = check_vk_result};
+        .CheckVkResultFn = check_vk_result,
+        .MinAllocationSize = 1024 * 1024};
 
-    ImGui_ImplVulkan_Init(&init_info, context.render_pass);
-
-    const auto command_buffer = begin_one_time_submit_command_buffer(context);
-    ImGui_ImplVulkan_CreateFontsTexture(command_buffer);
-    end_one_time_submit_command_buffer(context, command_buffer);
-    ImGui_ImplVulkan_DestroyFontUploadObjects();
+    ImGui_ImplVulkan_Init(&init_info);
+    ImGui_ImplVulkan_CreateFontsTexture();
 
     context.imgui_initialized = true;
 }

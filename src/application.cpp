@@ -253,20 +253,39 @@ void make_ui(Application_state &state)
 {
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 
+    if (ImGui::IsKeyDown(ImGuiMod_Shortcut))
+    {
+        if (ImGui::IsKeyDown(ImGuiKey_O))
+        {
+            open_scene_with_dialog(state);
+        }
+        else if (ImGui::IsKeyDown(ImGuiKey_W))
+        {
+            close_scene(state);
+        }
+        else if (ImGui::IsKeyDown(ImGuiKey_S))
+        {
+            save_as_png_with_dialog(state);
+        }
+    }
+
+    auto popup_bg = ImGui::GetStyleColorVec4(ImGuiCol_PopupBg);
+    popup_bg.w = 1.0f;
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, popup_bg);
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::BeginMenu("File"))
         {
-            if (ImGui::MenuItem("Open", nullptr))
+            if (ImGui::MenuItem("Open", "Ctrl+O"))
             {
                 open_scene_with_dialog(state);
             }
-            if (ImGui::MenuItem("Close", nullptr, false, state.scene_loaded))
+            if (ImGui::MenuItem("Close", "Ctrl+W", false, state.scene_loaded))
             {
                 close_scene(state);
             }
             if (ImGui::MenuItem(
-                    "Save as PNG", nullptr, false, state.scene_loaded))
+                    "Save as PNG", "Ctrl+S", false, state.scene_loaded))
             {
                 save_as_png_with_dialog(state);
             }
@@ -274,6 +293,7 @@ void make_ui(Application_state &state)
         }
         ImGui::EndMainMenuBar();
     }
+    ImGui::PopStyleColor();
 
     if (state.scene_loaded)
     {
