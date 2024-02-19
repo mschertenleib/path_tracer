@@ -7,6 +7,8 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
 
+#include "ImGuizmo.h"
+
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
@@ -291,6 +293,24 @@ void make_ui(Application_state &state)
 
     if (state.scene_loaded)
     {
+        static float view[16] {1.0f,
+                               0.0f,
+                               0.0f,
+                               0.0f,
+                               0.0f,
+                               1.0f,
+                               0.0f,
+                               0.0f,
+                               0.0f,
+                               0.0f,
+                               1.0f,
+                               0.0f,
+                               0.0f,
+                               0.0f,
+                               0.0f,
+                               1.0f};
+        static float length {1.0f};
+
         ImGui::SetNextWindowSize({640, 480}, ImGuiCond_FirstUseEver);
         ImGui::PushStyleColor(ImGuiCol_WindowBg, {0.0f, 0.0f, 0.0f, 1.0f});
         if (ImGui::Begin("Viewport"))
@@ -300,9 +320,47 @@ void make_ui(Application_state &state)
                     state.render_resources.final_render_descriptor_set),
                 static_cast<float>(state.render_width) /
                     static_cast<float>(state.render_height));
+
+            ImGuizmo::SetDrawlist();
+            const auto window_pos = ImGui::GetWindowPos();
+            const auto window_size = ImGui::GetWindowSize();
+            constexpr ImVec2 view_manipulate_size {128, 128};
+            ImGuizmo::ViewManipulate(
+                view,
+                length,
+                {window_pos.x + window_size.x - view_manipulate_size.x,
+                 window_pos.y}, // FIXME: this does not considerate the border
+                view_manipulate_size,
+                0x00000000);
         }
         ImGui::End();
         ImGui::PopStyleColor();
+
+        if (ImGui::Begin("Gizmo values"))
+        {
+            ImGui::Text("View: %6.2f %6.2f %6.2f %6.2f",
+                        view[0],
+                        view[1],
+                        view[2],
+                        view[3]);
+            ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
+                        view[4],
+                        view[5],
+                        view[6],
+                        view[7]);
+            ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
+                        view[8],
+                        view[9],
+                        view[10],
+                        view[11]);
+            ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
+                        view[12],
+                        view[13],
+                        view[14],
+                        view[15]);
+            ImGui::Text("Length: %6.2f", length);
+        }
+        ImGui::End();
     }
 
     if (ImGui::Begin("Parameters"))
@@ -403,6 +461,7 @@ void run(const char *file_name)
         ImGui_ImplGlfw_NewFrame();
         ImGui_ImplVulkan_NewFrame();
         ImGui::NewFrame();
+        ImGuizmo::BeginFrame();
 
         make_ui(state);
 
