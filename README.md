@@ -60,6 +60,7 @@ cmake --build build --target path_tracer
 - [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) for managing memory allocation for Vulkan
 - [GLFW](https://github.com/glfw/glfw) for the window, surface, input and events
 - [Dear ImGui](https://github.com/ocornut/imgui) for the user interface
+- [ImGuizmo](https://github.com/CedricGuillemet/ImGuizmo) for gizmo controls
 - [stb_image and stb_image_write](https://github.com/nothings/stb) for reading/writing images
 - [Open Asset Import Library (assimp)](https://github.com/assimp/assimp) for loading 3D assets
 - [tiny file dialogs](https://sourceforge.net/projects/tinyfiledialogs) for open/save file dialogs

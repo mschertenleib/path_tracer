@@ -52,12 +52,6 @@ void glfw_framebuffer_size_callback(GLFWwindow *window, int width, int height)
                        static_cast<std::uint32_t>(height));
 }
 
-void glfw_scroll_callback(GLFWwindow *window,
-                          [[maybe_unused]] double xoffset,
-                          double yoffset)
-{
-}
-
 [[nodiscard]] GLFWwindow *init_glfw()
 {
     glfwSetErrorCallback(&glfw_error_callback);
@@ -83,7 +77,6 @@ void glfw_scroll_callback(GLFWwindow *window,
     }
 
     glfwSetFramebufferSizeCallback(window, &glfw_framebuffer_size_callback);
-    glfwSetScrollCallback(window, &glfw_scroll_callback);
 
     return window;
 }
@@ -104,6 +97,7 @@ void init_imgui(GLFWwindow *window)
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.ConfigWindowsMoveFromTitleBarOnly = true;
 
     ImGui::StyleColorsDark();
 

@@ -7,6 +7,7 @@ include(cmake/CPM.cmake)
 
 
 find_package(Vulkan REQUIRED)
+add_compile_definitions(VK_NO_PROTOTYPES)
 
 
 CPMAddPackage(
@@ -38,6 +39,49 @@ CPMAddPackage(
         GIT_TAG v1.90.3-docking
         DOWNLOAD_ONLY YES
 )
+add_library(imgui STATIC)
+target_sources(imgui PRIVATE
+        ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui.h
+        ${imgui_SOURCE_DIR}/imgui_internal.h
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp
+        ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/imgui_demo.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+)
+target_include_directories(imgui
+        PRIVATE
+        ${Vulkan_INCLUDE_DIRS}
+        PUBLIC
+        ${imgui_SOURCE_DIR}
+        ${imgui_SOURCE_DIR}/backends
+)
+target_link_libraries(imgui PRIVATE glfw)
+
+
+CPMAddPackage(
+        GITHUB_REPOSITORY CedricGuillemet/ImGuizmo
+        GIT_TAG ba662b1
+        DOWNLOAD_ONLY YES
+)
+add_library(imguizmo STATIC)
+target_sources(imguizmo PRIVATE
+        ${ImGuizmo_SOURCE_DIR}/GraphEditor.cpp
+        ${ImGuizmo_SOURCE_DIR}/GraphEditor.h
+        ${ImGuizmo_SOURCE_DIR}/ImCurveEdit.cpp
+        ${ImGuizmo_SOURCE_DIR}/ImCurveEdit.h
+        ${ImGuizmo_SOURCE_DIR}/ImGradient.cpp
+        ${ImGuizmo_SOURCE_DIR}/ImGradient.h
+        ${ImGuizmo_SOURCE_DIR}/ImGuizmo.cpp
+        ${ImGuizmo_SOURCE_DIR}/ImGuizmo.h	
+        ${ImGuizmo_SOURCE_DIR}/ImSequencer.cpp
+        ${ImGuizmo_SOURCE_DIR}/ImSequencer.h
+        ${ImGuizmo_SOURCE_DIR}/ImZoomSlider.h
+)
+target_include_directories(imguizmo PUBLIC ${ImGuizmo_SOURCE_DIR})
+target_link_libraries(imguizmo PRIVATE imgui)
 
 
 CPMAddPackage(
@@ -66,20 +110,17 @@ CPMAddPackage(
         GIT_TAG e60005
         DOWNLOAD_ONLY
 )
-
-
-set(IMGUI_SOURCES
-        ${imgui_SOURCE_DIR}/imgui.cpp
-        ${imgui_SOURCE_DIR}/imgui.h
-        ${imgui_SOURCE_DIR}/imgui_internal.h
-        ${imgui_SOURCE_DIR}/imgui_draw.cpp
-        ${imgui_SOURCE_DIR}/imgui_tables.cpp
-        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-        ${imgui_SOURCE_DIR}/imgui_demo.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+add_library(tinyfiledialogs STATIC)
+target_sources(tinyfiledialogs PRIVATE
+        ${tinyfiledialogs_SOURCE_DIR}/tinyfiledialogs.c
+        ${tinyfiledialogs_SOURCE_DIR}/tinyfiledialogs.h
 )
-add_executable(path_tracer
+target_include_directories(tinyfiledialogs PUBLIC ${tinyfiledialogs_SOURCE_DIR})
+
+
+add_executable(path_tracer)
+target_compile_features(path_tracer PRIVATE cxx_std_20)
+target_sources(path_tracer PRIVATE
         src/main.cpp
         src/application.cpp
         src/application.hpp
@@ -90,24 +131,20 @@ add_executable(path_tracer
         src/utility.cpp
         src/utility.hpp
         src/vec3.hpp
-        ${IMGUI_SOURCES}
-        ${tinyfiledialogs_SOURCE_DIR}/tinyfiledialogs.c
-        ${tinyfiledialogs_SOURCE_DIR}/tinyfiledialogs.h
 )
-target_compile_features(path_tracer PRIVATE cxx_std_20)
-target_compile_definitions(path_tracer PRIVATE VK_NO_PROTOTYPES)
 target_include_directories(path_tracer SYSTEM PRIVATE
         ${Vulkan_INCLUDE_DIRS}
-        ${imgui_SOURCE_DIR}
-        ${imgui_SOURCE_DIR}/backends
         ${stb_SOURCE_DIR}
-        ${tinyfiledialogs_SOURCE_DIR}
 )
 target_link_libraries(path_tracer PRIVATE
         volk
         VulkanMemoryAllocator
         glfw
-        assimp)
+        imgui
+        imguizmo
+        assimp
+        tinyfiledialogs
+)
 add_custom_command(TARGET path_tracer POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:assimp> $<TARGET_FILE_DIR:path_tracer>
 )
@@ -163,19 +200,10 @@ set(GCC_WARNINGS
 )
 if (CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
     target_compile_options(path_tracer PRIVATE ${CLANG_WARNINGS})
-    set_source_files_properties(${IMGUI_SOURCES} PROPERTIES COMPILE_OPTIONS
-            "-Wno-conversion;-Wno-sign-conversion;-Wno-double-promotion;-Wno-null-dereference;-Wno-unused"
-    )
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(path_tracer PRIVATE ${GCC_WARNINGS})
-    set_source_files_properties(${IMGUI_SOURCES} PROPERTIES COMPILE_OPTIONS
-            "-Wno-conversion;-Wno-sign-conversion;-Wno-double-promotion;-Wno-null-dereference;-Wno-unused;-Wno-useless-cast"
-    )
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(path_tracer PRIVATE /W4)
-    set_source_files_properties(${IMGUI_SOURCES} PROPERTIES COMPILE_OPTIONS
-            "/wd4189"
-    )
 else ()
     message(WARNING "No warnings set for compiler '${CMAKE_CXX_COMPILER_ID}'")
 endif ()
