@@ -293,28 +293,21 @@ void make_ui(Application_state &state)
 
     if (state.scene_loaded)
     {
-        static float view[16] {1.0f,
-                               0.0f,
-                               0.0f,
-                               0.0f,
-                               0.0f,
-                               1.0f,
-                               0.0f,
-                               0.0f,
-                               0.0f,
-                               0.0f,
-                               1.0f,
-                               0.0f,
-                               0.0f,
-                               0.0f,
-                               0.0f,
-                               1.0f};
+        static float view[4][4] {{1.0f, 0.0f, 0.0f, 0.0f},
+                                 {0.0f, 1.0f, 0.0f, 0.0f},
+                                 {0.0f, 0.0f, 1.0f, 0.0f},
+                                 {0.0f, 0.0f, 0.0f, 1.0f}};
         static float length {1.0f};
 
         ImGui::SetNextWindowSize({640, 480}, ImGuiCond_FirstUseEver);
         ImGui::PushStyleColor(ImGuiCol_WindowBg, {0.0f, 0.0f, 0.0f, 1.0f});
         if (ImGui::Begin("Viewport"))
         {
+            // Get position and size from the origin of the window content
+            // region
+            const auto cursor_pos = ImGui::GetCursorScreenPos();
+            const auto region_size = ImGui::GetContentRegionAvail();
+
             make_centered_image(
                 static_cast<ImTextureID>(
                     state.render_resources.final_render_descriptor_set),
@@ -322,14 +315,12 @@ void make_ui(Application_state &state)
                     static_cast<float>(state.render_height));
 
             ImGuizmo::SetDrawlist();
-            const auto window_pos = ImGui::GetWindowPos();
-            const auto window_size = ImGui::GetWindowSize();
             constexpr ImVec2 view_manipulate_size {128, 128};
             ImGuizmo::ViewManipulate(
-                view,
+                &view[0][0],
                 length,
-                {window_pos.x + window_size.x - view_manipulate_size.x,
-                 window_pos.y}, // FIXME: this does not considerate the border
+                {cursor_pos.x + region_size.x - view_manipulate_size.x,
+                 cursor_pos.y},
                 view_manipulate_size,
                 0x00000000);
         }
@@ -339,25 +330,25 @@ void make_ui(Application_state &state)
         if (ImGui::Begin("Gizmo values"))
         {
             ImGui::Text("View: %6.2f %6.2f %6.2f %6.2f",
-                        view[0],
-                        view[1],
-                        view[2],
-                        view[3]);
+                        view[0][0],
+                        view[1][0],
+                        view[2][0],
+                        view[3][0]);
             ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
-                        view[4],
-                        view[5],
-                        view[6],
-                        view[7]);
+                        view[0][1],
+                        view[1][1],
+                        view[2][1],
+                        view[3][1]);
             ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
-                        view[8],
-                        view[9],
-                        view[10],
-                        view[11]);
+                        view[0][2],
+                        view[1][2],
+                        view[2][2],
+                        view[3][2]);
             ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
-                        view[12],
-                        view[13],
-                        view[14],
-                        view[15]);
+                        view[0][3],
+                        view[1][3],
+                        view[2][3],
+                        view[3][3]);
             ImGui::Text("Length: %6.2f", length);
         }
         ImGui::End();
