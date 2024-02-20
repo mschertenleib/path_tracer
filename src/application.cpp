@@ -32,6 +32,7 @@ namespace
 
 struct Application_state
 {
+    GLFWwindow *window;
     Vulkan_context context;
     Vulkan_render_resources render_resources;
     bool scene_loaded;
@@ -39,6 +40,13 @@ struct Application_state
     std::uint32_t render_width;
     std::uint32_t render_height;
 };
+
+void remove_quotes(std::string &str)
+{
+    auto filtered_str =
+        std::views::filter(str, [](auto c) { return c != '\'' && c != '\"'; });
+    str.assign(filtered_str.begin(), filtered_str.end());
+}
 
 void glfw_error_callback(int error, const char *description)
 {
@@ -134,11 +142,8 @@ void open_scene(Application_state &state, const char *file_name)
             aiProcess_SortByPType));
     if (scene == nullptr)
     {
-        // Messages can not contain quotes
-        std::string importer_error {importer.GetErrorString()};
-        auto filtered_message = std::views::filter(
-            importer_error, [](auto c) { return c != '\'' && c != '\"'; });
-        importer_error.assign(filtered_message.begin(), filtered_message.end());
+        std::string importer_error(importer.GetErrorString());
+        remove_quotes(importer_error);
         tinyfd_messageBox("Error", importer_error.c_str(), "ok", "error", 1);
         return;
     }
@@ -209,11 +214,7 @@ void save_as_png_with_dialog(Application_state &state)
             write_to_png(state.context, state.render_resources, file_name);
         if (!error_message.empty())
         {
-            // Messages can not contain quotes
-            auto filtered_message = std::views::filter(
-                error_message, [](auto c) { return c != '\'' && c != '\"'; });
-            error_message.assign(filtered_message.begin(),
-                                 filtered_message.end());
+            remove_quotes(error_message);
             tinyfd_messageBox("Error", error_message.c_str(), "ok", "error", 1);
         }
     }
@@ -315,7 +316,12 @@ void make_ui(Application_state &state)
                     static_cast<float>(state.render_height));
 
             ImGuizmo::SetDrawlist();
-            constexpr ImVec2 view_manipulate_size {128, 128};
+            static const auto view_manipulate_size = [&]
+            {
+                float y_scale {1.0f};
+                glfwGetWindowContentScale(state.window, nullptr, &y_scale);
+                return ImVec2 {128 * y_scale, 128 * y_scale};
+            }();
             ImGuizmo::ViewManipulate(
                 &view[0][0],
                 length,
@@ -419,15 +425,15 @@ void make_ui(Application_state &state)
 
 void run(const char *file_name)
 {
-    const auto window = init_glfw();
-    SCOPE_EXIT([window] { shutdown_glfw(window); });
-
-    init_imgui(window);
-    SCOPE_EXIT([] { shutdown_imgui(); });
-
     Application_state state {};
 
-    state.context = create_context(window);
+    state.window = init_glfw();
+    SCOPE_EXIT([&] { shutdown_glfw(state.window); });
+
+    init_imgui(state.window);
+    SCOPE_EXIT([] { shutdown_imgui(); });
+
+    state.context = create_context(state.window);
     SCOPE_EXIT([&] { destroy_context(state.context); });
 
     if (file_name != nullptr)
@@ -443,9 +449,9 @@ void run(const char *file_name)
             }
         });
 
-    glfwSetWindowUserPointer(window, &state);
+    glfwSetWindowUserPointer(state.window, &state);
 
-    while (!glfwWindowShouldClose(window))
+    while (!glfwWindowShouldClose(state.window))
     {
         glfwPollEvents();
 
