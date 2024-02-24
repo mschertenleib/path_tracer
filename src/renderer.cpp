@@ -1119,7 +1119,10 @@ void init_imgui(Vulkan_context &context)
         .PipelineCache = VK_NULL_HANDLE,
         .Subpass = 0,
         .UseDynamicRendering = false,
-        .Allocator = nullptr,
+#ifdef IMGUI_IMPL_VULKAN_HAS_DYNAMIC_RENDERING
+        .PipelineRenderingCreateInfo = {},
+#endif
+        .Allocator = {},
         .CheckVkResultFn = check_vk_result,
         .MinAllocationSize = 1024 * 1024};
 

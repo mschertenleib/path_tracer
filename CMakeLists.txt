@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(path_tracer LANGUAGES CXX)
+project(path_tracer LANGUAGES CXX C)
 
 
 include(cmake/CPM.cmake)
@@ -21,7 +21,7 @@ set(VMA_STATIC_VULKAN_FUNCTIONS OFF)
 set(VMA_DYNAMIC_VULKAN_FUNCTIONS ON)
 CPMAddPackage(
         GITHUB_REPOSITORY GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
-        GIT_TAG v3.0.1
+        GIT_TAG f1ab507
 )
 
 
@@ -51,7 +51,7 @@ target_sources(imgui PRIVATE
         ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
 )
-target_include_directories(imgui
+target_include_directories(imgui SYSTEM
         PRIVATE
         ${Vulkan_INCLUDE_DIRS}
         PUBLIC
@@ -68,19 +68,10 @@ CPMAddPackage(
 )
 add_library(imguizmo STATIC)
 target_sources(imguizmo PRIVATE
-        ${ImGuizmo_SOURCE_DIR}/GraphEditor.cpp
-        ${ImGuizmo_SOURCE_DIR}/GraphEditor.h
-        ${ImGuizmo_SOURCE_DIR}/ImCurveEdit.cpp
-        ${ImGuizmo_SOURCE_DIR}/ImCurveEdit.h
-        ${ImGuizmo_SOURCE_DIR}/ImGradient.cpp
-        ${ImGuizmo_SOURCE_DIR}/ImGradient.h
         ${ImGuizmo_SOURCE_DIR}/ImGuizmo.cpp
         ${ImGuizmo_SOURCE_DIR}/ImGuizmo.h	
-        ${ImGuizmo_SOURCE_DIR}/ImSequencer.cpp
-        ${ImGuizmo_SOURCE_DIR}/ImSequencer.h
-        ${ImGuizmo_SOURCE_DIR}/ImZoomSlider.h
 )
-target_include_directories(imguizmo PUBLIC ${ImGuizmo_SOURCE_DIR})
+target_include_directories(imguizmo SYSTEM PUBLIC ${ImGuizmo_SOURCE_DIR})
 target_link_libraries(imguizmo PRIVATE imgui)
 
 
@@ -131,14 +122,15 @@ target_sources(path_tracer PRIVATE
         src/utility.cpp
         src/utility.hpp
         src/vec3.hpp
+	src/vma.cpp
 )
 target_include_directories(path_tracer SYSTEM PRIVATE
         ${Vulkan_INCLUDE_DIRS}
         ${stb_SOURCE_DIR}
+	${VulkanMemoryAllocator_SOURCE_DIR}/include
 )
 target_link_libraries(path_tracer PRIVATE
         volk
-        VulkanMemoryAllocator
         glfw
         imgui
         imguizmo
