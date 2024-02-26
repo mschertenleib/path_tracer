@@ -2,6 +2,31 @@
 
 #include <cmath>
 
+namespace
+{
+
+struct mat4x4
+{
+    float m[4][4];
+};
+
+[[nodiscard]] mat4x4
+make_perspective(float vertical_fov, float aspect, float z_near)
+{
+    const auto range = std::tan(vertical_fov * 0.5f) * z_near;
+
+    mat4x4 perspective {};
+    perspective.m[0][0] = z_near / (range * aspect);
+    perspective.m[1][1] = z_near / range;
+    perspective.m[2][2] = -1.0f;
+    perspective.m[2][3] = -1.0f;
+    perspective.m[3][2] = -z_near;
+
+    return perspective;
+}
+
+} // namespace
+
 Camera create_camera(const vec3 &position,
                      const vec3 &target,
                      float focal_length,
@@ -11,6 +36,11 @@ Camera create_camera(const vec3 &position,
     constexpr vec3 world_up {0.0f, 1.0f, 0.0f};
 
     Camera camera {};
+    camera.view[0][0] = 1.0f;
+    camera.view[1][1] = 1.0f;
+    camera.view[2][2] = 1.0f;
+    camera.view[3][3] = 1.0f;
+    camera.distance = norm(target - position);
     camera.position = position;
     camera.target = target;
     camera.direction_z = normalize(target - position);
@@ -64,12 +94,13 @@ void orbital_camera_set_pitch(Camera &camera, float pitch)
     camera.direction_z = (cos_angle * normalized_direction_z -
                           sin_angle * normalized_direction_y) *
                          norm_direction_z;
-    camera.position = camera.target - norm(camera.target - camera.position) *
-                                          normalize(camera.direction_z);
+    camera.position =
+        camera.target - camera.distance * normalize(camera.direction_z);
     camera.pitch = pitch;
 }
 
 void orbital_camera_set_distance(Camera &camera, float distance)
 {
+    camera.distance = distance;
     camera.position = camera.target - distance * normalize(camera.direction_z);
 }

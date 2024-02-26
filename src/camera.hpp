@@ -5,6 +5,9 @@
 
 struct Camera
 {
+    float view[4][4];
+    float perspective[4][4];
+    float distance;
     vec3 position;
     vec3 target;
     vec3 direction_x; // x points to the right

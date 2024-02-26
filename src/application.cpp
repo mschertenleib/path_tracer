@@ -294,12 +294,6 @@ void make_ui(Application_state &state)
 
     if (state.scene_loaded)
     {
-        static float view[4][4] {{1.0f, 0.0f, 0.0f, 0.0f},
-                                 {0.0f, 1.0f, 0.0f, 0.0f},
-                                 {0.0f, 0.0f, 1.0f, 0.0f},
-                                 {0.0f, 0.0f, 0.0f, 1.0f}};
-        static float length {1.0f};
-
         ImGui::SetNextWindowSize({640, 480}, ImGuiCond_FirstUseEver);
         ImGui::PushStyleColor(ImGuiCol_WindowBg, {0.0f, 0.0f, 0.0f, 1.0f});
         if (ImGui::Begin("Viewport"))
@@ -323,8 +317,8 @@ void make_ui(Application_state &state)
                 return ImVec2 {128 * y_scale, 128 * y_scale};
             }();
             ImGuizmo::ViewManipulate(
-                &view[0][0],
-                length,
+                &state.camera.view[0][0],
+                state.camera.distance,
                 {cursor_pos.x + region_size.x - view_manipulate_size.x,
                  cursor_pos.y},
                 view_manipulate_size,
@@ -336,26 +330,25 @@ void make_ui(Application_state &state)
         if (ImGui::Begin("Gizmo values"))
         {
             ImGui::Text("View: %6.2f %6.2f %6.2f %6.2f",
-                        view[0][0],
-                        view[1][0],
-                        view[2][0],
-                        view[3][0]);
+                        state.camera.view[0][0],
+                        state.camera.view[1][0],
+                        state.camera.view[2][0],
+                        state.camera.view[3][0]);
             ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
-                        view[0][1],
-                        view[1][1],
-                        view[2][1],
-                        view[3][1]);
+                        state.camera.view[0][1],
+                        state.camera.view[1][1],
+                        state.camera.view[2][1],
+                        state.camera.view[3][1]);
             ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
-                        view[0][2],
-                        view[1][2],
-                        view[2][2],
-                        view[3][2]);
+                        state.camera.view[0][2],
+                        state.camera.view[1][2],
+                        state.camera.view[2][2],
+                        state.camera.view[3][2]);
             ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
-                        view[0][3],
-                        view[1][3],
-                        view[2][3],
-                        view[3][3]);
-            ImGui::Text("Length: %6.2f", length);
+                        state.camera.view[0][3],
+                        state.camera.view[1][3],
+                        state.camera.view[2][3],
+                        state.camera.view[3][3]);
         }
         ImGui::End();
     }
@@ -393,8 +386,7 @@ void make_ui(Application_state &state)
             }
 
             ImGui::SeparatorText("Orbital Camera");
-            static const float initial_camera_distance {
-                norm(state.camera.target - state.camera.position)};
+            static const float initial_camera_distance {state.camera.distance};
             static float camera_distance {initial_camera_distance};
             if (ImGui::SliderFloat("Distance",
                                    &camera_distance,
