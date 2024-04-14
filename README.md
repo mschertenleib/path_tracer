@@ -1,4 +1,4 @@
-# path_tracer
+# Path Tracer
 
 A path tracer written in C++ and GLSL, using the Vulkan ray tracing extensions.
 
@@ -109,3 +109,4 @@ cmake --build build --target path_tracer
 ## License
 
 This software is released under [MIT License](LICENSE).
+

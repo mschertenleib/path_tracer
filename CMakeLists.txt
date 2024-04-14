@@ -6,6 +6,9 @@ project(path_tracer LANGUAGES CXX C)
 include(cmake/CPM.cmake)
 
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+
 find_package(Vulkan REQUIRED)
 add_compile_definitions(VK_NO_PROTOTYPES)
 
