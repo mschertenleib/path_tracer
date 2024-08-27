@@ -169,10 +169,8 @@ void open_scene(Application_state &state, const char *file_name)
         position, target, focal_length, sensor_width, sensor_height);
 
     wait_idle(state.context);
-    if (state.scene_loaded)
-    {
-        destroy_render_resources(state.context, state.render_resources);
-    }
+
+    state.render_resources = {};
     state.render_resources = create_render_resources(
         state.context, state.render_width, state.render_height, scene);
     state.scene_loaded = true;
@@ -193,7 +191,7 @@ void close_scene(Application_state &state)
     if (state.scene_loaded)
     {
         wait_idle(state.context);
-        destroy_render_resources(state.context, state.render_resources);
+        state.render_resources = {};
         state.scene_loaded = false;
     }
 }
@@ -304,7 +302,7 @@ void make_ui(Application_state &state)
 
             make_centered_image(
                 static_cast<ImTextureID>(
-                    state.render_resources.final_render_descriptor_set),
+                    state.render_resources.final_render_descriptor_set.get()),
                 static_cast<float>(state.render_width) /
                     static_cast<float>(state.render_height));
 
@@ -431,14 +429,6 @@ void run(const char *file_name)
     {
         open_scene(state, file_name);
     }
-    SCOPE_EXIT(
-        [&]
-        {
-            if (state.scene_loaded)
-            {
-                destroy_render_resources(state.context, state.render_resources);
-            }
-        });
 
     glfwSetWindowUserPointer(state.window, &state);
 

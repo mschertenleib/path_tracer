@@ -22,14 +22,14 @@ struct Vulkan_image
 {
     std::uint32_t width;
     std::uint32_t height;
-    VkImage image;
+    vk::UniqueImage image;
     VmaAllocation allocation;
 };
 
 struct Vulkan_buffer
 {
-    VkDeviceSize size;
-    VkBuffer buffer;
+    vk::DeviceSize size;
+    vk::UniqueBuffer buffer;
     VmaAllocation allocation;
 };
 
@@ -87,27 +87,27 @@ struct Vulkan_context
 struct Vulkan_render_resources
 {
     Vulkan_image storage_image;
-    VkImageView storage_image_view;
+    vk::UniqueImageView storage_image_view;
     Vulkan_image render_target;
-    VkImageView render_target_view;
-    VkSampler render_target_sampler;
+    vk::UniqueImageView render_target_view;
+    vk::UniqueSampler render_target_sampler;
     Vulkan_buffer vertex_buffer;
     Vulkan_buffer index_buffer;
     Vulkan_buffer blas_buffer;
-    VkAccelerationStructureKHR blas;
+    vk::UniqueAccelerationStructureKHR blas;
     Vulkan_buffer tlas_buffer;
-    VkAccelerationStructureKHR tlas;
-    VkDescriptorSetLayout descriptor_set_layout;
-    VkDescriptorSetLayout final_render_descriptor_set_layout;
-    VkDescriptorSet descriptor_set;
-    VkDescriptorSet final_render_descriptor_set;
-    VkPipelineLayout ray_tracing_pipeline_layout;
-    VkPipeline ray_tracing_pipeline;
+    vk::UniqueAccelerationStructureKHR tlas;
+    vk::UniqueDescriptorSetLayout descriptor_set_layout;
+    vk::UniqueDescriptorSetLayout final_render_descriptor_set_layout;
+    vk::UniqueDescriptorSet descriptor_set;
+    vk::UniqueDescriptorSet final_render_descriptor_set;
+    vk::UniquePipelineLayout ray_tracing_pipeline_layout;
+    vk::UniquePipeline ray_tracing_pipeline;
     Vulkan_buffer sbt_buffer;
-    VkStridedDeviceAddressRegionKHR sbt_raygen_region;
-    VkStridedDeviceAddressRegionKHR sbt_miss_region;
-    VkStridedDeviceAddressRegionKHR sbt_hit_region;
-    VkStridedDeviceAddressRegionKHR sbt_callable_region;
+    vk::StridedDeviceAddressRegionKHR sbt_raygen_region;
+    vk::StridedDeviceAddressRegionKHR sbt_miss_region;
+    vk::StridedDeviceAddressRegionKHR sbt_hit_region;
+    vk::StridedDeviceAddressRegionKHR sbt_callable_region;
     std::uint32_t samples_to_render;
     std::uint32_t sample_count;
     std::uint32_t samples_per_frame;
@@ -122,9 +122,6 @@ create_render_resources(const Vulkan_context &context,
                         std::uint32_t render_width,
                         std::uint32_t render_height,
                         const struct aiScene *scene);
-
-void destroy_render_resources(const Vulkan_context &context,
-                              Vulkan_render_resources &render_resources);
 
 void draw_frame(Vulkan_context &context,
                 Vulkan_render_resources &render_resources,
