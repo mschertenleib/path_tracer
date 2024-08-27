@@ -69,14 +69,16 @@ struct Vulkan_context
     std::vector<vk::Image> swapchain_images;
     std::vector<vk::UniqueImageView> swapchain_image_views;
 
-    VkDescriptorPool descriptor_pool;
-    VkRenderPass render_pass;
-    std::vector<VkFramebuffer> framebuffers;
+    vk::UniqueDescriptorPool descriptor_pool;
+    vk::UniqueRenderPass render_pass;
+    std::vector<vk::UniqueFramebuffer> framebuffers;
     static constexpr std::uint32_t frames_in_flight {2};
-    std::array<VkCommandBuffer, frames_in_flight> command_buffers;
-    std::array<VkSemaphore, frames_in_flight> image_available_semaphores;
-    std::array<VkSemaphore, frames_in_flight> render_finished_semaphores;
-    std::array<VkFence, frames_in_flight> in_flight_fences;
+    std::vector<vk::UniqueCommandBuffer> command_buffers;
+    std::array<vk::UniqueSemaphore, frames_in_flight>
+        image_available_semaphores;
+    std::array<vk::UniqueSemaphore, frames_in_flight>
+        render_finished_semaphores;
+    std::array<vk::UniqueFence, frames_in_flight> in_flight_fences;
     std::uint32_t current_frame_in_flight;
     std::uint32_t global_frame_count;
     bool imgui_initialized;

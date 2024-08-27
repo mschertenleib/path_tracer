@@ -639,19 +639,20 @@ void create_swapchain(Vulkan_context &context)
 
 void create_descriptor_pool(Vulkan_context &context)
 {
-    constexpr VkDescriptorPoolSize pool_sizes[] {
-        {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
-        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000},
-        {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1}};
+    // FIXME
+    constexpr vk::DescriptorPoolSize pool_sizes[] {
+        {vk::DescriptorType::eSampler, 1000},
+        {vk::DescriptorType::eCombinedImageSampler, 1000},
+        {vk::DescriptorType::eSampledImage, 1000},
+        {vk::DescriptorType::eStorageImage, 1000},
+        {vk::DescriptorType::eUniformTexelBuffer, 1000},
+        {vk::DescriptorType::eStorageTexelBuffer, 1000},
+        {vk::DescriptorType::eUniformBuffer, 1000},
+        {vk::DescriptorType::eStorageBuffer, 1000},
+        {vk::DescriptorType::eUniformBufferDynamic, 1000},
+        {vk::DescriptorType::eStorageBufferDynamic, 1000},
+        {vk::DescriptorType::eInputAttachment, 1000},
+        {vk::DescriptorType::eAccelerationStructureKHR, 1}};
 
     std::uint32_t max_sets {0};
     for (const auto pool_size : pool_sizes)
@@ -659,60 +660,45 @@ void create_descriptor_pool(Vulkan_context &context)
         max_sets += pool_size.descriptorCount;
     }
 
-    const VkDescriptorPoolCreateInfo create_info {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .pNext = {},
-        .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+    const vk::DescriptorPoolCreateInfo create_info {
+        .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
         .maxSets = max_sets,
         .poolSizeCount = static_cast<std::uint32_t>(std::size(pool_sizes)),
         .pPoolSizes = pool_sizes};
 
-    const auto result = vkCreateDescriptorPool(
-        context.device.get(), &create_info, nullptr, &context.descriptor_pool);
-    check_result(result, "vkCreateDescriptorPool");
+    context.descriptor_pool =
+        context.device->createDescriptorPoolUnique(create_info);
 }
 
 void create_render_pass(Vulkan_context &context)
 {
-    const VkAttachmentDescription attachment_description {
-        .flags = {},
-        .format = (VkFormat)context.swapchain_format,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR};
+    const vk::AttachmentDescription attachment_description {
+        .format = context.swapchain_format,
+        .samples = vk::SampleCountFlagBits::e1,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
+        .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+        .initialLayout = vk::ImageLayout::eUndefined,
+        .finalLayout = vk::ImageLayout::ePresentSrcKHR};
 
-    constexpr VkAttachmentReference attachment_reference {
-        .attachment = 0, .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    constexpr vk::AttachmentReference attachment_reference {
+        .attachment = 0, .layout = vk::ImageLayout::eColorAttachmentOptimal};
 
-    const VkSubpassDescription subpass_description {
-        .flags = {},
-        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-        .inputAttachmentCount = {},
-        .pInputAttachments = {},
+    const vk::SubpassDescription subpass_description {
+        .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
         .colorAttachmentCount = 1,
-        .pColorAttachments = &attachment_reference,
-        .pResolveAttachments = {},
-        .pDepthStencilAttachment = {},
-        .preserveAttachmentCount = {},
-        .pPreserveAttachments = {}};
+        .pColorAttachments = &attachment_reference};
 
-    constexpr VkSubpassDependency subpass_dependency {
+    constexpr vk::SubpassDependency subpass_dependency {
         .srcSubpass = VK_SUBPASS_EXTERNAL,
         .dstSubpass = 0,
-        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .srcAccessMask = VK_ACCESS_NONE,
-        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-        .dependencyFlags = {}};
+        .srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        .srcAccessMask = vk::AccessFlagBits::eNone,
+        .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite};
 
-    const VkRenderPassCreateInfo render_pass_create_info {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .pNext = {},
-        .flags = {},
+    const vk::RenderPassCreateInfo render_pass_create_info {
         .attachmentCount = 1,
         .pAttachments = &attachment_description,
         .subpassCount = 1,
@@ -720,11 +706,8 @@ void create_render_pass(Vulkan_context &context)
         .dependencyCount = 1,
         .pDependencies = &subpass_dependency};
 
-    const auto result = vkCreateRenderPass(context.device.get(),
-                                           &render_pass_create_info,
-                                           nullptr,
-                                           &context.render_pass);
-    check_result(result, "vkCreateRenderPass");
+    context.render_pass =
+        context.device->createRenderPassUnique(render_pass_create_info);
 }
 
 void create_framebuffers(Vulkan_context &context)
@@ -733,82 +716,52 @@ void create_framebuffers(Vulkan_context &context)
 
     for (std::size_t i {0}; i < context.framebuffers.size(); ++i)
     {
-        const VkFramebufferCreateInfo framebuffer_create_info {
-            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .pNext = {},
-            .flags = {},
-            .renderPass = context.render_pass,
+        const vk::FramebufferCreateInfo framebuffer_create_info {
+            .renderPass = context.render_pass.get(),
             .attachmentCount = 1,
-            .pAttachments = reinterpret_cast<VkImageView *>(
-                &context.swapchain_image_views[i].get()),
+            .pAttachments = &context.swapchain_image_views[i].get(),
             .width = context.swapchain_extent.width,
             .height = context.swapchain_extent.height,
             .layers = 1};
 
-        const auto result = vkCreateFramebuffer(context.device.get(),
-                                                &framebuffer_create_info,
-                                                nullptr,
-                                                &context.framebuffers[i]);
-        check_result(result, "vkCreateFramebuffer");
-    }
-}
-
-void destroy_framebuffers(const Vulkan_context &context)
-{
-    for (const auto framebuffer : context.framebuffers)
-    {
-        if (framebuffer)
-        {
-            vkDestroyFramebuffer(context.device.get(), framebuffer, nullptr);
-        }
+        context.framebuffers[i] =
+            context.device->createFramebufferUnique(framebuffer_create_info);
     }
 }
 
 void create_command_buffers(Vulkan_context &context)
 {
-    const VkCommandBufferAllocateInfo allocate_info {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .pNext = {},
+    const vk::CommandBufferAllocateInfo allocate_info {
         .commandPool = context.command_pool.get(),
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .level = vk::CommandBufferLevel::ePrimary,
         .commandBufferCount = Vulkan_context::frames_in_flight};
 
-    const auto result = vkAllocateCommandBuffers(
-        context.device.get(), &allocate_info, context.command_buffers.data());
-    check_result(result, "vkAllocateCommandBuffers");
+    context.command_buffers =
+        context.device->allocateCommandBuffersUnique(allocate_info);
 }
 
 void create_synchronization_objects(Vulkan_context &context)
 {
-    constexpr VkSemaphoreCreateInfo semaphore_create_info {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        .pNext = {},
-        .flags = {}};
+    constexpr vk::SemaphoreCreateInfo semaphore_create_info {};
 
     for (auto &semaphore : context.image_available_semaphores)
     {
-        const auto result = vkCreateSemaphore(
-            context.device.get(), &semaphore_create_info, nullptr, &semaphore);
-        check_result(result, "vkCreateSemaphore");
+        semaphore =
+            context.device->createSemaphoreUnique(semaphore_create_info);
     }
 
     for (auto &semaphore : context.render_finished_semaphores)
     {
-        const auto result = vkCreateSemaphore(
-            context.device.get(), &semaphore_create_info, nullptr, &semaphore);
-        check_result(result, "vkCreateSemaphore");
+        semaphore =
+            context.device->createSemaphoreUnique(semaphore_create_info);
     }
 
-    constexpr VkFenceCreateInfo fence_create_info {
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .pNext = {},
-        .flags = VK_FENCE_CREATE_SIGNALED_BIT};
+    constexpr vk::FenceCreateInfo fence_create_info {
+        .flags = vk::FenceCreateFlagBits::eSignaled};
 
     for (auto &fence : context.in_flight_fences)
     {
-        const auto result = vkCreateFence(
-            context.device.get(), &fence_create_info, nullptr, &fence);
-        check_result(result, "vkCreateFence");
+        fence = context.device->createFenceUnique(fence_create_info);
     }
 }
 
@@ -885,12 +838,13 @@ void init_imgui(Vulkan_context &context)
     const auto loader_func = [](const char *function_name, void *user_data)
     {
         const auto ctx = static_cast<const Vulkan_context *>(user_data);
-        return vkGetInstanceProcAddr(*ctx->instance, function_name);
+        return VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr(
+            *ctx->instance, function_name);
     };
     ImGui_ImplVulkan_LoadFunctions(loader_func, &context);
 
     const auto check_vk_result = [](VkResult result)
-    { check_result(result, "ImGui Vulkan call"); };
+    { vk::detail::resultCheck(vk::Result {result}, "ImGui Vulkan call"); };
 
     ImGui_ImplVulkan_InitInfo init_info {
         .Instance = context.instance.get(),
@@ -898,8 +852,8 @@ void init_imgui(Vulkan_context &context)
         .Device = context.device.get(),
         .QueueFamily = context.graphics_compute_queue_family_index,
         .Queue = context.graphics_compute_queue,
-        .DescriptorPool = context.descriptor_pool,
-        .RenderPass = context.render_pass,
+        .DescriptorPool = context.descriptor_pool.get(),
+        .RenderPass = context.render_pass.get(),
         .MinImageCount = context.swapchain_min_image_count,
         .ImageCount =
             static_cast<std::uint32_t>(context.swapchain_images.size()),
@@ -922,11 +876,9 @@ void init_imgui(Vulkan_context &context)
 
 void recreate_swapchain(Vulkan_context &context)
 {
-    const auto result = vkDeviceWaitIdle(context.device.get());
-    check_result(result, "vkDeviceWaitIdle");
+    context.device->waitIdle();
 
-    destroy_framebuffers(context);
-
+    context.framebuffers.clear();
     context.swapchain_image_views.clear();
     context.swapchain.reset();
 
@@ -1473,7 +1425,7 @@ void create_descriptor_set(const Vulkan_context &context,
     const VkDescriptorSetAllocateInfo descriptor_set_allocate_info {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .pNext = {},
-        .descriptorPool = context.descriptor_pool,
+        .descriptorPool = context.descriptor_pool.get(),
         .descriptorSetCount = 1,
         .pSetLayouts = &render_resources.descriptor_set_layout};
 
@@ -1562,7 +1514,7 @@ void create_final_render_descriptor_set(
     const VkDescriptorSetAllocateInfo descriptor_set_allocate_info {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .pNext = {},
-        .descriptorPool = context.descriptor_pool,
+        .descriptorPool = context.descriptor_pool.get(),
         .descriptorSetCount = 1,
         .pSetLayouts = &render_resources.final_render_descriptor_set_layout};
 
@@ -1892,52 +1844,6 @@ void destroy_context(Vulkan_context &context)
         ImGui_ImplVulkan_Shutdown();
     }
 
-    for (const auto semaphore : context.render_finished_semaphores)
-    {
-        if (semaphore)
-        {
-            vkDestroySemaphore(context.device.get(), semaphore, nullptr);
-        }
-    }
-
-    for (const auto semaphore : context.image_available_semaphores)
-    {
-        if (semaphore)
-        {
-            vkDestroySemaphore(context.device.get(), semaphore, nullptr);
-        }
-    }
-
-    for (const auto fence : context.in_flight_fences)
-    {
-        if (fence)
-        {
-            vkDestroyFence(context.device.get(), fence, nullptr);
-        }
-    }
-
-    if (context.command_buffers.front())
-    {
-        vkFreeCommandBuffers(
-            context.device.get(),
-            context.command_pool.get(),
-            static_cast<std::uint32_t>(context.command_buffers.size()),
-            context.command_buffers.data());
-    }
-
-    destroy_framebuffers(context);
-
-    if (context.render_pass)
-    {
-        vkDestroyRenderPass(context.device.get(), context.render_pass, nullptr);
-    }
-
-    if (context.descriptor_pool)
-    {
-        vkDestroyDescriptorPool(
-            context.device.get(), context.descriptor_pool, nullptr);
-    }
-
     vmaDestroyAllocator(context.allocator);
 }
 
@@ -2144,7 +2050,8 @@ void draw_frame(Vulkan_context &context,
     auto result = vkWaitForFences(
         context.device.get(),
         1,
-        &context.in_flight_fences[context.current_frame_in_flight],
+        (VkFence *)&context.in_flight_fences[context.current_frame_in_flight]
+            .get(),
         VK_TRUE,
         std::numeric_limits<std::uint64_t>::max());
     check_result(result, "vkWaitForFences");
@@ -2154,7 +2061,8 @@ void draw_frame(Vulkan_context &context,
         context.device.get(),
         context.swapchain.get(),
         std::numeric_limits<std::uint64_t>::max(),
-        context.image_available_semaphores[context.current_frame_in_flight],
+        context.image_available_semaphores[context.current_frame_in_flight]
+            .get(),
         {},
         &image_index);
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
@@ -2170,11 +2078,12 @@ void draw_frame(Vulkan_context &context,
     result = vkResetFences(
         context.device.get(),
         1,
-        &context.in_flight_fences[context.current_frame_in_flight]);
+        (VkFence *)&context.in_flight_fences[context.current_frame_in_flight]
+            .get());
     check_result(result, "vkResetFences");
 
     const auto command_buffer =
-        context.command_buffers[context.current_frame_in_flight];
+        context.command_buffers[context.current_frame_in_flight].get();
 
     result = vkResetCommandBuffer(command_buffer, {});
     check_result(result, "vkResetCommandBuffer");
@@ -2378,8 +2287,8 @@ void draw_frame(Vulkan_context &context,
     const VkRenderPassBeginInfo render_pass_begin_info {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .pNext = {},
-        .renderPass = context.render_pass,
-        .framebuffer = context.framebuffers[image_index],
+        .renderPass = context.render_pass.get(),
+        .framebuffer = context.framebuffers[image_index].get(),
         .renderArea = {.offset = {0, 0}, .extent = context.swapchain_extent},
         .clearValueCount = 1,
         .pClearValues = &clear_value};
@@ -2402,21 +2311,23 @@ void draw_frame(Vulkan_context &context,
         .pNext = {},
         .waitSemaphoreCount = 1,
         .pWaitSemaphores =
-            &context
-                 .image_available_semaphores[context.current_frame_in_flight],
+            (VkSemaphore *)&context
+                .image_available_semaphores[context.current_frame_in_flight]
+                .get(),
         .pWaitDstStageMask = &wait_stage,
         .commandBufferCount = 1,
-        .pCommandBuffers = &command_buffer,
+        .pCommandBuffers = (VkCommandBuffer *)&command_buffer,
         .signalSemaphoreCount = 1,
         .pSignalSemaphores =
-            &context
-                 .render_finished_semaphores[context.current_frame_in_flight]};
+            (VkSemaphore *)&context
+                .render_finished_semaphores[context.current_frame_in_flight]
+                .get()};
 
     result = vkQueueSubmit(
         context.graphics_compute_queue,
         1,
         &submit_info,
-        context.in_flight_fences[context.current_frame_in_flight]);
+        context.in_flight_fences[context.current_frame_in_flight].get());
     check_result(result, "vkQueueSubmit");
 
     const VkPresentInfoKHR present_info {
@@ -2424,8 +2335,9 @@ void draw_frame(Vulkan_context &context,
         .pNext = {},
         .waitSemaphoreCount = 1,
         .pWaitSemaphores =
-            &context
-                 .render_finished_semaphores[context.current_frame_in_flight],
+            (VkSemaphore *)&context
+                .render_finished_semaphores[context.current_frame_in_flight]
+                .get(),
         .swapchainCount = 1,
         .pSwapchains =
             reinterpret_cast<VkSwapchainKHR *>(&context.swapchain.get()),
