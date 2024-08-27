@@ -20,6 +20,8 @@
 #include <sstream>
 #include <vector>
 
+VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+
 namespace
 {
 
@@ -87,11 +89,11 @@ debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
 
     if (use_stderr)
     {
-        std::cerr << message.str() << '\n';
+        std::cerr << message.str() << std::endl;
     }
     else
     {
-        std::cout << message.str() << '\n';
+        std::cout << message.str() << std::endl;
     }
 
     return VK_FALSE;
@@ -99,100 +101,24 @@ debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
 
 #endif
 
-[[nodiscard]] constexpr const char *result_to_string(VkResult result) noexcept
-{
-    switch (result)
-    {
-    case VK_SUCCESS: return "VK_SUCCESS";
-    case VK_NOT_READY: return "VK_NOT_READY";
-    case VK_TIMEOUT: return "VK_TIMEOUT";
-    case VK_EVENT_SET: return "VK_EVENT_SET";
-    case VK_EVENT_RESET: return "VK_EVENT_RESET";
-    case VK_INCOMPLETE: return "VK_INCOMPLETE";
-    case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
-    case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
-    case VK_ERROR_INITIALIZATION_FAILED:
-        return "VK_ERROR_INITIALIZATION_FAILED";
-    case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
-    case VK_ERROR_MEMORY_MAP_FAILED: return "VK_ERROR_MEMORY_MAP_FAILED";
-    case VK_ERROR_LAYER_NOT_PRESENT: return "VK_ERROR_LAYER_NOT_PRESENT";
-    case VK_ERROR_EXTENSION_NOT_PRESENT:
-        return "VK_ERROR_EXTENSION_NOT_PRESENT";
-    case VK_ERROR_FEATURE_NOT_PRESENT: return "VK_ERROR_FEATURE_NOT_PRESENT";
-    case VK_ERROR_INCOMPATIBLE_DRIVER: return "VK_ERROR_INCOMPATIBLE_DRIVER";
-    case VK_ERROR_TOO_MANY_OBJECTS: return "VK_ERROR_TOO_MANY_OBJECTS";
-    case VK_ERROR_FORMAT_NOT_SUPPORTED: return "VK_ERROR_FORMAT_NOT_SUPPORTED";
-    case VK_ERROR_FRAGMENTED_POOL: return "VK_ERROR_FRAGMENTED_POOL";
-    case VK_ERROR_UNKNOWN: return "VK_ERROR_UNKNOWN";
-    case VK_ERROR_OUT_OF_POOL_MEMORY: return "VK_ERROR_OUT_OF_POOL_MEMORY";
-    case VK_ERROR_INVALID_EXTERNAL_HANDLE:
-        return "VK_ERROR_INVALID_EXTERNAL_HANDLE";
-    case VK_ERROR_FRAGMENTATION: return "VK_ERROR_FRAGMENTATION";
-    case VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS:
-        return "VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS";
-    case VK_PIPELINE_COMPILE_REQUIRED: return "VK_PIPELINE_COMPILE_REQUIRED";
-    case VK_ERROR_SURFACE_LOST_KHR: return "VK_ERROR_SURFACE_LOST_KHR";
-    case VK_ERROR_NATIVE_WINDOW_IN_USE_KHR:
-        return "VK_ERROR_NATIVE_WINDOW_IN_USE_KHR";
-    case VK_SUBOPTIMAL_KHR: return "VK_SUBOPTIMAL_KHR";
-    case VK_ERROR_OUT_OF_DATE_KHR: return "VK_ERROR_OUT_OF_DATE_KHR";
-    case VK_ERROR_INCOMPATIBLE_DISPLAY_KHR:
-        return "VK_ERROR_INCOMPATIBLE_DISPLAY_KHR";
-    case VK_ERROR_VALIDATION_FAILED_EXT:
-        return "VK_ERROR_VALIDATION_FAILED_EXT";
-    case VK_ERROR_INVALID_SHADER_NV: return "VK_ERROR_INVALID_SHADER_NV";
-    case VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT:
-        return "VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT";
-    case VK_ERROR_NOT_PERMITTED_KHR: return "VK_ERROR_NOT_PERMITTED_KHR";
-    case VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT:
-        return "VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT";
-    case VK_THREAD_IDLE_KHR: return "VK_THREAD_IDLE_KHR";
-    case VK_THREAD_DONE_KHR: return "VK_THREAD_DONE_KHR";
-    case VK_OPERATION_DEFERRED_KHR: return "VK_OPERATION_DEFERRED_KHR";
-    case VK_OPERATION_NOT_DEFERRED_KHR: return "VK_OPERATION_NOT_DEFERRED_KHR";
-    case VK_ERROR_COMPRESSION_EXHAUSTED_EXT:
-        return "VK_ERROR_COMPRESSION_EXHAUSTED_EXT";
-    default: return nullptr;
-    }
-}
-
-std::ostream &operator<<(std::ostream &os, VkResult result)
-{
-    if (const auto result_string = result_to_string(result);
-        result_string != nullptr)
-    {
-        os << result_string;
-    }
-    else
-    {
-        os << static_cast<std::underlying_type_t<VkResult>>(result);
-    }
-    return os;
-}
-
 void check_result(VkResult result, const char *message)
 {
     if (result != VK_SUCCESS)
     {
         std::ostringstream oss;
-        oss << message << ": " << result;
+        oss << message << ": " << vk::Result(result);
         throw std::runtime_error(oss.str());
     }
 }
 
 void create_instance(Vulkan_context &context)
 {
-    auto result = volkInitialize();
-    check_result(result, "volkInitialize");
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(
+        context.dl.getProcAddress<PFN_vkGetInstanceProcAddr>(
+            "vkGetInstanceProcAddr"));
 
-    constexpr VkApplicationInfo application_info {
-        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        .pNext = {},
-        .pApplicationName = {},
-        .applicationVersion = {},
-        .pEngineName = {},
-        .engineVersion = {},
-        .apiVersion = VK_API_VERSION_1_3};
+    constexpr vk::ApplicationInfo application_info {.apiVersion =
+                                                        VK_API_VERSION_1_3};
 
     std::uint32_t glfw_required_extension_count {};
     const auto glfw_required_extension_names =
@@ -200,18 +126,12 @@ void create_instance(Vulkan_context &context)
 
 #ifdef ENABLE_VALIDATION
 
-    std::uint32_t layer_property_count {};
-    result = vkEnumerateInstanceLayerProperties(&layer_property_count, nullptr);
-    check_result(result, "vkEnumerateInstanceLayerProperties");
-    std::vector<VkLayerProperties> layer_properties(layer_property_count);
-    result = vkEnumerateInstanceLayerProperties(&layer_property_count,
-                                                layer_properties.data());
-    check_result(result, "vkEnumerateInstanceLayerProperties");
+    const auto layer_properties = vk::enumerateInstanceLayerProperties();
 
     constexpr auto layer_name = "VK_LAYER_KHRONOS_validation";
     if (std::none_of(layer_properties.begin(),
                      layer_properties.end(),
-                     [layer_name](const VkLayerProperties &properties) {
+                     [layer_name](const vk::LayerProperties &properties) {
                          return std::strcmp(properties.layerName, layer_name) ==
                                 0;
                      }))
@@ -223,15 +143,8 @@ void create_instance(Vulkan_context &context)
 
 #endif
 
-    std::uint32_t extension_property_count {};
-    result = vkEnumerateInstanceExtensionProperties(
-        nullptr, &extension_property_count, nullptr);
-    check_result(result, "vkEnumerateInstanceExtensionProperties");
-    std::vector<VkExtensionProperties> extension_properties(
-        extension_property_count);
-    result = vkEnumerateInstanceExtensionProperties(
-        nullptr, &extension_property_count, extension_properties.data());
-    check_result(result, "vkEnumerateInstanceExtensionProperties");
+    const auto extension_properties =
+        vk::enumerateInstanceExtensionProperties();
 
 #ifdef ENABLE_VALIDATION
 
@@ -257,7 +170,7 @@ void create_instance(Vulkan_context &context)
         if (std::none_of(
                 extension_properties.begin(),
                 extension_properties.end(),
-                [extension_name](const VkExtensionProperties &properties) {
+                [extension_name](const vk::ExtensionProperties &properties) {
                     return std::strcmp(properties.extensionName,
                                        extension_name) == 0;
                 }))
@@ -281,37 +194,30 @@ void create_instance(Vulkan_context &context)
 
 #ifdef ENABLE_VALIDATION
 
-    const VkDebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info {
-        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-        .pNext = {},
-        .flags = {},
-        .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-        .messageType =
-            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT |
-            VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT,
-        .pfnUserCallback = &debug_callback,
-        .pUserData = {}};
+    constexpr vk::DebugUtilsMessengerCreateInfoEXT
+        debug_utils_messenger_create_info {
+            .messageSeverity =
+                vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
+                vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
+                vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+            .messageType =
+                vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+                vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
+                vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
+            .pfnUserCallback = &debug_callback};
 
-    constexpr VkValidationFeatureEnableEXT enabled_validation_features[] {
-        VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT,
-        VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT};
+    constexpr vk::ValidationFeatureEnableEXT enabled_validation_features[] {
+        vk::ValidationFeatureEnableEXT::eDebugPrintf,
+        vk::ValidationFeatureEnableEXT::eSynchronizationValidation};
 
-    const VkValidationFeaturesEXT validation_features {
-        .sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
+    const vk::ValidationFeaturesEXT validation_features {
         .pNext = &debug_utils_messenger_create_info,
         .enabledValidationFeatureCount =
             static_cast<std::uint32_t>(std::size(enabled_validation_features)),
-        .pEnabledValidationFeatures = enabled_validation_features,
-        .disabledValidationFeatureCount = {},
-        .pDisabledValidationFeatures = {}};
+        .pEnabledValidationFeatures = enabled_validation_features};
 
-    const VkInstanceCreateInfo instance_create_info {
-        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+    const vk::InstanceCreateInfo instance_create_info {
         .pNext = &validation_features,
-        .flags = {},
         .pApplicationInfo = &application_info,
         .enabledLayerCount = 1,
         .ppEnabledLayerNames = &layer_name,
@@ -321,32 +227,23 @@ void create_instance(Vulkan_context &context)
 
 #else
 
-    const VkInstanceCreateInfo instance_create_info {
-        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pNext = {},
-        .flags = {},
+    const vk::InstanceCreateInfo instance_create_info {
         .pApplicationInfo = &application_info,
-        .enabledLayerCount = {},
-        .ppEnabledLayerNames = {},
         .enabledExtensionCount =
             static_cast<std::uint32_t>(required_extension_names.size()),
         .ppEnabledExtensionNames = required_extension_names.data()};
 
 #endif
 
-    result =
-        vkCreateInstance(&instance_create_info, nullptr, &context.instance);
-    check_result(result, "vkCreateInstance");
+    context.instance = vk::createInstanceUnique(instance_create_info);
 
-    volkLoadInstanceOnly(context.instance);
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(context.instance.get());
 
 #ifdef ENABLE_VALIDATION
 
-    result = vkCreateDebugUtilsMessengerEXT(context.instance,
-                                            &debug_utils_messenger_create_info,
-                                            nullptr,
-                                            &context.debug_messenger);
-    check_result(result, "vkCreateDebugUtilsMessengerEXT");
+    context.debug_messenger =
+        context.instance->createDebugUtilsMessengerEXTUnique(
+            debug_utils_messenger_create_info);
 
 #endif
 }
@@ -523,11 +420,11 @@ void create_device(Vulkan_context &context)
 {
     std::uint32_t physical_device_count {};
     auto result = vkEnumeratePhysicalDevices(
-        context.instance, &physical_device_count, nullptr);
+        *context.instance, &physical_device_count, nullptr);
     check_result(result, "vkEnumeratePhysicalDevices");
     std::vector<VkPhysicalDevice> physical_devices(physical_device_count);
     result = vkEnumeratePhysicalDevices(
-        context.instance, &physical_device_count, physical_devices.data());
+        *context.instance, &physical_device_count, physical_devices.data());
     check_result(result, "vkEnumeratePhysicalDevices");
 
     constexpr const char *device_extension_names[] {
@@ -555,7 +452,7 @@ void create_device(Vulkan_context &context)
         std::cout << "Physical device " << i << ": "
                   << properties_2.properties.deviceName << '\n';
 
-        if (is_device_suitable(context.instance,
+        if (is_device_suitable(*context.instance,
                                physical_devices[i],
                                device_extension_count,
                                device_extension_names) &&
@@ -564,7 +461,7 @@ void create_device(Vulkan_context &context)
             selected_device_index = i;
             context.physical_device = physical_devices[i];
             get_queue_family_indices(
-                context.instance,
+                *context.instance,
                 physical_devices[i],
                 context.graphics_compute_queue_family_index,
                 context.present_queue_family_index);
@@ -645,14 +542,12 @@ void create_device(Vulkan_context &context)
     result = vkCreateDevice(
         context.physical_device, &device_create_info, nullptr, &context.device);
     check_result(result, "vkCreateDevice");
-
-    volkLoadDevice(context.device);
 }
 
 void create_surface(Vulkan_context &context, GLFWwindow *window)
 {
     const auto result = glfwCreateWindowSurface(
-        context.instance, window, nullptr, &context.surface);
+        *context.instance, window, nullptr, &context.surface);
     check_result(result, "glfwCreateWindowSurface");
 }
 
@@ -668,7 +563,7 @@ void create_allocator(Vulkan_context &context)
     allocator_create_info.physicalDevice = context.physical_device;
     allocator_create_info.device = context.device;
     allocator_create_info.pVulkanFunctions = &vulkan_functions;
-    allocator_create_info.instance = context.instance;
+    allocator_create_info.instance = *context.instance;
     allocator_create_info.vulkanApiVersion = VK_API_VERSION_1_3;
 
     const auto result =
@@ -1097,7 +992,7 @@ void init_imgui(Vulkan_context &context)
     const auto loader_func = [](const char *function_name, void *user_data)
     {
         const auto ctx = static_cast<const Vulkan_context *>(user_data);
-        return vkGetInstanceProcAddr(ctx->instance, function_name);
+        return vkGetInstanceProcAddr(*ctx->instance, function_name);
     };
     ImGui_ImplVulkan_LoadFunctions(loader_func, &context);
 
@@ -1105,7 +1000,7 @@ void init_imgui(Vulkan_context &context)
     { check_result(result, "ImGui Vulkan call"); };
 
     ImGui_ImplVulkan_InitInfo init_info {
-        .Instance = context.instance,
+        .Instance = *context.instance,
         .PhysicalDevice = context.physical_device,
         .Device = context.device,
         .QueueFamily = context.graphics_compute_queue_family_index,
@@ -2051,7 +1946,14 @@ Vulkan_context create_context(GLFWwindow *window)
     SCOPE_FAIL([&] { destroy_context(context); });
 
     create_instance(context);
+
+    volkInitializeCustom(VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr);
+    volkLoadInstanceOnly(*context.instance);
+
     create_device(context);
+
+    volkLoadDevice(context.device);
+
     vkGetDeviceQueue(context.device,
                      context.graphics_compute_queue_family_index,
                      0,
@@ -2146,30 +2048,13 @@ void destroy_context(Vulkan_context &context)
 
     if (context.surface)
     {
-        vkDestroySurfaceKHR(context.instance, context.surface, nullptr);
+        vkDestroySurfaceKHR(*context.instance, context.surface, nullptr);
     }
 
     if (context.device)
     {
         vkDestroyDevice(context.device, nullptr);
     }
-
-#ifdef ENABLE_VALIDATION
-    if (context.debug_messenger)
-    {
-        vkDestroyDebugUtilsMessengerEXT(
-            context.instance, context.debug_messenger, nullptr);
-    }
-#endif
-
-    if (context.instance)
-    {
-        vkDestroyInstance(context.instance, nullptr);
-    }
-
-    volkFinalize();
-
-    context = {};
 }
 
 Vulkan_render_resources create_render_resources(const Vulkan_context &context,

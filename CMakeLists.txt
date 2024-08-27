@@ -205,8 +205,10 @@ endif ()
 
 
 if ((CMAKE_CXX_COMPILER_ID MATCHES ".*Clang") OR (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"))
-    target_compile_options(path_tracer PRIVATE $<$<CONFIG:Debug>:-fsanitize=undefined;-fsanitize=address>)
-    target_link_options(path_tracer PRIVATE $<$<CONFIG:Debug>:-fsanitize=undefined;-fsanitize=address>)
+    target_compile_options(path_tracer PRIVATE $<$<CONFIG:Debug>:-fsanitize=undefined>)
+    #target_compile_options(path_tracer PRIVATE $<$<CONFIG:Debug>:-fsanitize=address>)
+    target_link_options(path_tracer PRIVATE $<$<CONFIG:Debug>:-fsanitize=undefined>)
+    #target_link_options(path_tracer PRIVATE $<$<CONFIG:Debug>:-fsanitize=address>)
 endif ()
 
 

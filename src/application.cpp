@@ -136,10 +136,9 @@ void open_scene(Application_state &state, const char *file_name)
 
     const auto *const scene = importer.ReadFile(
         file_name,
-        static_cast<unsigned int>(
-            aiProcess_Triangulate | aiProcess_PreTransformVertices |
+        aiProcess_Triangulate | aiProcess_PreTransformVertices |
             aiProcess_GenBoundingBoxes | aiProcess_JoinIdenticalVertices |
-            aiProcess_SortByPType));
+            aiProcess_SortByPType);
     if (scene == nullptr)
     {
         std::string importer_error(importer.GetErrorString());
@@ -330,25 +329,25 @@ void make_ui(Application_state &state)
         if (ImGui::Begin("Gizmo values"))
         {
             ImGui::Text("View: %6.2f %6.2f %6.2f %6.2f",
-                        state.camera.view[0][0],
-                        state.camera.view[1][0],
-                        state.camera.view[2][0],
-                        state.camera.view[3][0]);
+                        static_cast<double>(state.camera.view[0][0]),
+                        static_cast<double>(state.camera.view[1][0]),
+                        static_cast<double>(state.camera.view[2][0]),
+                        static_cast<double>(state.camera.view[3][0]));
             ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
-                        state.camera.view[0][1],
-                        state.camera.view[1][1],
-                        state.camera.view[2][1],
-                        state.camera.view[3][1]);
+                        static_cast<double>(state.camera.view[0][1]),
+                        static_cast<double>(state.camera.view[1][1]),
+                        static_cast<double>(state.camera.view[2][1]),
+                        static_cast<double>(state.camera.view[3][1]));
             ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
-                        state.camera.view[0][2],
-                        state.camera.view[1][2],
-                        state.camera.view[2][2],
-                        state.camera.view[3][2]);
+                        static_cast<double>(state.camera.view[0][2]),
+                        static_cast<double>(state.camera.view[1][2]),
+                        static_cast<double>(state.camera.view[2][2]),
+                        static_cast<double>(state.camera.view[3][2]));
             ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
-                        state.camera.view[0][3],
-                        state.camera.view[1][3],
-                        state.camera.view[2][3],
-                        state.camera.view[3][3]);
+                        static_cast<double>(state.camera.view[0][3]),
+                        static_cast<double>(state.camera.view[1][3]),
+                        static_cast<double>(state.camera.view[2][3]),
+                        static_cast<double>(state.camera.view[3][3]));
         }
         ImGui::End();
     }

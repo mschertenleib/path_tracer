@@ -3,7 +3,11 @@
 
 #include <vk_mem_alloc.h>
 
-#include <vulkan/vulkan.h>
+#define VULKAN_HPP_NO_CONSTRUCTORS
+#define VULKAN_HPP_NO_SETTERS
+#define VULKAN_HPP_NO_SPACESHIP_OPERATOR
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
+#include <vulkan/vulkan.hpp>
 
 #include <array>
 #include <cstdint>
@@ -31,9 +35,10 @@ struct Vulkan_buffer
 
 struct Vulkan_context
 {
-    VkInstance instance;
+    vk::DynamicLoader dl;
+    vk::UniqueInstance instance;
 #ifdef ENABLE_VALIDATION
-    VkDebugUtilsMessengerEXT debug_messenger;
+    vk::UniqueDebugUtilsMessengerEXT debug_messenger;
 #endif
     VkPhysicalDevice physical_device;
     std::uint32_t graphics_compute_queue_family_index;
