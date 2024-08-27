@@ -53,20 +53,22 @@ struct Vulkan_context
     vk::Queue graphics_compute_queue;
     vk::Queue present_queue;
 
-    VkSurfaceKHR surface;
+    vk::UniqueSurfaceKHR surface;
 
     VmaAllocator allocator;
 
-    VkCommandPool command_pool;
+    vk::UniqueCommandPool command_pool;
+
     bool framebuffer_resized;
     std::uint32_t framebuffer_width;
     std::uint32_t framebuffer_height;
-    VkFormat swapchain_format;
-    VkExtent2D swapchain_extent;
+    vk::Format swapchain_format;
+    vk::Extent2D swapchain_extent;
     std::uint32_t swapchain_min_image_count;
-    VkSwapchainKHR swapchain;
-    std::vector<VkImage> swapchain_images;
-    std::vector<VkImageView> swapchain_image_views;
+    vk::UniqueSwapchainKHR swapchain;
+    std::vector<vk::Image> swapchain_images;
+    std::vector<vk::UniqueImageView> swapchain_image_views;
+
     VkDescriptorPool descriptor_pool;
     VkRenderPass render_pass;
     std::vector<VkFramebuffer> framebuffers;

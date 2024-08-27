@@ -246,7 +246,7 @@ void create_instance(Vulkan_context &context)
 }
 
 void get_queue_family_indices(
-    const vk::UniqueInstance &instance,
+    vk::Instance instance,
     vk::PhysicalDevice physical_device,
     std::uint32_t &graphics_compute_queue_family_index,
     std::uint32_t &present_queue_family_index)
@@ -271,7 +271,7 @@ void get_queue_family_indices(
             graphics_compute_queue_family_index = i;
         }
         if (glfwGetPhysicalDevicePresentationSupport(
-                instance.get(), physical_device, i))
+                instance, physical_device, i))
         {
             present_queue_family_index = i;
         }
@@ -285,7 +285,7 @@ void get_queue_family_indices(
     }
 }
 
-[[nodiscard]] bool is_device_suitable(const vk::UniqueInstance &instance,
+[[nodiscard]] bool is_device_suitable(vk::Instance instance,
                                       vk::PhysicalDevice physical_device,
                                       std::uint32_t device_extension_count,
                                       const char *const *device_extension_names)
@@ -422,7 +422,7 @@ void create_device(Vulkan_context &context)
                   << vk::to_string(properties.deviceType)
                   << "): " << properties.deviceName << '\n';
 
-        if (is_device_suitable(context.instance,
+        if (is_device_suitable(context.instance.get(),
                                physical_devices[i],
                                device_extension_count,
                                device_extension_names) &&
@@ -431,7 +431,7 @@ void create_device(Vulkan_context &context)
             selected_device_index = i;
             context.physical_device = physical_devices[i];
             get_queue_family_indices(
-                context.instance,
+                context.instance.get(),
                 physical_devices[i],
                 context.graphics_compute_queue_family_index,
                 context.present_queue_family_index);
@@ -487,16 +487,20 @@ void create_device(Vulkan_context &context)
 
 void create_surface(Vulkan_context &context, GLFWwindow *window)
 {
+    VkSurfaceKHR surface {};
     const auto result = glfwCreateWindowSurface(
-        context.instance.get(), window, nullptr, &context.surface);
-    check_result(result, "glfwCreateWindowSurface");
+        context.instance.get(), window, nullptr, &surface);
+    vk::detail::resultCheck(vk::Result {result}, "glfwCreateWindowSurface");
+    context.surface = vk::UniqueSurfaceKHR(surface, context.instance.get());
 }
 
 void create_allocator(Vulkan_context &context)
 {
     VmaVulkanFunctions vulkan_functions {};
-    vulkan_functions.vkGetInstanceProcAddr = vkGetInstanceProcAddr,
-    vulkan_functions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+    vulkan_functions.vkGetInstanceProcAddr =
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr,
+    vulkan_functions.vkGetDeviceProcAddr =
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr;
 
     VmaAllocatorCreateInfo allocator_create_info {};
     allocator_create_info.flags =
@@ -509,81 +513,51 @@ void create_allocator(Vulkan_context &context)
 
     const auto result =
         vmaCreateAllocator(&allocator_create_info, &context.allocator);
-    check_result(result, "vmaCreateAllocator");
+    vk::detail::resultCheck(vk::Result {result}, "vmaCreateAllocator");
 }
 
 void create_command_pool(Vulkan_context &context)
 {
-    const VkCommandPoolCreateInfo create_info {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .pNext = {},
-        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+    const vk::CommandPoolCreateInfo create_info {
+        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
         .queueFamilyIndex = context.graphics_compute_queue_family_index};
 
-    const auto result = vkCreateCommandPool(
-        context.device.get(), &create_info, nullptr, &context.command_pool);
-    check_result(result, "vkCreateCommandPool");
+    context.command_pool = context.device->createCommandPoolUnique(create_info);
 }
 
-[[nodiscard]] VkImageView
-create_image_view(VkDevice device, VkImage image, VkFormat format)
+[[nodiscard]] vk::UniqueImageView
+create_image_view(vk::Device device, vk::Image image, vk::Format format)
 {
-    constexpr VkImageSubresourceRange subresource_range {
-        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+    constexpr vk::ImageSubresourceRange subresource_range {
+        .aspectMask = vk::ImageAspectFlagBits::eColor,
         .baseMipLevel = 0,
         .levelCount = 1,
         .baseArrayLayer = 0,
         .layerCount = 1};
 
-    const VkImageViewCreateInfo image_view_create_info {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .pNext = {},
-        .flags = {},
+    const vk::ImageViewCreateInfo image_view_create_info {
         .image = image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .viewType = vk::ImageViewType::e2D,
         .format = format,
-        .components = {VK_COMPONENT_SWIZZLE_IDENTITY,
-                       VK_COMPONENT_SWIZZLE_IDENTITY,
-                       VK_COMPONENT_SWIZZLE_IDENTITY,
-                       VK_COMPONENT_SWIZZLE_IDENTITY},
+        .components = {vk::ComponentSwizzle::eIdentity,
+                       vk::ComponentSwizzle::eIdentity,
+                       vk::ComponentSwizzle::eIdentity,
+                       vk::ComponentSwizzle::eIdentity},
         .subresourceRange = subresource_range};
 
-    VkImageView image_view {};
-    const auto result = vkCreateImageView(
-        device, &image_view_create_info, nullptr, &image_view);
-    check_result(result, "vkCreateImageView");
-
-    return image_view;
-}
-
-void destroy_image_view(VkDevice device, VkImageView image_view)
-{
-    if (image_view)
-    {
-        vkDestroyImageView(device, image_view, nullptr);
-    }
+    return device.createImageViewUnique(image_view_create_info);
 }
 
 void create_swapchain(Vulkan_context &context)
 {
-    std::uint32_t surface_format_count {};
-    auto result = vkGetPhysicalDeviceSurfaceFormatsKHR(context.physical_device,
-                                                       context.surface,
-                                                       &surface_format_count,
-                                                       nullptr);
-    check_result(result, "vkGetPhysicalDeviceSurfaceFormatsKHR");
-    std::vector<VkSurfaceFormatKHR> surface_formats(surface_format_count);
-    result = vkGetPhysicalDeviceSurfaceFormatsKHR(context.physical_device,
-                                                  context.surface,
-                                                  &surface_format_count,
-                                                  surface_formats.data());
-    check_result(result, "vkGetPhysicalDeviceSurfaceFormatsKHR");
+    const auto surface_formats =
+        context.physical_device.getSurfaceFormatsKHR(context.surface.get());
 
     auto surface_format = surface_formats.front();
     for (const auto &format : surface_formats)
     {
-        if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
-            format.colorSpace == VK_COLORSPACE_SRGB_NONLINEAR_KHR)
+        if (format.format == vk::Format::eB8G8R8A8Srgb &&
+            format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
         {
             surface_format = format;
             break;
@@ -592,10 +566,9 @@ void create_swapchain(Vulkan_context &context)
 
     context.swapchain_format = surface_format.format;
 
-    VkSurfaceCapabilitiesKHR surface_capabilities {};
-    result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-        context.physical_device, context.surface, &surface_capabilities);
-    check_result(result, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+    const auto surface_capabilities =
+        context.physical_device.getSurfaceCapabilitiesKHR(
+            context.surface.get());
 
     context.swapchain_extent.width = context.framebuffer_width;
     context.swapchain_extent.height = context.framebuffer_height;
@@ -620,75 +593,47 @@ void create_swapchain(Vulkan_context &context)
         context.swapchain_min_image_count = surface_capabilities.maxImageCount;
     }
 
-    VkSharingMode sharing_mode {VK_SHARING_MODE_EXCLUSIVE};
+    auto sharing_mode = vk::SharingMode::eExclusive;
     std::uint32_t queue_family_index_count {1};
     if (context.graphics_compute_queue_family_index !=
         context.present_queue_family_index)
     {
-        sharing_mode = VK_SHARING_MODE_CONCURRENT;
+        sharing_mode = vk::SharingMode::eConcurrent;
         queue_family_index_count = 2;
     }
     const std::uint32_t queue_family_indices[] {
         context.graphics_compute_queue_family_index,
         context.present_queue_family_index};
 
-    const VkSwapchainCreateInfoKHR swapchain_create_info {
-        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-        .pNext = {},
-        .flags = {},
-        .surface = context.surface,
+    const vk::SwapchainCreateInfoKHR swapchain_create_info {
+        .surface = context.surface.get(),
         .minImageCount = context.swapchain_min_image_count,
         .imageFormat = surface_format.format,
         .imageColorSpace = surface_format.colorSpace,
         .imageExtent = context.swapchain_extent,
         .imageArrayLayers = 1,
-        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
         .imageSharingMode = sharing_mode,
         .queueFamilyIndexCount = queue_family_index_count,
         .pQueueFamilyIndices = queue_family_indices,
         .preTransform = surface_capabilities.currentTransform,
-        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = VK_PRESENT_MODE_FIFO_KHR,
-        .clipped = VK_TRUE,
-        .oldSwapchain = {}};
+        .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
+        .presentMode = vk::PresentModeKHR::eFifo,
+        .clipped = VK_TRUE};
 
-    result = vkCreateSwapchainKHR(context.device.get(),
-                                  &swapchain_create_info,
-                                  nullptr,
-                                  &context.swapchain);
-    check_result(result, "vkCreateSwapchainKHR");
+    context.swapchain =
+        context.device->createSwapchainKHRUnique(swapchain_create_info);
 
-    std::uint32_t image_count {};
-    result = vkGetSwapchainImagesKHR(
-        context.device.get(), context.swapchain, &image_count, nullptr);
-    check_result(result, "vkGetSwapchainImagesKHR");
-    context.swapchain_images.resize(image_count);
-    result = vkGetSwapchainImagesKHR(context.device.get(),
-                                     context.swapchain,
-                                     &image_count,
-                                     context.swapchain_images.data());
-    check_result(result, "vkGetSwapchainImagesKHR");
+    context.swapchain_images =
+        context.device->getSwapchainImagesKHR(context.swapchain.get());
 
-    context.swapchain_image_views.resize(image_count);
-    for (std::uint32_t i {0}; i < image_count; ++i)
+    context.swapchain_image_views.resize(context.swapchain_images.size());
+    for (std::size_t i {0}; i < context.swapchain_image_views.size(); ++i)
     {
         context.swapchain_image_views[i] =
             create_image_view(context.device.get(),
                               context.swapchain_images[i],
                               context.swapchain_format);
-    }
-}
-
-void destroy_swapchain(const Vulkan_context &context)
-{
-    for (const auto image_view : context.swapchain_image_views)
-    {
-        destroy_image_view(context.device.get(), image_view);
-    }
-
-    if (context.swapchain)
-    {
-        vkDestroySwapchainKHR(context.device.get(), context.swapchain, nullptr);
     }
 }
 
@@ -731,7 +676,7 @@ void create_render_pass(Vulkan_context &context)
 {
     const VkAttachmentDescription attachment_description {
         .flags = {},
-        .format = context.swapchain_format,
+        .format = (VkFormat)context.swapchain_format,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -794,7 +739,8 @@ void create_framebuffers(Vulkan_context &context)
             .flags = {},
             .renderPass = context.render_pass,
             .attachmentCount = 1,
-            .pAttachments = &context.swapchain_image_views[i],
+            .pAttachments = reinterpret_cast<VkImageView *>(
+                &context.swapchain_image_views[i].get()),
             .width = context.swapchain_extent.width,
             .height = context.swapchain_extent.height,
             .layers = 1};
@@ -823,7 +769,7 @@ void create_command_buffers(Vulkan_context &context)
     const VkCommandBufferAllocateInfo allocate_info {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .pNext = {},
-        .commandPool = context.command_pool,
+        .commandPool = context.command_pool.get(),
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = Vulkan_context::frames_in_flight};
 
@@ -872,7 +818,7 @@ begin_one_time_submit_command_buffer(const Vulkan_context &context)
     const VkCommandBufferAllocateInfo allocate_info {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .pNext = {},
-        .commandPool = context.command_pool,
+        .commandPool = context.command_pool.get(),
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = 1};
 
@@ -890,8 +836,10 @@ begin_one_time_submit_command_buffer(const Vulkan_context &context)
     SCOPE_FAIL(
         [&]
         {
-            vkFreeCommandBuffers(
-                context.device.get(), context.command_pool, 1, &command_buffer);
+            vkFreeCommandBuffers(context.device.get(),
+                                 context.command_pool.get(),
+                                 1,
+                                 &command_buffer);
         });
 
     result = vkBeginCommandBuffer(command_buffer, &begin_info);
@@ -906,8 +854,10 @@ void end_one_time_submit_command_buffer(const Vulkan_context &context,
     SCOPE_EXIT(
         [&]
         {
-            vkFreeCommandBuffers(
-                context.device.get(), context.command_pool, 1, &command_buffer);
+            vkFreeCommandBuffers(context.device.get(),
+                                 context.command_pool.get(),
+                                 1,
+                                 &command_buffer);
         });
 
     auto result = vkEndCommandBuffer(command_buffer);
@@ -976,7 +926,9 @@ void recreate_swapchain(Vulkan_context &context)
     check_result(result, "vkDeviceWaitIdle");
 
     destroy_framebuffers(context);
-    destroy_swapchain(context);
+
+    context.swapchain_image_views.clear();
+    context.swapchain.reset();
 
     create_swapchain(context);
     create_framebuffers(context);
@@ -1910,7 +1862,9 @@ Vulkan_context create_context(GLFWwindow *window)
         context.device->getQueue(context.present_queue_family_index, 0);
 
     create_surface(context, window);
+
     create_allocator(context);
+
     create_command_pool(context);
 
     int width {};
@@ -1966,7 +1920,7 @@ void destroy_context(Vulkan_context &context)
     {
         vkFreeCommandBuffers(
             context.device.get(),
-            context.command_pool,
+            context.command_pool.get(),
             static_cast<std::uint32_t>(context.command_buffers.size()),
             context.command_buffers.data());
     }
@@ -1984,20 +1938,7 @@ void destroy_context(Vulkan_context &context)
             context.device.get(), context.descriptor_pool, nullptr);
     }
 
-    destroy_swapchain(context);
-
-    if (context.command_pool)
-    {
-        vkDestroyCommandPool(
-            context.device.get(), context.command_pool, nullptr);
-    }
-
     vmaDestroyAllocator(context.allocator);
-
-    if (context.surface)
-    {
-        vkDestroySurfaceKHR(context.instance.get(), context.surface, nullptr);
-    }
 }
 
 Vulkan_render_resources create_render_resources(const Vulkan_context &context,
@@ -2029,7 +1970,8 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
     render_resources.storage_image_view =
         create_image_view(context.device.get(),
                           render_resources.storage_image.image,
-                          storage_image_format);
+                          (vk::Format)storage_image_format)
+            .release();
 
     constexpr VkFormat render_target_format {VK_FORMAT_R8G8B8A8_SRGB};
     render_resources.render_target = create_image(
@@ -2042,7 +1984,8 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
     render_resources.render_target_view =
         create_image_view(context.device.get(),
                           render_resources.render_target.image,
-                          render_target_format);
+                          (vk::Format)render_target_format)
+            .release();
 
     {
         const auto command_buffer =
@@ -2179,11 +2122,7 @@ void destroy_render_resources(const Vulkan_context &context,
                          nullptr);
     }
 
-    destroy_image_view(context.device.get(),
-                       render_resources.render_target_view);
     destroy_image(context.allocator, render_resources.render_target);
-    destroy_image_view(context.device.get(),
-                       render_resources.storage_image_view);
     destroy_image(context.allocator, render_resources.storage_image);
 
     render_resources = {};
@@ -2213,7 +2152,7 @@ void draw_frame(Vulkan_context &context,
     std::uint32_t image_index {};
     result = vkAcquireNextImageKHR(
         context.device.get(),
-        context.swapchain,
+        context.swapchain.get(),
         std::numeric_limits<std::uint64_t>::max(),
         context.image_available_semaphores[context.current_frame_in_flight],
         {},
@@ -2488,7 +2427,8 @@ void draw_frame(Vulkan_context &context,
             &context
                  .render_finished_semaphores[context.current_frame_in_flight],
         .swapchainCount = 1,
-        .pSwapchains = &context.swapchain,
+        .pSwapchains =
+            reinterpret_cast<VkSwapchainKHR *>(&context.swapchain.get()),
         .pImageIndices = &image_index,
         .pResults = {}};
 
