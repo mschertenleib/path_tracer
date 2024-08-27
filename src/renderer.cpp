@@ -46,55 +46,55 @@ debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
                void *user_data [[maybe_unused]])
 {
     std::ostringstream message;
-    bool use_stderr {false};
 
-    if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT)
+    switch (message_severity)
     {
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
         message << "[VERBOSE]";
-    }
-    else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
-    {
+        break;
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
         message << "[INFO]";
-    }
-    else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
-    {
+        break;
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
         message << "[WARNING]";
-        use_stderr = true;
-    }
-    else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
-    {
+        break;
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
         message << "[ERROR]";
-        use_stderr = true;
+        break;
+    default: break;
     }
 
+    std::ostringstream types;
     if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
     {
-        message << "[GENERAL] ";
+        types << "GENERAL|";
     }
-    else if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
+    if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
     {
-        message << "[VALIDATION] ";
+        types << "VALIDATION|";
     }
-    else if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
+    if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
     {
-        message << "[PERFORMANCE] ";
+        types << "PERFORMANCE|";
     }
-    else if (message_type &
-             VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT)
+    if (message_type &
+        VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT)
     {
-        message << "[DEVICE_ADDRESS_BINDING] ";
+        types << "DEVICE_ADDRESS_BINDING|";
+    }
+
+    if (auto types_str = types.str(); types_str.empty())
+    {
+        message << ' ';
+    }
+    else
+    {
+        message << '[' << types_str.erase(types_str.size() - 1) << "] ";
     }
 
     message << callback_data->pMessage;
 
-    if (use_stderr)
-    {
-        std::cerr << message.str() << std::endl;
-    }
-    else
-    {
-        std::cout << message.str() << std::endl;
-    }
+    std::cout << message.str() << std::endl;
 
     return VK_FALSE;
 }
@@ -106,7 +106,7 @@ void check_result(VkResult result, const char *message)
     if (result != VK_SUCCESS)
     {
         std::ostringstream oss;
-        oss << message << ": " << vk::Result(result);
+        oss << message << ": " << vk::to_string(vk::Result(result));
         throw std::runtime_error(oss.str());
     }
 }
