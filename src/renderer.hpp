@@ -36,21 +36,27 @@ struct Vulkan_buffer
 struct Vulkan_context
 {
     vk::DynamicLoader dl;
+
     vk::UniqueInstance instance;
 #ifdef ENABLE_VALIDATION
     vk::UniqueDebugUtilsMessengerEXT debug_messenger;
 #endif
-    VkPhysicalDevice physical_device;
+
+    vk::PhysicalDevice physical_device;
     std::uint32_t graphics_compute_queue_family_index;
     std::uint32_t present_queue_family_index;
-    VkPhysicalDeviceProperties physical_device_properties;
-    VkPhysicalDeviceRayTracingPipelinePropertiesKHR
-        ray_tracing_pipeline_properties;
-    VkDevice device;
-    VkQueue graphics_compute_queue;
-    VkQueue present_queue;
+    vk::PhysicalDeviceProperties physical_device_properties;
+    vk::PhysicalDeviceRayTracingPipelinePropertiesKHR
+        physical_device_ray_tracing_pipeline_properties;
+
+    vk::UniqueDevice device;
+    vk::Queue graphics_compute_queue;
+    vk::Queue present_queue;
+
     VkSurfaceKHR surface;
+
     VmaAllocator allocator;
+
     VkCommandPool command_pool;
     bool framebuffer_resized;
     std::uint32_t framebuffer_width;

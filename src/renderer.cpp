@@ -194,8 +194,23 @@ void create_instance(Vulkan_context &context)
 
 #ifdef ENABLE_VALIDATION
 
-    constexpr vk::DebugUtilsMessengerCreateInfoEXT
-        debug_utils_messenger_create_info {
+    constexpr vk::ValidationFeatureEnableEXT enabled_validation_features[] {
+        vk::ValidationFeatureEnableEXT::eDebugPrintf,
+        vk::ValidationFeatureEnableEXT::eSynchronizationValidation};
+
+    const vk::StructureChain create_info_chain {
+        vk::InstanceCreateInfo {
+            .pApplicationInfo = &application_info,
+            .enabledLayerCount = 1,
+            .ppEnabledLayerNames = &layer_name,
+            .enabledExtensionCount =
+                static_cast<std::uint32_t>(required_extension_names.size()),
+            .ppEnabledExtensionNames = required_extension_names.data()},
+        vk::ValidationFeaturesEXT {
+            .enabledValidationFeatureCount = static_cast<std::uint32_t>(
+                std::size(enabled_validation_features)),
+            .pEnabledValidationFeatures = enabled_validation_features},
+        vk::DebugUtilsMessengerCreateInfoEXT {
             .messageSeverity =
                 vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
                 vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
@@ -204,26 +219,16 @@ void create_instance(Vulkan_context &context)
                 vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
                 vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
                 vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
-            .pfnUserCallback = &debug_callback};
+            .pfnUserCallback = &debug_callback}};
 
-    constexpr vk::ValidationFeatureEnableEXT enabled_validation_features[] {
-        vk::ValidationFeatureEnableEXT::eDebugPrintf,
-        vk::ValidationFeatureEnableEXT::eSynchronizationValidation};
+    context.instance = vk::createInstanceUnique(
+        create_info_chain.get<vk::InstanceCreateInfo>());
 
-    const vk::ValidationFeaturesEXT validation_features {
-        .pNext = &debug_utils_messenger_create_info,
-        .enabledValidationFeatureCount =
-            static_cast<std::uint32_t>(std::size(enabled_validation_features)),
-        .pEnabledValidationFeatures = enabled_validation_features};
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(context.instance.get());
 
-    const vk::InstanceCreateInfo instance_create_info {
-        .pNext = &validation_features,
-        .pApplicationInfo = &application_info,
-        .enabledLayerCount = 1,
-        .ppEnabledLayerNames = &layer_name,
-        .enabledExtensionCount =
-            static_cast<std::uint32_t>(required_extension_names.size()),
-        .ppEnabledExtensionNames = required_extension_names.data()};
+    context.debug_messenger =
+        context.instance->createDebugUtilsMessengerEXTUnique(
+            create_info_chain.get<vk::DebugUtilsMessengerCreateInfoEXT>());
 
 #else
 
@@ -233,24 +238,16 @@ void create_instance(Vulkan_context &context)
             static_cast<std::uint32_t>(required_extension_names.size()),
         .ppEnabledExtensionNames = required_extension_names.data()};
 
-#endif
-
     context.instance = vk::createInstanceUnique(instance_create_info);
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(context.instance.get());
-
-#ifdef ENABLE_VALIDATION
-
-    context.debug_messenger =
-        context.instance->createDebugUtilsMessengerEXTUnique(
-            debug_utils_messenger_create_info);
 
 #endif
 }
 
 void get_queue_family_indices(
-    VkInstance instance,
-    VkPhysicalDevice physical_device,
+    const vk::UniqueInstance &instance,
+    vk::PhysicalDevice physical_device,
     std::uint32_t &graphics_compute_queue_family_index,
     std::uint32_t &present_queue_family_index)
 {
@@ -258,25 +255,23 @@ void get_queue_family_indices(
         std::numeric_limits<std::uint32_t>::max();
     present_queue_family_index = std::numeric_limits<std::uint32_t>::max();
 
-    std::uint32_t queue_family_property_count {};
-    vkGetPhysicalDeviceQueueFamilyProperties(
-        physical_device, &queue_family_property_count, nullptr);
-    std::vector<VkQueueFamilyProperties> queue_family_properties(
-        queue_family_property_count);
-    vkGetPhysicalDeviceQueueFamilyProperties(physical_device,
-                                             &queue_family_property_count,
-                                             queue_family_properties.data());
+    const auto queue_family_properties =
+        physical_device.getQueueFamilyProperties();
 
-    for (std::uint32_t i {0}; i < queue_family_property_count; ++i)
+    for (std::uint32_t i {0};
+         i < static_cast<std::uint32_t>(queue_family_properties.size());
+         ++i)
     {
-        if ((queue_family_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
-            (queue_family_properties[i].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
+        if ((queue_family_properties[i].queueFlags &
+             vk::QueueFlagBits::eGraphics) &&
+            (queue_family_properties[i].queueFlags &
+             vk::QueueFlagBits::eCompute) &&
             (queue_family_properties[i].queueCount > 0))
         {
             graphics_compute_queue_family_index = i;
         }
         if (glfwGetPhysicalDevicePresentationSupport(
-                instance, physical_device, i))
+                instance.get(), physical_device, i))
         {
             present_queue_family_index = i;
         }
@@ -290,8 +285,8 @@ void get_queue_family_indices(
     }
 }
 
-[[nodiscard]] bool is_device_suitable(VkInstance instance,
-                                      VkPhysicalDevice physical_device,
+[[nodiscard]] bool is_device_suitable(const vk::UniqueInstance &instance,
+                                      vk::PhysicalDevice physical_device,
                                       std::uint32_t device_extension_count,
                                       const char *const *device_extension_names)
 {
@@ -316,17 +311,8 @@ void get_queue_family_indices(
         std::cout << "    No queue family supports present operations\n";
     }
 
-    std::uint32_t extension_property_count {};
-    auto result = vkEnumerateDeviceExtensionProperties(
-        physical_device, nullptr, &extension_property_count, nullptr);
-    check_result(result, "vkEnumerateDeviceExtensionProperties");
-    std::vector<VkExtensionProperties> extension_properties(
-        extension_property_count);
-    result = vkEnumerateDeviceExtensionProperties(physical_device,
-                                                  nullptr,
-                                                  &extension_property_count,
-                                                  extension_properties.data());
-    check_result(result, "vkEnumerateDeviceExtensionProperties");
+    const auto extension_properties =
+        physical_device.enumerateDeviceExtensionProperties();
 
     bool all_extensions_supported {true};
     for (std::uint32_t i {}; i < device_extension_count; ++i)
@@ -335,7 +321,7 @@ void get_queue_family_indices(
         if (std::none_of(
                 extension_properties.begin(),
                 extension_properties.end(),
-                [extension_name](const VkExtensionProperties &properties) {
+                [extension_name](const vk::ExtensionProperties &properties) {
                     return std::strcmp(properties.extensionName,
                                        extension_name) == 0;
                 }))
@@ -358,27 +344,12 @@ void get_queue_family_indices(
         std::cout << '\n';
     }
 
-    VkPhysicalDeviceRayTracingPipelineFeaturesKHR
-        ray_tracing_pipeline_features {};
-    ray_tracing_pipeline_features.sType =
-        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
-
-    VkPhysicalDeviceAccelerationStructureFeaturesKHR
-        acceleration_structure_features {};
-    acceleration_structure_features.sType =
-        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
-    acceleration_structure_features.pNext = &ray_tracing_pipeline_features;
-
-    VkPhysicalDeviceVulkan12Features vulkan_1_2_features {};
-    vulkan_1_2_features.sType =
-        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    vulkan_1_2_features.pNext = &acceleration_structure_features;
-
-    VkPhysicalDeviceFeatures2 features_2 {};
-    features_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    features_2.pNext = &vulkan_1_2_features;
-
-    vkGetPhysicalDeviceFeatures2(physical_device, &features_2);
+    const auto features_chain =
+        physical_device
+            .getFeatures2<vk::PhysicalDeviceFeatures2,
+                          vk::PhysicalDeviceVulkan12Features,
+                          vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+                          vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
 
     bool all_features_supported {true};
 
@@ -400,13 +371,20 @@ void get_queue_family_indices(
         }
     };
 
-    check_support(vulkan_1_2_features.bufferDeviceAddress,
+    check_support(features_chain.get<vk::PhysicalDeviceVulkan12Features>()
+                      .bufferDeviceAddress,
                   "bufferDeviceAddress");
-    check_support(vulkan_1_2_features.scalarBlockLayout, "scalarBlockLayout");
-    check_support(acceleration_structure_features.accelerationStructure,
-                  "accelerationStructure");
-    check_support(ray_tracing_pipeline_features.rayTracingPipeline,
-                  "rayTracingPipeline");
+    check_support(features_chain.get<vk::PhysicalDeviceVulkan12Features>()
+                      .scalarBlockLayout,
+                  "scalarBlockLayout");
+    check_support(
+        features_chain.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>()
+            .accelerationStructure,
+        "accelerationStructure");
+    check_support(
+        features_chain.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>()
+            .rayTracingPipeline,
+        "rayTracingPipeline");
 
     if (!all_features_supported)
     {
@@ -418,14 +396,7 @@ void get_queue_family_indices(
 
 void create_device(Vulkan_context &context)
 {
-    std::uint32_t physical_device_count {};
-    auto result = vkEnumeratePhysicalDevices(
-        *context.instance, &physical_device_count, nullptr);
-    check_result(result, "vkEnumeratePhysicalDevices");
-    std::vector<VkPhysicalDevice> physical_devices(physical_device_count);
-    result = vkEnumeratePhysicalDevices(
-        *context.instance, &physical_device_count, physical_devices.data());
-    check_result(result, "vkEnumeratePhysicalDevices");
+    const auto physical_devices = context.instance->enumeratePhysicalDevices();
 
     constexpr const char *device_extension_names[] {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -435,24 +406,23 @@ void create_device(Vulkan_context &context)
     constexpr auto device_extension_count =
         static_cast<std::uint32_t>(std::size(device_extension_names));
 
-    std::uint32_t selected_device_index {};
-    for (std::uint32_t i {0}; i < physical_device_count; ++i)
+    std::size_t selected_device_index {};
+    for (std::size_t i {0}; i < physical_devices.size(); ++i)
     {
-        VkPhysicalDeviceRayTracingPipelinePropertiesKHR
-            ray_tracing_pipeline_properties {};
-        ray_tracing_pipeline_properties.sType =
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+        const auto properties_chain =
+            physical_devices[i]
+                .getProperties2<
+                    vk::PhysicalDeviceProperties2,
+                    vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
 
-        VkPhysicalDeviceProperties2 properties_2 {};
-        properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-        properties_2.pNext = &ray_tracing_pipeline_properties;
+        const auto &properties =
+            properties_chain.get<vk::PhysicalDeviceProperties2>().properties;
 
-        vkGetPhysicalDeviceProperties2(physical_devices[i], &properties_2);
+        std::cout << "Physical device " << i << " ("
+                  << vk::to_string(properties.deviceType)
+                  << "): " << properties.deviceName << '\n';
 
-        std::cout << "Physical device " << i << ": "
-                  << properties_2.properties.deviceName << '\n';
-
-        if (is_device_suitable(*context.instance,
+        if (is_device_suitable(context.instance,
                                physical_devices[i],
                                device_extension_count,
                                device_extension_names) &&
@@ -461,13 +431,14 @@ void create_device(Vulkan_context &context)
             selected_device_index = i;
             context.physical_device = physical_devices[i];
             get_queue_family_indices(
-                *context.instance,
+                context.instance,
                 physical_devices[i],
                 context.graphics_compute_queue_family_index,
                 context.present_queue_family_index);
-            context.physical_device_properties = properties_2.properties;
-            context.ray_tracing_pipeline_properties =
-                ray_tracing_pipeline_properties;
+            context.physical_device_properties = properties;
+            context.physical_device_ray_tracing_pipeline_properties =
+                properties_chain
+                    .get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
         }
     }
     if (context.physical_device)
@@ -482,17 +453,11 @@ void create_device(Vulkan_context &context)
     }
 
     constexpr float queue_priority {1.0f};
-    const VkDeviceQueueCreateInfo queue_create_infos[] {
-        {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-         .pNext = {},
-         .flags = {},
-         .queueFamilyIndex = context.graphics_compute_queue_family_index,
+    const vk::DeviceQueueCreateInfo queue_create_infos[] {
+        {.queueFamilyIndex = context.graphics_compute_queue_family_index,
          .queueCount = 1,
          .pQueuePriorities = &queue_priority},
-        {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-         .pNext = {},
-         .flags = {},
-         .queueFamilyIndex = context.present_queue_family_index,
+        {.queueFamilyIndex = context.present_queue_family_index,
          .queueCount = 1,
          .pQueuePriorities = &queue_priority}};
 
@@ -502,52 +467,28 @@ void create_device(Vulkan_context &context)
             ? 1u
             : 2u};
 
-    VkPhysicalDeviceRayTracingPipelineFeaturesKHR
-        ray_tracing_pipeline_features {};
-    ray_tracing_pipeline_features.sType =
-        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
-    ray_tracing_pipeline_features.rayTracingPipeline = VK_TRUE;
+    const vk::StructureChain create_info_chain {
+        vk::DeviceCreateInfo {.queueCreateInfoCount = queue_create_info_count,
+                              .pQueueCreateInfos = queue_create_infos,
+                              .enabledExtensionCount = device_extension_count,
+                              .ppEnabledExtensionNames =
+                                  device_extension_names},
+        vk::PhysicalDeviceFeatures2 {},
+        vk::PhysicalDeviceVulkan12Features {.scalarBlockLayout = VK_TRUE,
+                                            .bufferDeviceAddress = VK_TRUE},
+        vk::PhysicalDeviceAccelerationStructureFeaturesKHR {
+            .accelerationStructure = VK_TRUE},
+        vk::PhysicalDeviceRayTracingPipelineFeaturesKHR {.rayTracingPipeline =
+                                                             VK_TRUE}};
 
-    VkPhysicalDeviceAccelerationStructureFeaturesKHR
-        acceleration_structure_features {};
-    acceleration_structure_features.sType =
-        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
-    acceleration_structure_features.pNext = &ray_tracing_pipeline_features;
-    acceleration_structure_features.accelerationStructure = VK_TRUE;
-
-    VkPhysicalDeviceVulkan12Features vulkan_1_2_features {};
-    vulkan_1_2_features.sType =
-        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    vulkan_1_2_features.pNext = &acceleration_structure_features;
-    vulkan_1_2_features.scalarBlockLayout = VK_TRUE;
-    vulkan_1_2_features.bufferDeviceAddress = VK_TRUE;
-
-    const VkPhysicalDeviceFeatures2 features_2 {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-        .pNext = &vulkan_1_2_features,
-        .features = {}};
-
-    const VkDeviceCreateInfo device_create_info {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = &features_2,
-        .flags = {},
-        .queueCreateInfoCount = queue_create_info_count,
-        .pQueueCreateInfos = queue_create_infos,
-        .enabledLayerCount = {},
-        .ppEnabledLayerNames = {},
-        .enabledExtensionCount = device_extension_count,
-        .ppEnabledExtensionNames = device_extension_names,
-        .pEnabledFeatures = {}};
-
-    result = vkCreateDevice(
-        context.physical_device, &device_create_info, nullptr, &context.device);
-    check_result(result, "vkCreateDevice");
+    context.device = context.physical_device.createDeviceUnique(
+        create_info_chain.get<vk::DeviceCreateInfo>());
 }
 
 void create_surface(Vulkan_context &context, GLFWwindow *window)
 {
     const auto result = glfwCreateWindowSurface(
-        *context.instance, window, nullptr, &context.surface);
+        context.instance.get(), window, nullptr, &context.surface);
     check_result(result, "glfwCreateWindowSurface");
 }
 
@@ -561,9 +502,9 @@ void create_allocator(Vulkan_context &context)
     allocator_create_info.flags =
         VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
     allocator_create_info.physicalDevice = context.physical_device;
-    allocator_create_info.device = context.device;
+    allocator_create_info.device = context.device.get();
     allocator_create_info.pVulkanFunctions = &vulkan_functions;
-    allocator_create_info.instance = *context.instance;
+    allocator_create_info.instance = context.instance.get();
     allocator_create_info.vulkanApiVersion = VK_API_VERSION_1_3;
 
     const auto result =
@@ -580,7 +521,7 @@ void create_command_pool(Vulkan_context &context)
         .queueFamilyIndex = context.graphics_compute_queue_family_index};
 
     const auto result = vkCreateCommandPool(
-        context.device, &create_info, nullptr, &context.command_pool);
+        context.device.get(), &create_info, nullptr, &context.command_pool);
     check_result(result, "vkCreateCommandPool");
 }
 
@@ -711,16 +652,18 @@ void create_swapchain(Vulkan_context &context)
         .clipped = VK_TRUE,
         .oldSwapchain = {}};
 
-    result = vkCreateSwapchainKHR(
-        context.device, &swapchain_create_info, nullptr, &context.swapchain);
+    result = vkCreateSwapchainKHR(context.device.get(),
+                                  &swapchain_create_info,
+                                  nullptr,
+                                  &context.swapchain);
     check_result(result, "vkCreateSwapchainKHR");
 
     std::uint32_t image_count {};
     result = vkGetSwapchainImagesKHR(
-        context.device, context.swapchain, &image_count, nullptr);
+        context.device.get(), context.swapchain, &image_count, nullptr);
     check_result(result, "vkGetSwapchainImagesKHR");
     context.swapchain_images.resize(image_count);
-    result = vkGetSwapchainImagesKHR(context.device,
+    result = vkGetSwapchainImagesKHR(context.device.get(),
                                      context.swapchain,
                                      &image_count,
                                      context.swapchain_images.data());
@@ -730,7 +673,7 @@ void create_swapchain(Vulkan_context &context)
     for (std::uint32_t i {0}; i < image_count; ++i)
     {
         context.swapchain_image_views[i] =
-            create_image_view(context.device,
+            create_image_view(context.device.get(),
                               context.swapchain_images[i],
                               context.swapchain_format);
     }
@@ -740,12 +683,12 @@ void destroy_swapchain(const Vulkan_context &context)
 {
     for (const auto image_view : context.swapchain_image_views)
     {
-        destroy_image_view(context.device, image_view);
+        destroy_image_view(context.device.get(), image_view);
     }
 
     if (context.swapchain)
     {
-        vkDestroySwapchainKHR(context.device, context.swapchain, nullptr);
+        vkDestroySwapchainKHR(context.device.get(), context.swapchain, nullptr);
     }
 }
 
@@ -780,7 +723,7 @@ void create_descriptor_pool(Vulkan_context &context)
         .pPoolSizes = pool_sizes};
 
     const auto result = vkCreateDescriptorPool(
-        context.device, &create_info, nullptr, &context.descriptor_pool);
+        context.device.get(), &create_info, nullptr, &context.descriptor_pool);
     check_result(result, "vkCreateDescriptorPool");
 }
 
@@ -832,7 +775,7 @@ void create_render_pass(Vulkan_context &context)
         .dependencyCount = 1,
         .pDependencies = &subpass_dependency};
 
-    const auto result = vkCreateRenderPass(context.device,
+    const auto result = vkCreateRenderPass(context.device.get(),
                                            &render_pass_create_info,
                                            nullptr,
                                            &context.render_pass);
@@ -856,7 +799,7 @@ void create_framebuffers(Vulkan_context &context)
             .height = context.swapchain_extent.height,
             .layers = 1};
 
-        const auto result = vkCreateFramebuffer(context.device,
+        const auto result = vkCreateFramebuffer(context.device.get(),
                                                 &framebuffer_create_info,
                                                 nullptr,
                                                 &context.framebuffers[i]);
@@ -870,7 +813,7 @@ void destroy_framebuffers(const Vulkan_context &context)
     {
         if (framebuffer)
         {
-            vkDestroyFramebuffer(context.device, framebuffer, nullptr);
+            vkDestroyFramebuffer(context.device.get(), framebuffer, nullptr);
         }
     }
 }
@@ -885,7 +828,7 @@ void create_command_buffers(Vulkan_context &context)
         .commandBufferCount = Vulkan_context::frames_in_flight};
 
     const auto result = vkAllocateCommandBuffers(
-        context.device, &allocate_info, context.command_buffers.data());
+        context.device.get(), &allocate_info, context.command_buffers.data());
     check_result(result, "vkAllocateCommandBuffers");
 }
 
@@ -899,14 +842,14 @@ void create_synchronization_objects(Vulkan_context &context)
     for (auto &semaphore : context.image_available_semaphores)
     {
         const auto result = vkCreateSemaphore(
-            context.device, &semaphore_create_info, nullptr, &semaphore);
+            context.device.get(), &semaphore_create_info, nullptr, &semaphore);
         check_result(result, "vkCreateSemaphore");
     }
 
     for (auto &semaphore : context.render_finished_semaphores)
     {
         const auto result = vkCreateSemaphore(
-            context.device, &semaphore_create_info, nullptr, &semaphore);
+            context.device.get(), &semaphore_create_info, nullptr, &semaphore);
         check_result(result, "vkCreateSemaphore");
     }
 
@@ -917,8 +860,8 @@ void create_synchronization_objects(Vulkan_context &context)
 
     for (auto &fence : context.in_flight_fences)
     {
-        const auto result =
-            vkCreateFence(context.device, &fence_create_info, nullptr, &fence);
+        const auto result = vkCreateFence(
+            context.device.get(), &fence_create_info, nullptr, &fence);
         check_result(result, "vkCreateFence");
     }
 }
@@ -935,7 +878,7 @@ begin_one_time_submit_command_buffer(const Vulkan_context &context)
 
     VkCommandBuffer command_buffer {};
     auto result = vkAllocateCommandBuffers(
-        context.device, &allocate_info, &command_buffer);
+        context.device.get(), &allocate_info, &command_buffer);
     check_result(result, "vkAllocateCommandBuffers");
 
     constexpr VkCommandBufferBeginInfo begin_info {
@@ -948,7 +891,7 @@ begin_one_time_submit_command_buffer(const Vulkan_context &context)
         [&]
         {
             vkFreeCommandBuffers(
-                context.device, context.command_pool, 1, &command_buffer);
+                context.device.get(), context.command_pool, 1, &command_buffer);
         });
 
     result = vkBeginCommandBuffer(command_buffer, &begin_info);
@@ -964,7 +907,7 @@ void end_one_time_submit_command_buffer(const Vulkan_context &context,
         [&]
         {
             vkFreeCommandBuffers(
-                context.device, context.command_pool, 1, &command_buffer);
+                context.device.get(), context.command_pool, 1, &command_buffer);
         });
 
     auto result = vkEndCommandBuffer(command_buffer);
@@ -1000,9 +943,9 @@ void init_imgui(Vulkan_context &context)
     { check_result(result, "ImGui Vulkan call"); };
 
     ImGui_ImplVulkan_InitInfo init_info {
-        .Instance = *context.instance,
+        .Instance = context.instance.get(),
         .PhysicalDevice = context.physical_device,
-        .Device = context.device,
+        .Device = context.device.get(),
         .QueueFamily = context.graphics_compute_queue_family_index,
         .Queue = context.graphics_compute_queue,
         .DescriptorPool = context.descriptor_pool,
@@ -1029,7 +972,7 @@ void init_imgui(Vulkan_context &context)
 
 void recreate_swapchain(Vulkan_context &context)
 {
-    const auto result = vkDeviceWaitIdle(context.device);
+    const auto result = vkDeviceWaitIdle(context.device.get());
     check_result(result, "vkDeviceWaitIdle");
 
     destroy_framebuffers(context);
@@ -1112,7 +1055,7 @@ void create_sampler(const Vulkan_context &context,
         .unnormalizedCoordinates = VK_FALSE};
 
     const auto result =
-        vkCreateSampler(context.device,
+        vkCreateSampler(context.device.get(),
                         &sampler_create_info,
                         nullptr,
                         &render_resources.render_target_sampler);
@@ -1240,12 +1183,12 @@ void create_blas(const Vulkan_context &context,
                  Vulkan_render_resources &render_resources)
 {
     const auto vertex_buffer_address = get_device_address(
-        context.device, render_resources.vertex_buffer.buffer);
+        context.device.get(), render_resources.vertex_buffer.buffer);
     constexpr auto vertex_size = 3 * sizeof(float);
     const auto vertex_count = render_resources.vertex_buffer.size / vertex_size;
 
     const auto index_buffer_address = get_device_address(
-        context.device, render_resources.index_buffer.buffer);
+        context.device.get(), render_resources.index_buffer.buffer);
     const auto index_count =
         render_resources.index_buffer.size / sizeof(std::uint32_t);
     const auto primitive_count = index_count / 3;
@@ -1297,7 +1240,7 @@ void create_blas(const Vulkan_context &context,
         .buildScratchSize = {}};
 
     vkGetAccelerationStructureBuildSizesKHR(
-        context.device,
+        context.device.get(),
         VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
         &build_geometry_info,
         &build_range_info.primitiveCount,
@@ -1324,7 +1267,7 @@ void create_blas(const Vulkan_context &context,
             .deviceAddress = {}};
 
     const auto result =
-        vkCreateAccelerationStructureKHR(context.device,
+        vkCreateAccelerationStructureKHR(context.device.get(),
                                          &acceleration_structure_create_info,
                                          nullptr,
                                          &render_resources.blas);
@@ -1341,7 +1284,7 @@ void create_blas(const Vulkan_context &context,
     SCOPE_EXIT([&] { destroy_buffer(context.allocator, scratch_buffer); });
 
     const auto scratch_buffer_address =
-        get_device_address(context.device, scratch_buffer.buffer);
+        get_device_address(context.device.get(), scratch_buffer.buffer);
 
     build_geometry_info.dstAccelerationStructure = render_resources.blas;
     build_geometry_info.scratchData.deviceAddress = scratch_buffer_address;
@@ -1371,7 +1314,7 @@ void create_tlas(const Vulkan_context &context,
         .instanceShaderBindingTableRecordOffset = 0,
         .flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
         .accelerationStructureReference =
-            get_device_address(context.device, render_resources.blas)};
+            get_device_address(context.device.get(), render_resources.blas)};
 
     const auto instance_buffer = create_buffer_from_host_data(
         context,
@@ -1407,7 +1350,7 @@ void create_tlas(const Vulkan_context &context,
             VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
         .pNext = {},
         .arrayOfPointers = {},
-        .data = {.deviceAddress = get_device_address(context.device,
+        .data = {.deviceAddress = get_device_address(context.device.get(),
                                                      instance_buffer.buffer)}};
 
     const VkAccelerationStructureGeometryKHR geometry {
@@ -1440,7 +1383,7 @@ void create_tlas(const Vulkan_context &context,
 
     constexpr std::uint32_t primitive_count {1};
     vkGetAccelerationStructureBuildSizesKHR(
-        context.device,
+        context.device.get(),
         VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
         &build_geometry_info,
         &primitive_count,
@@ -1467,7 +1410,7 @@ void create_tlas(const Vulkan_context &context,
             .deviceAddress = {}};
 
     const auto result =
-        vkCreateAccelerationStructureKHR(context.device,
+        vkCreateAccelerationStructureKHR(context.device.get(),
                                          &acceleration_structure_create_info,
                                          nullptr,
                                          &render_resources.tlas);
@@ -1484,7 +1427,7 @@ void create_tlas(const Vulkan_context &context,
     SCOPE_EXIT([&] { destroy_buffer(context.allocator, scratch_buffer); });
 
     const auto scratch_buffer_address =
-        get_device_address(context.device, scratch_buffer.buffer);
+        get_device_address(context.device.get(), scratch_buffer.buffer);
 
     build_geometry_info.dstAccelerationStructure = render_resources.tlas;
     build_geometry_info.scratchData.deviceAddress = scratch_buffer_address;
@@ -1539,7 +1482,7 @@ void create_descriptor_set_layout(const Vulkan_context &context,
         .pBindings = descriptor_set_layout_bindings};
 
     const auto result =
-        vkCreateDescriptorSetLayout(context.device,
+        vkCreateDescriptorSetLayout(context.device.get(),
                                     &descriptor_set_layout_create_info,
                                     nullptr,
                                     &render_resources.descriptor_set_layout);
@@ -1565,7 +1508,7 @@ void create_final_render_descriptor_set_layout(
         .pBindings = descriptor_set_layout_bindings};
 
     const auto result = vkCreateDescriptorSetLayout(
-        context.device,
+        context.device.get(),
         &descriptor_set_layout_create_info,
         nullptr,
         &render_resources.final_render_descriptor_set_layout);
@@ -1583,7 +1526,7 @@ void create_descriptor_set(const Vulkan_context &context,
         .pSetLayouts = &render_resources.descriptor_set_layout};
 
     const auto result =
-        vkAllocateDescriptorSets(context.device,
+        vkAllocateDescriptorSets(context.device.get(),
                                  &descriptor_set_allocate_info,
                                  &render_resources.descriptor_set);
     check_result(result, "vkAllocateDescriptorSets");
@@ -1654,7 +1597,7 @@ void create_descriptor_set(const Vulkan_context &context,
          .pTexelBufferView = {}}};
 
     vkUpdateDescriptorSets(
-        context.device,
+        context.device.get(),
         static_cast<std::uint32_t>(std::size(descriptor_writes)),
         descriptor_writes,
         0,
@@ -1672,7 +1615,7 @@ void create_final_render_descriptor_set(
         .pSetLayouts = &render_resources.final_render_descriptor_set_layout};
 
     const auto result =
-        vkAllocateDescriptorSets(context.device,
+        vkAllocateDescriptorSets(context.device.get(),
                                  &descriptor_set_allocate_info,
                                  &render_resources.final_render_descriptor_set);
     check_result(result, "vkAllocateDescriptorSets");
@@ -1694,7 +1637,8 @@ void create_final_render_descriptor_set(
         .pBufferInfo = {},
         .pTexelBufferView = {}};
 
-    vkUpdateDescriptorSets(context.device, 1, &descriptor_write, 0, nullptr);
+    vkUpdateDescriptorSets(
+        context.device.get(), 1, &descriptor_write, 0, nullptr);
 }
 
 void create_ray_tracing_pipeline_layout(
@@ -1715,7 +1659,7 @@ void create_ray_tracing_pipeline_layout(
         .pPushConstantRanges = &push_constant_range};
 
     const auto result =
-        vkCreatePipelineLayout(context.device,
+        vkCreatePipelineLayout(context.device.get(),
                                &pipeline_layout_create_info,
                                nullptr,
                                &render_resources.ray_tracing_pipeline_layout);
@@ -1754,17 +1698,20 @@ void create_ray_tracing_pipeline(const Vulkan_context &context,
                                  Vulkan_render_resources &render_resources)
 {
     const auto rgen_shader_module =
-        create_shader_module(context.device, "shader.rgen.spv");
-    SCOPE_EXIT([&]
-               { destroy_shader_module(context.device, rgen_shader_module); });
+        create_shader_module(context.device.get(), "shader.rgen.spv");
+    SCOPE_EXIT(
+        [&]
+        { destroy_shader_module(context.device.get(), rgen_shader_module); });
     const auto rmiss_shader_module =
-        create_shader_module(context.device, "shader.rmiss.spv");
-    SCOPE_EXIT([&]
-               { destroy_shader_module(context.device, rmiss_shader_module); });
+        create_shader_module(context.device.get(), "shader.rmiss.spv");
+    SCOPE_EXIT(
+        [&]
+        { destroy_shader_module(context.device.get(), rmiss_shader_module); });
     const auto rchit_shader_module =
-        create_shader_module(context.device, "shader.rchit.spv");
-    SCOPE_EXIT([&]
-               { destroy_shader_module(context.device, rchit_shader_module); });
+        create_shader_module(context.device.get(), "shader.rchit.spv");
+    SCOPE_EXIT(
+        [&]
+        { destroy_shader_module(context.device.get(), rchit_shader_module); });
 
     const VkPipelineShaderStageCreateInfo shader_stage_create_infos[] {
         {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -1834,7 +1781,7 @@ void create_ray_tracing_pipeline(const Vulkan_context &context,
         .basePipelineIndex = {}};
 
     const auto result =
-        vkCreateRayTracingPipelinesKHR(context.device,
+        vkCreateRayTracingPipelinesKHR(context.device.get(),
                                        {},
                                        {},
                                        1,
@@ -1848,11 +1795,14 @@ void create_shader_binding_table(const Vulkan_context &context,
                                  Vulkan_render_resources &render_resources)
 {
     const auto handle_size =
-        context.ray_tracing_pipeline_properties.shaderGroupHandleSize;
+        context.physical_device_ray_tracing_pipeline_properties
+            .shaderGroupHandleSize;
     const auto handle_alignment =
-        context.ray_tracing_pipeline_properties.shaderGroupHandleAlignment;
+        context.physical_device_ray_tracing_pipeline_properties
+            .shaderGroupHandleAlignment;
     const auto base_alignment =
-        context.ray_tracing_pipeline_properties.shaderGroupBaseAlignment;
+        context.physical_device_ray_tracing_pipeline_properties
+            .shaderGroupBaseAlignment;
     const auto handle_size_aligned = align_up(handle_size, handle_alignment);
 
     constexpr std::uint32_t miss_count {1};
@@ -1875,7 +1825,7 @@ void create_shader_binding_table(const Vulkan_context &context,
     const auto data_size = handle_count * handle_size;
     std::vector<std::uint8_t> handles(data_size);
     const auto result = vkGetRayTracingShaderGroupHandlesKHR(
-        context.device,
+        context.device.get(),
         render_resources.ray_tracing_pipeline,
         0,
         handle_count,
@@ -1902,8 +1852,8 @@ void create_shader_binding_table(const Vulkan_context &context,
     auto *const sbt_buffer_mapped =
         static_cast<std::uint8_t *>(sbt_allocation_info.pMappedData);
 
-    const auto sbt_address =
-        get_device_address(context.device, render_resources.sbt_buffer.buffer);
+    const auto sbt_address = get_device_address(
+        context.device.get(), render_resources.sbt_buffer.buffer);
     render_resources.sbt_raygen_region.deviceAddress = sbt_address;
     render_resources.sbt_miss_region.deviceAddress =
         sbt_address + render_resources.sbt_raygen_region.size;
@@ -1948,20 +1898,17 @@ Vulkan_context create_context(GLFWwindow *window)
     create_instance(context);
 
     volkInitializeCustom(VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr);
-    volkLoadInstanceOnly(*context.instance);
+    volkLoadInstanceOnly(context.instance.get());
 
     create_device(context);
 
-    volkLoadDevice(context.device);
+    volkLoadDevice(context.device.get());
 
-    vkGetDeviceQueue(context.device,
-                     context.graphics_compute_queue_family_index,
-                     0,
-                     &context.graphics_compute_queue);
-    vkGetDeviceQueue(context.device,
-                     context.present_queue_family_index,
-                     0,
-                     &context.present_queue);
+    context.graphics_compute_queue = context.device->getQueue(
+        context.graphics_compute_queue_family_index, 0);
+    context.present_queue =
+        context.device->getQueue(context.present_queue_family_index, 0);
+
     create_surface(context, window);
     create_allocator(context);
     create_command_pool(context);
@@ -1995,7 +1942,7 @@ void destroy_context(Vulkan_context &context)
     {
         if (semaphore)
         {
-            vkDestroySemaphore(context.device, semaphore, nullptr);
+            vkDestroySemaphore(context.device.get(), semaphore, nullptr);
         }
     }
 
@@ -2003,7 +1950,7 @@ void destroy_context(Vulkan_context &context)
     {
         if (semaphore)
         {
-            vkDestroySemaphore(context.device, semaphore, nullptr);
+            vkDestroySemaphore(context.device.get(), semaphore, nullptr);
         }
     }
 
@@ -2011,14 +1958,14 @@ void destroy_context(Vulkan_context &context)
     {
         if (fence)
         {
-            vkDestroyFence(context.device, fence, nullptr);
+            vkDestroyFence(context.device.get(), fence, nullptr);
         }
     }
 
     if (context.command_buffers.front())
     {
         vkFreeCommandBuffers(
-            context.device,
+            context.device.get(),
             context.command_pool,
             static_cast<std::uint32_t>(context.command_buffers.size()),
             context.command_buffers.data());
@@ -2028,32 +1975,28 @@ void destroy_context(Vulkan_context &context)
 
     if (context.render_pass)
     {
-        vkDestroyRenderPass(context.device, context.render_pass, nullptr);
+        vkDestroyRenderPass(context.device.get(), context.render_pass, nullptr);
     }
 
     if (context.descriptor_pool)
     {
         vkDestroyDescriptorPool(
-            context.device, context.descriptor_pool, nullptr);
+            context.device.get(), context.descriptor_pool, nullptr);
     }
 
     destroy_swapchain(context);
 
     if (context.command_pool)
     {
-        vkDestroyCommandPool(context.device, context.command_pool, nullptr);
+        vkDestroyCommandPool(
+            context.device.get(), context.command_pool, nullptr);
     }
 
     vmaDestroyAllocator(context.allocator);
 
     if (context.surface)
     {
-        vkDestroySurfaceKHR(*context.instance, context.surface, nullptr);
-    }
-
-    if (context.device)
-    {
-        vkDestroyDevice(context.device, nullptr);
+        vkDestroySurfaceKHR(context.instance.get(), context.surface, nullptr);
     }
 }
 
@@ -2084,7 +2027,7 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
             VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     render_resources.storage_image_view =
-        create_image_view(context.device,
+        create_image_view(context.device.get(),
                           render_resources.storage_image.image,
                           storage_image_format);
 
@@ -2097,7 +2040,7 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
             VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     render_resources.render_target_view =
-        create_image_view(context.device,
+        create_image_view(context.device.get(),
                           render_resources.render_target.image,
                           render_target_format);
 
@@ -2185,13 +2128,14 @@ void destroy_render_resources(const Vulkan_context &context,
 
     if (render_resources.ray_tracing_pipeline)
     {
-        vkDestroyPipeline(
-            context.device, render_resources.ray_tracing_pipeline, nullptr);
+        vkDestroyPipeline(context.device.get(),
+                          render_resources.ray_tracing_pipeline,
+                          nullptr);
     }
 
     if (render_resources.ray_tracing_pipeline_layout)
     {
-        vkDestroyPipelineLayout(context.device,
+        vkDestroyPipelineLayout(context.device.get(),
                                 render_resources.ray_tracing_pipeline_layout,
                                 nullptr);
     }
@@ -2199,28 +2143,29 @@ void destroy_render_resources(const Vulkan_context &context,
     if (render_resources.final_render_descriptor_set_layout)
     {
         vkDestroyDescriptorSetLayout(
-            context.device,
+            context.device.get(),
             render_resources.final_render_descriptor_set_layout,
             nullptr);
     }
 
     if (render_resources.descriptor_set_layout)
     {
-        vkDestroyDescriptorSetLayout(
-            context.device, render_resources.descriptor_set_layout, nullptr);
+        vkDestroyDescriptorSetLayout(context.device.get(),
+                                     render_resources.descriptor_set_layout,
+                                     nullptr);
     }
 
     if (render_resources.tlas)
     {
         vkDestroyAccelerationStructureKHR(
-            context.device, render_resources.tlas, nullptr);
+            context.device.get(), render_resources.tlas, nullptr);
     }
     destroy_buffer(context.allocator, render_resources.tlas_buffer);
 
     if (render_resources.blas)
     {
         vkDestroyAccelerationStructureKHR(
-            context.device, render_resources.blas, nullptr);
+            context.device.get(), render_resources.blas, nullptr);
     }
     destroy_buffer(context.allocator, render_resources.blas_buffer);
 
@@ -2229,13 +2174,16 @@ void destroy_render_resources(const Vulkan_context &context,
 
     if (render_resources.render_target_sampler)
     {
-        vkDestroySampler(
-            context.device, render_resources.render_target_sampler, nullptr);
+        vkDestroySampler(context.device.get(),
+                         render_resources.render_target_sampler,
+                         nullptr);
     }
 
-    destroy_image_view(context.device, render_resources.render_target_view);
+    destroy_image_view(context.device.get(),
+                       render_resources.render_target_view);
     destroy_image(context.allocator, render_resources.render_target);
-    destroy_image_view(context.device, render_resources.storage_image_view);
+    destroy_image_view(context.device.get(),
+                       render_resources.storage_image_view);
     destroy_image(context.allocator, render_resources.storage_image);
 
     render_resources = {};
@@ -2255,7 +2203,7 @@ void draw_frame(Vulkan_context &context,
     }
 
     auto result = vkWaitForFences(
-        context.device,
+        context.device.get(),
         1,
         &context.in_flight_fences[context.current_frame_in_flight],
         VK_TRUE,
@@ -2264,7 +2212,7 @@ void draw_frame(Vulkan_context &context,
 
     std::uint32_t image_index {};
     result = vkAcquireNextImageKHR(
-        context.device,
+        context.device.get(),
         context.swapchain,
         std::numeric_limits<std::uint64_t>::max(),
         context.image_available_semaphores[context.current_frame_in_flight],
@@ -2281,7 +2229,7 @@ void draw_frame(Vulkan_context &context,
     }
 
     result = vkResetFences(
-        context.device,
+        context.device.get(),
         1,
         &context.in_flight_fences[context.current_frame_in_flight]);
     check_result(result, "vkResetFences");
@@ -2573,7 +2521,7 @@ void resize_framebuffer(Vulkan_context &context,
 
 void wait_idle(const Vulkan_context &context)
 {
-    const auto result = vkDeviceWaitIdle(context.device);
+    const auto result = vkDeviceWaitIdle(context.device.get());
     check_result(result, "vkDeviceWaitIdle");
 }
 
