@@ -11,10 +11,10 @@ int main(int argc, char *argv[])
         if (argc > 2 || (argc == 2 && argv[1][0] == '-'))
         {
             std::cout << "Usage: " << argv[0] << " [<file>]\n";
-            return EXIT_SUCCESS;
+            return EXIT_FAILURE;
         }
 
-        const char *file_name {nullptr};
+        const char *file_name {};
         if (argc == 2)
         {
             file_name = argv[1];

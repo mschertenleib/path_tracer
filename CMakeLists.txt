@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.22)
 
 project(path_tracer LANGUAGES CXX C)
 
@@ -201,6 +201,12 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(path_tracer PRIVATE /W4)
 else ()
     message(WARNING "No warnings set for compiler '${CMAKE_CXX_COMPILER_ID}'")
+endif ()
+
+
+if ((CMAKE_CXX_COMPILER_ID MATCHES ".*Clang") OR (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"))
+    target_compile_options(path_tracer PRIVATE $<$<CONFIG:Debug>:-fsanitize=undefined;-fsanitize=address>)
+    target_link_options(path_tracer PRIVATE $<$<CONFIG:Debug>:-fsanitize=undefined;-fsanitize=address>)
 endif ()
 
 
