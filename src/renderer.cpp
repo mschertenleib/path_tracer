@@ -501,9 +501,11 @@ void create_allocator(Vulkan_context &context)
     allocator_create_info.instance = context.instance.get();
     allocator_create_info.vulkanApiVersion = VK_API_VERSION_1_3;
 
-    const auto result =
-        vmaCreateAllocator(&allocator_create_info, &context.allocator);
+    VmaAllocator allocator {};
+    const auto result = vmaCreateAllocator(&allocator_create_info, &allocator);
     vk::detail::resultCheck(vk::Result {result}, "vmaCreateAllocator");
+
+    context.allocator = Unique_allocator(allocator);
 }
 
 void create_command_pool(Vulkan_context &context)
@@ -835,26 +837,20 @@ void recreate_swapchain(Vulkan_context &context)
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
     VkImage vk_image {};
+    VmaAllocation allocation {};
     const auto result = vmaCreateImage(
         allocator,
         &static_cast<const VkImageCreateInfo &>(image_create_info),
         &allocation_create_info,
         &vk_image,
-        &image.allocation,
+        &allocation,
         nullptr);
     vk::detail::resultCheck(vk::Result {result}, "vmaCreateImage");
 
     image.image = vk::UniqueImage(vk_image, device);
+    image.allocation = Unique_allocation(allocation, allocator);
 
     return image;
-}
-
-void destroy_image(VmaAllocator allocator, const Vulkan_image &image)
-{
-    if (image.allocation)
-    {
-        vmaFreeMemory(allocator, image.allocation);
-    }
 }
 
 void create_sampler(const Vulkan_context &context,
@@ -898,26 +894,20 @@ create_buffer(VmaAllocator allocator,
     allocation_create_info.usage = memory_usage;
 
     VkBuffer vk_buffer {};
+    VmaAllocation allocation {};
     const auto result = vmaCreateBuffer(
         allocator,
         &static_cast<const VkBufferCreateInfo &>(buffer_create_info),
         &allocation_create_info,
         &vk_buffer,
-        &buffer.allocation,
+        &allocation,
         allocation_info);
     vk::detail::resultCheck(vk::Result {result}, "vmaCreateBuffer");
 
     buffer.buffer = vk::UniqueBuffer(vk_buffer, device);
+    buffer.allocation = Unique_allocation(allocation, allocator);
 
     return buffer;
-}
-
-void destroy_buffer(VmaAllocator allocator, const Vulkan_buffer &buffer)
-{
-    if (buffer.allocation)
-    {
-        vmaFreeMemory(allocator, buffer.allocation);
-    }
 }
 
 // FIXME: make this a vk::UniqueCommandBuffer
@@ -976,7 +966,7 @@ create_buffer_from_host_data(const Vulkan_context &context,
 {
     VmaAllocationInfo staging_allocation_info {};
     const auto staging_buffer =
-        create_buffer(context.allocator,
+        create_buffer(context.allocator.get(),
                       context.device.get(),
                       size,
                       vk::BufferUsageFlagBits::eTransferSrc,
@@ -990,7 +980,7 @@ create_buffer_from_host_data(const Vulkan_context &context,
 
     std::memcpy(mapped_data, data, size);
 
-    auto buffer = create_buffer(context.allocator,
+    auto buffer = create_buffer(context.allocator.get(),
                                 context.device.get(),
                                 size,
                                 usage,
@@ -1093,7 +1083,7 @@ void create_blas(const Vulkan_context &context,
             {build_range_info.primitiveCount});
 
     render_resources.blas_buffer = create_buffer(
-        context.allocator,
+        context.allocator.get(),
         context.device.get(),
         build_sizes_info.accelerationStructureSize,
         vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
@@ -1116,7 +1106,7 @@ void create_blas(const Vulkan_context &context,
             acceleration_structure_create_info);
 
     const auto scratch_buffer =
-        create_buffer(context.allocator,
+        create_buffer(context.allocator.get(),
                       context.device.get(),
                       build_sizes_info.buildScratchSize,
                       vk::BufferUsageFlagBits::eStorageBuffer |
@@ -1211,7 +1201,7 @@ void create_tlas(const Vulkan_context &context,
             {primitive_count});
 
     render_resources.tlas_buffer = create_buffer(
-        context.allocator,
+        context.allocator.get(),
         context.device.get(),
         build_sizes_info.accelerationStructureSize,
         vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
@@ -1234,7 +1224,7 @@ void create_tlas(const Vulkan_context &context,
             acceleration_structure_create_info);
 
     const auto scratch_buffer =
-        create_buffer(context.allocator,
+        create_buffer(context.allocator.get(),
                       context.device.get(),
                       build_sizes_info.buildScratchSize,
                       vk::BufferUsageFlagBits::eStorageBuffer |
@@ -1546,7 +1536,7 @@ void create_shader_binding_table(const Vulkan_context &context,
 
     VmaAllocationInfo sbt_allocation_info {};
     render_resources.sbt_buffer =
-        create_buffer(context.allocator,
+        create_buffer(context.allocator.get(),
                       context.device.get(),
                       sbt_size,
                       vk::BufferUsageFlagBits::eTransferSrc |
@@ -1647,11 +1637,6 @@ void destroy_context(Vulkan_context &context)
     {
         ImGui_ImplVulkan_Shutdown();
     }
-
-    if (context.allocator)
-    {
-        vmaDestroyAllocator(context.allocator);
-    }
 }
 
 Vulkan_render_resources create_render_resources(const Vulkan_context &context,
@@ -1672,7 +1657,7 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
 
     constexpr auto storage_image_format = vk::Format::eR32G32B32A32Sfloat;
     render_resources.storage_image =
-        create_image(context.allocator,
+        create_image(context.allocator.get(),
                      context.device.get(),
                      render_width,
                      render_height,
@@ -1687,7 +1672,7 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
 
     constexpr auto render_target_format = vk::Format::eR8G8B8A8Srgb;
     render_resources.render_target =
-        create_image(context.allocator,
+        create_image(context.allocator.get(),
                      context.device.get(),
                      render_width,
                      render_height,
@@ -2070,7 +2055,7 @@ std::string write_to_png(const Vulkan_context &context,
 {
     VmaAllocationInfo staging_allocation_info {};
     const auto staging_buffer =
-        create_buffer(context.allocator,
+        create_buffer(context.allocator.get(),
                       context.device.get(),
                       render_resources.render_target.width *
                           render_resources.render_target.height * 4,

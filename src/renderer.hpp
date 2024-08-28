@@ -18,19 +18,117 @@
 #define ENABLE_VALIDATION
 #endif
 
+class Unique_allocator
+{
+public:
+    constexpr Unique_allocator() noexcept = default;
+
+    constexpr explicit Unique_allocator(VmaAllocator allocator) noexcept
+        : Unique_allocator()
+    {
+    }
+
+    constexpr Unique_allocator(Unique_allocator &&rhs) noexcept : m_allocator {}
+    {
+        swap(rhs);
+    }
+
+    Unique_allocator &operator=(Unique_allocator &&rhs) noexcept
+    {
+        Unique_allocator temp(std::move(rhs));
+        swap(temp);
+        return *this;
+    }
+
+    Unique_allocator(const Unique_allocator &) = delete;
+    Unique_allocator &operator=(const Unique_allocator &) = delete;
+
+    ~Unique_allocator() noexcept
+    {
+        if (m_allocator)
+        {
+            vmaDestroyAllocator(m_allocator);
+        }
+    }
+
+    [[nodiscard]] constexpr VmaAllocator get() const noexcept
+    {
+        return m_allocator;
+    }
+
+    constexpr void swap(Unique_allocator &rhs) noexcept
+    {
+        std::swap(m_allocator, rhs.m_allocator);
+    }
+
+private:
+    VmaAllocator m_allocator {};
+};
+
+class Unique_allocation
+{
+public:
+    constexpr Unique_allocation() noexcept = default;
+
+    constexpr explicit Unique_allocation(VmaAllocation allocation,
+                                         VmaAllocator allocator) noexcept
+        : m_allocator {allocator}, m_allocation {allocation}
+    {
+    }
+
+    constexpr Unique_allocation(Unique_allocation &&rhs) noexcept
+        : Unique_allocation()
+    {
+        swap(rhs);
+    }
+
+    Unique_allocation &operator=(Unique_allocation &&rhs) noexcept
+    {
+        Unique_allocation temp(std::move(rhs));
+        swap(temp);
+        return *this;
+    }
+
+    Unique_allocation(const Unique_allocation &) = delete;
+    Unique_allocation &operator=(const Unique_allocation &) = delete;
+
+    ~Unique_allocation() noexcept
+    {
+        if (m_allocator && m_allocation)
+        {
+            vmaFreeMemory(m_allocator, m_allocation);
+        }
+    }
+
+    [[nodiscard]] constexpr VmaAllocation get() const noexcept
+    {
+        return m_allocation;
+    }
+
+    constexpr void swap(Unique_allocation &rhs) noexcept
+    {
+        std::swap(m_allocator, rhs.m_allocator);
+        std::swap(m_allocation, rhs.m_allocation);
+    }
+
+private:
+    VmaAllocator m_allocator {};
+    VmaAllocation m_allocation {};
+};
+
 struct Vulkan_image
 {
     std::uint32_t width;
     std::uint32_t height;
     vk::UniqueImage image;
-    VmaAllocation allocation;
+    Unique_allocation allocation;
 };
 
 struct Vulkan_buffer
 {
     vk::DeviceSize size;
     vk::UniqueBuffer buffer;
-    VmaAllocation allocation;
+    Unique_allocation allocation;
 };
 
 struct Vulkan_context
@@ -55,7 +153,7 @@ struct Vulkan_context
 
     vk::UniqueSurfaceKHR surface;
 
-    VmaAllocator allocator;
+    Unique_allocator allocator;
 
     vk::UniqueCommandPool command_pool;
 
