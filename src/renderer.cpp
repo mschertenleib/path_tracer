@@ -1992,7 +1992,10 @@ void draw_frame(Vulkan_context &context,
         .pImageIndices = &image_index.value,
         .pResults = {}};
 
-    result = context.present_queue.presentKHR(present_info);
+    // NOTE: we use the noexcept version of presentKHR that takes the
+    // vk::PresentInfoKHR by pointer, because we don't want the call to throw an
+    // exception in case of vk::Result::ErrorOutOfDateKHR
+    result = context.present_queue.presentKHR(&present_info);
 
     if (result == vk::Result::eErrorOutOfDateKHR ||
         result == vk::Result::eSuboptimalKHR || context.framebuffer_resized)
