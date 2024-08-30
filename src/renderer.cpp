@@ -1851,7 +1851,7 @@ void draw_frame(Vulkan_context &context,
                 render_resources.ray_tracing_pipeline_layout.get(),
                 vk::ShaderStageFlagBits::eRaygenKHR,
                 0,
-                1,
+                sizeof(push_constants),
                 &push_constants);
             render_resources.sample_count += samples_this_frame;
 
