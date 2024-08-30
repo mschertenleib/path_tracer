@@ -47,7 +47,7 @@ Prerequisites:
 All other dependencies are handled
 by [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake).
 
-```
+```shell
 git clone https://github.com/mschertenleib/path_tracer.git
 cd path_tracer
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -56,9 +56,8 @@ cmake --build build --target path_tracer
 
 ## External libraries
 
-- [volk](https://github.com/zeux/volk) for loading Vulkan functions
 - [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) for managing memory allocation for Vulkan
-- [GLFW](https://github.com/glfw/glfw) for the window, surface, input and events
+- [GLFW](https://github.com/glfw/glfw) for the window, surface and input
 - [Dear ImGui](https://github.com/ocornut/imgui) for the user interface
 - [ImGuizmo](https://github.com/CedricGuillemet/ImGuizmo) for gizmo controls
 - [stb_image and stb_image_write](https://github.com/nothings/stb) for reading/writing images

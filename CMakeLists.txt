@@ -13,12 +13,6 @@ find_package(Vulkan REQUIRED)
 add_compile_definitions(VK_NO_PROTOTYPES)
 
 
-CPMAddPackage(
-        GITHUB_REPOSITORY zeux/volk
-        GIT_TAG 1.3.270
-)
-
-
 set(VMA_BUILD_SAMPLE OFF)
 set(VMA_STATIC_VULKAN_FUNCTIONS OFF)
 set(VMA_DYNAMIC_VULKAN_FUNCTIONS ON)
@@ -133,7 +127,6 @@ target_include_directories(path_tracer SYSTEM PRIVATE
 	${VulkanMemoryAllocator_SOURCE_DIR}/include
 )
 target_link_libraries(path_tracer PRIVATE
-        volk
         glfw
         imgui
         imguizmo

@@ -10,8 +10,6 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include <volk.h>
-
 #include <algorithm>
 #include <cassert>
 #include <cstring>
@@ -1595,12 +1593,7 @@ Vulkan_context create_context(GLFWwindow *window)
 
     create_instance(context);
 
-    volkInitializeCustom(VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr);
-    volkLoadInstanceOnly(context.instance.get());
-
     create_device(context);
-
-    volkLoadDevice(context.device.get());
 
     context.graphics_compute_queue = context.device->getQueue(
         context.graphics_compute_queue_family_index, 0);

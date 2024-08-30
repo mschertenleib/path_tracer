@@ -24,11 +24,11 @@ public:
     constexpr Unique_allocator() noexcept = default;
 
     constexpr explicit Unique_allocator(VmaAllocator allocator) noexcept
-        : Unique_allocator()
+        : m_allocator {allocator}
     {
     }
 
-    constexpr Unique_allocator(Unique_allocator &&rhs) noexcept : m_allocator {}
+    constexpr Unique_allocator(Unique_allocator &&rhs) noexcept
     {
         swap(rhs);
     }
@@ -77,7 +77,6 @@ public:
     }
 
     constexpr Unique_allocation(Unique_allocation &&rhs) noexcept
-        : Unique_allocation()
     {
         swap(rhs);
     }
