@@ -908,8 +908,7 @@ create_buffer(VmaAllocator allocator,
     return buffer;
 }
 
-// FIXME: make this a vk::UniqueCommandBuffer
-[[nodiscard]] vk::CommandBuffer
+[[nodiscard]] vk::UniqueCommandBuffer
 begin_one_time_submit_command_buffer(const Vulkan_context &context)
 {
     const vk::CommandBufferAllocateInfo allocate_info {
@@ -917,41 +916,29 @@ begin_one_time_submit_command_buffer(const Vulkan_context &context)
         .level = vk::CommandBufferLevel::ePrimary,
         .commandBufferCount = 1};
 
-    const auto command_buffer =
-        context.device->allocateCommandBuffers(allocate_info).front();
+    auto command_buffer = std::move(
+        context.device->allocateCommandBuffersUnique(allocate_info).front());
 
     constexpr vk::CommandBufferBeginInfo begin_info {
         .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
 
-    SCOPE_FAIL(
-        [&]
-        {
-            context.device->freeCommandBuffers(
-                context.command_pool.get(), 1, &command_buffer);
-        });
-
-    command_buffer.begin(begin_info);
+    command_buffer->begin(begin_info);
 
     return command_buffer;
 }
 
-void end_one_time_submit_command_buffer(const Vulkan_context &context,
-                                        vk::CommandBuffer command_buffer)
+void end_one_time_submit_command_buffer(
+    const Vulkan_context &context,
+    const vk::UniqueCommandBuffer &command_buffer)
 {
-    SCOPE_EXIT(
-        [&]
-        {
-            context.device->freeCommandBuffers(
-                context.command_pool.get(), 1, &command_buffer);
-        });
-
-    command_buffer.end();
+    command_buffer->end();
 
     const vk::SubmitInfo submit_info {.commandBufferCount = 1,
-                                      .pCommandBuffers = &command_buffer};
+                                      .pCommandBuffers = &command_buffer.get()};
 
     context.graphics_compute_queue.submit({submit_info}, {});
 
+    // TODO: this is suboptimal
     context.graphics_compute_queue.waitIdle();
 }
 
@@ -990,8 +977,8 @@ create_buffer_from_host_data(const Vulkan_context &context,
 
     const vk::BufferCopy region {.srcOffset = 0, .dstOffset = 0, .size = size};
 
-    command_buffer.copyBuffer(
-        staging_buffer.buffer.get(), buffer.buffer.get(), 1, &region);
+    command_buffer->copyBuffer(
+        staging_buffer.buffer.get(), buffer.buffer.get(), {region});
 
     end_one_time_submit_command_buffer(context, command_buffer);
 
@@ -1014,7 +1001,7 @@ create_buffer_from_host_data(const Vulkan_context &context,
 }
 
 [[nodiscard]] vk::DeviceAddress get_device_address(vk::Device device,
-                                                   vk::Buffer buffer)
+                                                   vk::Buffer buffer) noexcept
 {
     const vk::BufferDeviceAddressInfo address_info {.buffer = buffer};
     return device.getBufferAddress(address_info);
@@ -1022,7 +1009,7 @@ create_buffer_from_host_data(const Vulkan_context &context,
 
 [[nodiscard]] vk::DeviceAddress
 get_device_address(vk::Device device,
-                   vk::AccelerationStructureKHR acceleration_structure)
+                   vk::AccelerationStructureKHR acceleration_structure) noexcept
 {
     const vk::AccelerationStructureDeviceAddressInfoKHR address_info {
         .accelerationStructure = acceleration_structure};
@@ -1123,7 +1110,7 @@ void create_blas(const Vulkan_context &context,
 
     const auto *const p_build_range_info = &build_range_info;
 
-    command_buffer.buildAccelerationStructuresKHR(
+    command_buffer->buildAccelerationStructuresKHR(
         1, &build_geometry_info, &p_build_range_info);
 
     end_one_time_submit_command_buffer(context, command_buffer);
@@ -1161,7 +1148,7 @@ void create_tlas(const Vulkan_context &context,
         .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
         .dstAccessMask = vk::AccessFlagBits::eAccelerationStructureReadKHR};
 
-    command_buffer.pipelineBarrier(
+    command_buffer->pipelineBarrier(
         vk::PipelineStageFlagBits::eTransfer,
         vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
         {},
@@ -1245,8 +1232,8 @@ void create_tlas(const Vulkan_context &context,
 
     const auto *const p_build_range_info = &build_range_info;
 
-    command_buffer.buildAccelerationStructuresKHR({build_geometry_info},
-                                                  {p_build_range_info});
+    command_buffer->buildAccelerationStructuresKHR({build_geometry_info},
+                                                   {p_build_range_info});
 
     end_one_time_submit_command_buffer(context, command_buffer);
 }
@@ -1708,7 +1695,7 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
              .image = render_resources.render_target.image.get(),
              .subresourceRange = subresource_range}};
 
-        command_buffer.pipelineBarrier(
+        command_buffer->pipelineBarrier(
             vk::PipelineStageFlagBits::eTopOfPipe,
             vk::PipelineStageFlagBits::eRayTracingShaderKHR |
                 vk::PipelineStageFlagBits::eTransfer,
@@ -2080,12 +2067,12 @@ std::string write_to_png(const Vulkan_context &context,
         .image = render_resources.render_target.image.get(),
         .subresourceRange = subresource_range};
 
-    command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
-                                   vk::PipelineStageFlagBits::eTransfer,
-                                   {},
-                                   {},
-                                   {},
-                                   {image_memory_barrier});
+    command_buffer->pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                                    vk::PipelineStageFlagBits::eTransfer,
+                                    {},
+                                    {},
+                                    {},
+                                    {image_memory_barrier});
 
     constexpr vk::ImageSubresourceLayers subresource_layers {
         .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -2103,21 +2090,22 @@ std::string write_to_png(const Vulkan_context &context,
                         render_resources.render_target.height,
                         1}};
 
-    command_buffer.copyImageToBuffer(render_resources.render_target.image.get(),
-                                     vk::ImageLayout::eTransferSrcOptimal,
-                                     staging_buffer.buffer.get(),
-                                     {copy_region});
+    command_buffer->copyImageToBuffer(
+        render_resources.render_target.image.get(),
+        vk::ImageLayout::eTransferSrcOptimal,
+        staging_buffer.buffer.get(),
+        {copy_region});
 
     std::swap(image_memory_barrier.srcAccessMask,
               image_memory_barrier.dstAccessMask);
     std::swap(image_memory_barrier.oldLayout, image_memory_barrier.newLayout);
 
-    command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                   vk::PipelineStageFlagBits::eFragmentShader,
-                                   {},
-                                   {},
-                                   {},
-                                   {image_memory_barrier});
+    command_buffer->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                    vk::PipelineStageFlagBits::eFragmentShader,
+                                    {},
+                                    {},
+                                    {},
+                                    {image_memory_barrier});
 
     end_one_time_submit_command_buffer(context, command_buffer);
 
