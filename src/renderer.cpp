@@ -759,9 +759,9 @@ void init_imgui(Vulkan_context &context)
 {
     const auto loader_func = [](const char *function_name, void *user_data)
     {
-        const auto ctx = static_cast<const Vulkan_context *>(user_data);
         return VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr(
-            ctx->instance.get(), function_name);
+            static_cast<const Vulkan_context *>(user_data)->instance.get(),
+            function_name);
     };
     ImGui_ImplVulkan_LoadFunctions(loader_func, &context);
 
@@ -793,7 +793,7 @@ void init_imgui(Vulkan_context &context)
     ImGui_ImplVulkan_Init(&init_info);
     ImGui_ImplVulkan_CreateFontsTexture();
 
-    context.imgui_initialized = true;
+    context.imgui_backend = ImGui_backend(true);
 }
 
 void recreate_swapchain(Vulkan_context &context)
@@ -1572,11 +1572,17 @@ void create_shader_binding_table(const Vulkan_context &context,
 
 } // namespace
 
+ImGui_backend::~ImGui_backend()
+{
+    if (m_initialized)
+    {
+        ImGui_ImplVulkan_Shutdown();
+    }
+}
+
 Vulkan_context create_context(GLFWwindow *window)
 {
     Vulkan_context context {};
-
-    SCOPE_FAIL([&] { destroy_context(context); });
 
     create_instance(context);
 
@@ -1609,14 +1615,6 @@ Vulkan_context create_context(GLFWwindow *window)
     init_imgui(context);
 
     return context;
-}
-
-void destroy_context(Vulkan_context &context)
-{
-    if (context.imgui_initialized)
-    {
-        ImGui_ImplVulkan_Shutdown();
-    }
 }
 
 Vulkan_render_resources create_render_resources(const Vulkan_context &context,

@@ -1,5 +1,5 @@
 
-const float pi = 3.14159265;
+const float pi = 3.14159274;
 
 struct Ray_payload
 {

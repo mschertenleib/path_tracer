@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <numbers>
 #include <ranges>
 #include <stdexcept>
@@ -30,9 +31,24 @@
 namespace
 {
 
+struct Deleter
+{
+    void operator()(GLFWwindow *window)
+    {
+        glfwDestroyWindow(window);
+        glfwTerminate();
+    }
+    void operator()(ImGuiContext *context)
+    {
+        ImGui_ImplGlfw_Shutdown();
+        ImGui::DestroyContext(context);
+    }
+};
+
 struct Application_state
 {
-    GLFWwindow *window;
+    std::unique_ptr<GLFWwindow, Deleter> window;
+    std::unique_ptr<ImGuiContext, Deleter> imgui_context;
     Vulkan_context context;
     Vulkan_render_resources render_resources;
     bool scene_loaded;
@@ -62,7 +78,7 @@ void glfw_framebuffer_size_callback(GLFWwindow *window, int width, int height)
                        static_cast<std::uint32_t>(height));
 }
 
-[[nodiscard]] GLFWwindow *init_glfw()
+[[nodiscard]] GLFWwindow *glfw_init()
 {
     glfwSetErrorCallback(&glfw_error_callback);
 
@@ -70,10 +86,10 @@ void glfw_framebuffer_size_callback(GLFWwindow *window, int width, int height)
     {
         throw std::runtime_error("Failed to initialize GLFW");
     }
-    SCOPE_FAIL([] { glfwTerminate(); });
 
     if (!glfwVulkanSupported())
     {
+        glfwTerminate();
         throw std::runtime_error("Vulkan loader or ICD have not been found");
     }
 
@@ -83,6 +99,7 @@ void glfw_framebuffer_size_callback(GLFWwindow *window, int width, int height)
         glfwCreateWindow(1280, 720, "Path Tracer", nullptr, nullptr);
     if (!window)
     {
+        glfwTerminate();
         throw std::runtime_error("Failed to create GLFW window");
     }
 
@@ -91,21 +108,13 @@ void glfw_framebuffer_size_callback(GLFWwindow *window, int width, int height)
     return window;
 }
 
-void shutdown_glfw(GLFWwindow *window)
-{
-    glfwDestroyWindow(window);
-    glfwTerminate();
-}
-
-void init_imgui(GLFWwindow *window)
+[[nodiscard]] ImGuiContext *imgui_init(GLFWwindow *window)
 {
     IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    SCOPE_FAIL([] { ImGui::DestroyContext(); });
+    auto *const ctx = ImGui::CreateContext();
 
     auto &io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigWindowsMoveFromTitleBarOnly = true;
 
@@ -119,14 +128,11 @@ void init_imgui(GLFWwindow *window)
 
     if (!ImGui_ImplGlfw_InitForVulkan(window, true))
     {
+        ImGui::DestroyContext(ctx);
         throw std::runtime_error("Failed to initialize ImGui GLFW backend");
     }
-}
 
-void shutdown_imgui()
-{
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
+    return ctx;
 }
 
 void open_scene(Application_state &state, const char *file_name)
@@ -310,7 +316,8 @@ void make_ui(Application_state &state)
             static const auto view_manipulate_size = [&]
             {
                 float y_scale {1.0f};
-                glfwGetWindowContentScale(state.window, nullptr, &y_scale);
+                glfwGetWindowContentScale(
+                    state.window.get(), nullptr, &y_scale);
                 return ImVec2 {128 * y_scale, 128 * y_scale};
             }();
             ImGuizmo::ViewManipulate(
@@ -416,23 +423,20 @@ void run(const char *file_name)
 {
     Application_state state {};
 
-    state.window = init_glfw();
-    SCOPE_EXIT([&] { shutdown_glfw(state.window); });
+    state.window.reset(glfw_init());
 
-    init_imgui(state.window);
-    SCOPE_EXIT([] { shutdown_imgui(); });
+    state.imgui_context.reset(imgui_init(state.window.get()));
 
-    state.context = create_context(state.window);
-    SCOPE_EXIT([&] { destroy_context(state.context); });
+    state.context = create_context(state.window.get());
 
     if (file_name != nullptr)
     {
         open_scene(state, file_name);
     }
 
-    glfwSetWindowUserPointer(state.window, &state);
+    glfwSetWindowUserPointer(state.window.get(), &state);
 
-    while (!glfwWindowShouldClose(state.window))
+    while (!glfwWindowShouldClose(state.window.get()))
     {
         glfwPollEvents();
 

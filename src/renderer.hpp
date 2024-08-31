@@ -115,6 +115,42 @@ private:
     VmaAllocation m_allocation {};
 };
 
+class ImGui_backend
+{
+public:
+    constexpr ImGui_backend() noexcept = default;
+
+    constexpr explicit ImGui_backend(bool initialized) noexcept
+        : m_initialized {initialized}
+    {
+    }
+
+    constexpr ImGui_backend(ImGui_backend &&rhs) noexcept
+    {
+        swap(rhs);
+    }
+
+    ImGui_backend &operator=(ImGui_backend &&rhs) noexcept
+    {
+        ImGui_backend temp(std::move(rhs));
+        swap(temp);
+        return *this;
+    }
+
+    ImGui_backend(const ImGui_backend &) = delete;
+    ImGui_backend &operator=(const ImGui_backend &) = delete;
+
+    ~ImGui_backend() noexcept;
+
+    constexpr void swap(ImGui_backend &rhs) noexcept
+    {
+        std::swap(m_initialized, rhs.m_initialized);
+    }
+
+private:
+    bool m_initialized {};
+};
+
 struct Vulkan_image
 {
     std::uint32_t width;
@@ -178,7 +214,8 @@ struct Vulkan_context
     std::array<vk::UniqueFence, frames_in_flight> in_flight_fences;
     std::uint32_t current_frame_in_flight;
     std::uint32_t global_frame_count;
-    bool imgui_initialized;
+
+    ImGui_backend imgui_backend;
 };
 
 struct Vulkan_render_resources
@@ -211,8 +248,6 @@ struct Vulkan_render_resources
 };
 
 [[nodiscard]] Vulkan_context create_context(struct GLFWwindow *window);
-
-void destroy_context(Vulkan_context &context);
 
 [[nodiscard]] Vulkan_render_resources
 create_render_resources(const Vulkan_context &context,
