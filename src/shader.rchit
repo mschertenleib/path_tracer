@@ -75,6 +75,7 @@ void main()
     const vec3 world_position = gl_ObjectToWorldEXT * vec4(object_position, 1.0);
 
     const vec3 object_normal = cross(v1 - v0, v2 - v0);
+    // TODO: properly understand this
     // Use the transpose of the inverse matrix for the transformation, because
     // normals are directions, not positions.
     vec3 world_normal = normalize((object_normal * gl_WorldToObjectEXT).xyz);
@@ -83,23 +84,8 @@ void main()
     uint rng_state = payload.rng_state;
 
     payload.ray_origin = offset_position_along_normal(world_position, world_normal);
-    if (gl_PrimitiveID >= 22 && gl_PrimitiveID <= 31)
-    {
-        payload.ray_direction = reflect_specular(world_normal, rng_state);
-        payload.color = vec3(0.75);
-    }
-    else
-    {
-        payload.ray_direction = reflect_diffuse(world_normal, rng_state);
-        payload.color = (world_normal + vec3(1.0)) * 0.5;
-    }
-    if (gl_PrimitiveID == 2 || gl_PrimitiveID == 3)
-    {
-        payload.emissivity = vec3(12.0);
-    }
-    else
-    {
-        payload.emissivity = vec3(0.0);
-    }
+    payload.ray_direction = reflect_diffuse(world_normal, rng_state);
+    payload.color = (world_normal + vec3(1.0)) * 0.5;
+    payload.emissivity = vec3(0.0);
     payload.hit_sky = false;
 }
