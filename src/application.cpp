@@ -427,6 +427,11 @@ void run(const char *file_name)
 
     state.imgui_context.reset(imgui_init(state.window.get()));
 
+    // TODO: right now, we first create the window then try creating the Vulkan
+    // context, but if we fail to create the context, the window will just flash
+    // and close immediately. It would be best to first create the Vulkan
+    // instance and device, and only then create the window (which we will need
+    // for creating the surface).
     state.context = create_context(state.window.get());
 
     if (file_name != nullptr)
@@ -452,5 +457,7 @@ void run(const char *file_name)
         draw_frame(state.context, state.render_resources, state.camera);
     }
 
+    // FIXME: find the best way to handle this to be as exception safe as
+    // possible, though that might not be actually possible...
     wait_idle(state.context);
 }

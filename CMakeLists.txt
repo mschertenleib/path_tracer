@@ -86,6 +86,7 @@ set(ASSIMP_BUILD_TESTS OFF)
 set(ASSIMP_WARNINGS_AS_ERRORS OFF)
 set(ASSIMP_INSTALL OFF)
 set(ASSIMP_BUILD_ASSIMP_VIEW OFF)
+# TODO: we should probably disable some importer formats that we could never load anyway
 CPMAddPackage(
         GITHUB_REPOSITORY assimp/assimp
         GIT_TAG v5.3.1
@@ -133,6 +134,8 @@ target_link_libraries(path_tracer PRIVATE
         assimp
         tinyfiledialogs
 )
+# TODO: check that this actually works in all cases ? It seems like we might
+# have to build twice for the copy to take effect in some cases
 add_custom_command(TARGET path_tracer POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:assimp> $<TARGET_FILE_DIR:path_tracer>
 )

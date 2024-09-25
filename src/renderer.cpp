@@ -629,7 +629,12 @@ void create_swapchain(Vulkan_context &context)
 
 void create_descriptor_pool(Vulkan_context &context)
 {
-    // FIXME
+    // FIXME: ImGui actually only needs a single combined image sampler, so just
+    // count however many samplers/buffers we need in our ray tracing shaders
+    // Actually, that probably means we have to create a specific descriptor
+    // pool for ray tracing render resources, since we might not know the number
+    // of textures in the scene (or is there a maximum ? Maybe we could use
+    // image arrays for many HDR texture cases)
     constexpr vk::DescriptorPoolSize pool_sizes[] {
         {vk::DescriptorType::eSampler, 1000},
         {vk::DescriptorType::eCombinedImageSampler, 1000},
@@ -1741,7 +1746,7 @@ void draw_frame(Vulkan_context &context,
         // FIXME: We want to
         // continue tracing when the window is minimized, just not draw to the
         // framebuffer. But this requires a better separation of the tracing vs
-        // drawing code.
+        // drawing code. And this separation would probably be best anyways.
         return;
     }
 
@@ -1999,6 +2004,9 @@ void draw_frame(Vulkan_context &context,
         result == vk::Result::eSuboptimalKHR || context.framebuffer_resized)
     {
         context.framebuffer_resized = false;
+        // FIXME: we should really understand the difference between this and
+        // the former call to recreate_swapchain at the beginning of this
+        // function
         recreate_swapchain(context);
     }
     else
