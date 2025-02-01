@@ -32,6 +32,8 @@ struct Push_constants
     vec3 camera_dir_x;
     vec3 camera_dir_y;
     vec3 camera_dir_z;
+    float focus_distance;
+    float aperture_radius;
 };
 static_assert(sizeof(Push_constants) <= 128);
 
@@ -117,12 +119,11 @@ void create_instance(Vulkan_context &context)
     const auto layer_properties = vk::enumerateInstanceLayerProperties();
 
     constexpr auto layer_name = "VK_LAYER_KHRONOS_validation";
-    if (std::none_of(layer_properties.begin(),
-                     layer_properties.end(),
-                     [layer_name](const vk::LayerProperties &properties) {
-                         return std::strcmp(properties.layerName, layer_name) ==
-                                0;
-                     }))
+    if (std::none_of(
+            layer_properties.begin(),
+            layer_properties.end(),
+            [layer_name](const vk::LayerProperties &properties)
+            { return std::strcmp(properties.layerName, layer_name) == 0; }))
     {
         std::ostringstream message;
         message << layer_name << " is not supported\n";
@@ -158,7 +159,8 @@ void create_instance(Vulkan_context &context)
         if (std::none_of(
                 extension_properties.begin(),
                 extension_properties.end(),
-                [extension_name](const vk::ExtensionProperties &properties) {
+                [extension_name](const vk::ExtensionProperties &properties)
+                {
                     return std::strcmp(properties.extensionName,
                                        extension_name) == 0;
                 }))
@@ -309,7 +311,8 @@ void get_queue_family_indices(
         if (std::none_of(
                 extension_properties.begin(),
                 extension_properties.end(),
-                [extension_name](const vk::ExtensionProperties &properties) {
+                [extension_name](const vk::ExtensionProperties &properties)
+                {
                     return std::strcmp(properties.extensionName,
                                        extension_name) == 0;
                 }))
@@ -1848,7 +1851,9 @@ void draw_frame(Vulkan_context &context,
                 .camera_position = camera.position,
                 .camera_dir_x = camera.direction_x,
                 .camera_dir_y = camera.direction_y,
-                .camera_dir_z = camera.direction_z};
+                .camera_dir_z = camera.direction_z,
+                .focus_distance = camera.focus_distance,
+                .aperture_radius = camera.aperture_radius};
 
             command_buffer.pushConstants(
                 render_resources.ray_tracing_pipeline_layout.get(),

@@ -382,11 +382,13 @@ void make_ui(Application_state &state)
             state.render_resources.samples_per_frame =
                 static_cast<std::uint32_t>(std::max(samples_per_frame, 1));
 
+            bool need_to_reset {false};
+
             if (ImGui::Button("Reset render") ||
                 state.render_resources.samples_to_render <
                     state.render_resources.sample_count)
             {
-                reset_render(state.render_resources);
+                need_to_reset = true;
             }
 
             ImGui::SeparatorText("Orbital Camera");
@@ -398,18 +400,39 @@ void make_ui(Application_state &state)
                                    10.0f * initial_camera_distance))
             {
                 orbital_camera_set_distance(state.camera, camera_distance);
-                reset_render(state.render_resources);
+                need_to_reset = true;
             }
             static float camera_yaw {state.camera.yaw};
             if (ImGui::SliderAngle("Yaw", &camera_yaw))
             {
                 orbital_camera_set_yaw(state.camera, camera_yaw);
-                reset_render(state.render_resources);
+                need_to_reset = true;
             }
             static float camera_pitch {state.camera.pitch};
             if (ImGui::SliderAngle("Pitch", &camera_pitch, -90.0f, 90.0f))
             {
                 orbital_camera_set_pitch(state.camera, camera_pitch);
+                need_to_reset = true;
+            }
+
+            ImGui::SeparatorText("Orbital Camera");
+            if (ImGui::SliderFloat("Focus distance",
+                                   &state.camera.focus_distance,
+                                   0.001f,
+                                   10.0f * initial_camera_distance))
+            {
+                need_to_reset = true;
+            }
+            if (ImGui::SliderFloat("Aperture radius",
+                                   &state.camera.aperture_radius,
+                                   0.0f,
+                                   0.3f * initial_camera_distance))
+            {
+                need_to_reset = true;
+            }
+
+            if (need_to_reset)
+            {
                 reset_render(state.render_resources);
             }
         }

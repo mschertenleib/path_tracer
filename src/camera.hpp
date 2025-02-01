@@ -15,6 +15,8 @@ struct Camera
     vec3 direction_z; // z points into the scene
     float yaw;
     float pitch;
+    float focus_distance;
+    float aperture_radius;
 };
 
 // (target - position) and world_up must not be colinear

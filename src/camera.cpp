@@ -56,6 +56,9 @@ Camera create_camera(const vec3 &position,
         std::atan2(camera.direction_z.y,
                    std::hypot(camera.direction_z.x, camera.direction_z.z));
 
+    camera.focus_distance = camera.distance;
+    camera.aperture_radius = 0.0f;
+
     return camera;
 }
 

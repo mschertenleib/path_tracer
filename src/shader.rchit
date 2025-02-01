@@ -19,12 +19,12 @@ layout (location = 0) rayPayloadInEXT Ray_payload payload;
 
 hitAttributeEXT vec2 attributes;
 
+
 // This uses an improved technique by Carsten Wächter and
 // Nikolaus Binder from "A Fast and Robust Method for Avoiding
 // Self-Intersection" from Ray Tracing Gems (version 1.7, 2020).
 // The normal can be negated if one wants the ray to pass through
 // the surface instead.
-// Source: https://nvpro-samples.github.io/vk_mini_path_tracer/extras.html#raytracingpipelines
 vec3 offset_position_along_normal(vec3 world_position, vec3 normal)
 {
     // Convert the normal to an integer offset.
