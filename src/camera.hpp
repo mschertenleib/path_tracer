@@ -63,10 +63,6 @@ invert_rigid_transform(const mat4x4 &matrix) noexcept
                                    float sensor_width,
                                    float sensor_height);
 
-void orbital_camera_set_yaw(Camera &camera, float yaw);
-
-void orbital_camera_set_pitch(Camera &camera, float pitch);
-
-void orbital_camera_set_distance(Camera &camera, float distance);
+void camera_set_distance(Camera &camera, float distance);
 
 #endif // CAMERA_HPP

@@ -249,7 +249,7 @@ void make_centered_image(ImTextureID texture_id, float aspect_ratio)
     }
 }
 
-void make_ui(Application_state &state)
+void do_ui(Application_state &state)
 {
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 
@@ -349,6 +349,7 @@ void make_ui(Application_state &state)
             const auto old_view = invert_rigid_transform(old_inverse_view);
             view = old_view;
 
+            // FIXME: shouldn't we call the other version of ViewManipulate?
             ImGuizmo::ViewManipulate(
                 &view.m[0][0],
                 state.camera.distance,
@@ -418,7 +419,7 @@ void make_ui(Application_state &state)
                 need_to_reset = true;
             }
 
-            ImGui::SeparatorText("Orbital Camera");
+            ImGui::SeparatorText("Camera");
             static const float initial_camera_distance {state.camera.distance};
             static float camera_distance {initial_camera_distance};
             if (ImGui::SliderFloat("Distance",
@@ -426,23 +427,9 @@ void make_ui(Application_state &state)
                                    0.0f,
                                    10.0f * initial_camera_distance))
             {
-                orbital_camera_set_distance(state.camera, camera_distance);
+                camera_set_distance(state.camera, camera_distance);
                 need_to_reset = true;
             }
-            static float camera_yaw {state.camera.yaw};
-            if (ImGui::SliderAngle("Yaw", &camera_yaw))
-            {
-                orbital_camera_set_yaw(state.camera, camera_yaw);
-                need_to_reset = true;
-            }
-            static float camera_pitch {state.camera.pitch};
-            if (ImGui::SliderAngle("Pitch", &camera_pitch, -90.0f, 90.0f))
-            {
-                orbital_camera_set_pitch(state.camera, camera_pitch);
-                need_to_reset = true;
-            }
-
-            ImGui::SeparatorText("Defocus blur");
             if (ImGui::SliderFloat("Focus distance",
                                    &state.camera.focus_distance,
                                    0.001f,
@@ -462,17 +449,17 @@ void make_ui(Application_state &state)
             const auto dx = normalize(state.camera.direction_x);
             const auto dy = normalize(state.camera.direction_y);
             const auto dz = normalize(state.camera.direction_z);
-            ImGui::Text("X: %6.2f %6.2f %6.2f norm=%6.2f",
+            ImGui::Text("X: %6.2f %6.2f %6.2f   norm: %6.2f",
                         static_cast<double>(dx.x),
                         static_cast<double>(dx.y),
                         static_cast<double>(dx.z),
                         static_cast<double>(norm(state.camera.direction_x)));
-            ImGui::Text("Y: %6.2f %6.2f %6.2f norm=%6.2f",
+            ImGui::Text("Y: %6.2f %6.2f %6.2f   norm: %6.2f",
                         static_cast<double>(dy.x),
                         static_cast<double>(dy.y),
                         static_cast<double>(dy.z),
                         static_cast<double>(norm(state.camera.direction_y)));
-            ImGui::Text("Z: %6.2f %6.2f %6.2f norm=%6.2f",
+            ImGui::Text("Z: %6.2f %6.2f %6.2f   norm: %6.2f",
                         static_cast<double>(dz.x),
                         static_cast<double>(dz.y),
                         static_cast<double>(dz.z),
@@ -568,7 +555,7 @@ void run(const char *file_name)
         ImGui::NewFrame();
         ImGuizmo::BeginFrame();
 
-        make_ui(state);
+        do_ui(state);
 
         ImGui::Render();
 
