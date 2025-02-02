@@ -328,26 +328,29 @@ void make_ui(Application_state &state)
                 return ImVec2 {128 * y_scale, 128 * y_scale};
             }();
 
-            float old_view[4][4] {};
+            float old_inverse_view[4][4] {};
             const auto vx = normalize(state.camera.direction_x);
             const auto vy = -normalize(state.camera.direction_y);
             const auto vz = -normalize(state.camera.direction_z);
-            old_view[0][0] = vx.x;
-            old_view[0][1] = vy.x;
-            old_view[0][2] = vz.x;
-            old_view[0][3] = 0.0f;
-            old_view[1][0] = vx.y;
-            old_view[1][1] = vy.y;
-            old_view[1][2] = vz.y;
-            old_view[1][3] = 0.0f;
-            old_view[2][0] = vx.z;
-            old_view[2][1] = vy.z;
-            old_view[2][2] = vz.z;
-            old_view[2][3] = 0.0f;
-            old_view[3][0] = -dot(vx, state.camera.position);
-            old_view[3][1] = -dot(vy, state.camera.position);
-            old_view[3][2] = -dot(vz, state.camera.position);
-            old_view[3][3] = 1.0f;
+            old_inverse_view[0][0] = vx.x;
+            old_inverse_view[0][1] = vx.y;
+            old_inverse_view[0][2] = vx.z;
+            old_inverse_view[0][3] = 0.0f;
+            old_inverse_view[1][0] = vy.x;
+            old_inverse_view[1][1] = vy.y;
+            old_inverse_view[1][2] = vy.z;
+            old_inverse_view[1][3] = 0.0f;
+            old_inverse_view[2][0] = vz.x;
+            old_inverse_view[2][1] = vz.y;
+            old_inverse_view[2][2] = vz.z;
+            old_inverse_view[2][3] = 0.0f;
+            old_inverse_view[3][0] = state.camera.position.x;
+            old_inverse_view[3][1] = state.camera.position.y;
+            old_inverse_view[3][2] = state.camera.position.z;
+            old_inverse_view[3][3] = 1.0f;
+
+            float old_view[4][4] {};
+            invert_transform(old_view, old_inverse_view);
 
             std::memcpy(&view[0][0], &old_view[0][0], sizeof(view));
 
@@ -364,31 +367,25 @@ void make_ui(Application_state &state)
                 need_to_reset = true;
             }
 
-            const auto unit_direction_x =
-                vec3 {view[0][0], view[1][0], view[2][0]};
-            const auto unit_direction_y =
-                vec3 {view[0][1], view[1][1], view[2][1]};
-            const auto unit_direction_z =
-                vec3 {view[0][2], view[1][2], view[2][2]};
-            const auto t = vec3 {view[3][0], view[3][1], view[3][2]};
-            new_position = vec3 {-dot(unit_direction_x, t),
-                                 -dot(unit_direction_y, t),
-                                 -dot(unit_direction_z, t)};
+            float inverse_view[4][4] {};
+            invert_transform(inverse_view, view);
+            const auto unit_direction_x = vec3 {
+                inverse_view[0][0], inverse_view[0][1], inverse_view[0][2]};
+            const auto unit_direction_y = vec3 {
+                inverse_view[1][0], inverse_view[1][1], inverse_view[1][2]};
+            const auto unit_direction_z = vec3 {
+                inverse_view[2][0], inverse_view[2][1], inverse_view[2][2]};
             new_direction_x = unit_direction_x * norm(state.camera.direction_x);
             new_direction_y =
                 -unit_direction_y * norm(state.camera.direction_y);
             new_direction_z =
                 -unit_direction_z * norm(state.camera.direction_z);
-
-            if (std::memcmp(&view[0][0], &old_view[0][0], sizeof(view)) != 0)
-            {
-                std::cout << state.camera.position.x << " -> " << new_position.x
-                          << '\n';
-                std::cout << state.camera.position.y << " -> " << new_position.y
-                          << '\n';
-                std::cout << state.camera.position.z << " -> " << new_position.z
-                          << '\n';
-            }
+            new_position = vec3 {
+                inverse_view[3][0], inverse_view[3][1], inverse_view[3][2]};
+            state.camera.direction_x = new_direction_x;
+            state.camera.direction_y = new_direction_y;
+            state.camera.direction_z = new_direction_z;
+            state.camera.position = new_position;
         }
         ImGui::End();
         ImGui::PopStyleColor();
@@ -467,36 +464,42 @@ void make_ui(Application_state &state)
             }
 
             ImGui::SeparatorText("Camera");
+            const auto dx = normalize(state.camera.direction_x);
+            const auto dy = normalize(state.camera.direction_y);
+            const auto dz = normalize(state.camera.direction_z);
             ImGui::Text("Direction X: %6.2f %6.2f %6.2f",
-                        static_cast<double>(state.camera.direction_x.x),
-                        static_cast<double>(state.camera.direction_x.y),
-                        static_cast<double>(state.camera.direction_x.z));
+                        static_cast<double>(dx.x),
+                        static_cast<double>(dx.y),
+                        static_cast<double>(dx.z));
             ImGui::Text("Direction Y: %6.2f %6.2f %6.2f",
-                        static_cast<double>(state.camera.direction_y.x),
-                        static_cast<double>(state.camera.direction_y.y),
-                        static_cast<double>(state.camera.direction_y.z));
+                        static_cast<double>(dy.x),
+                        static_cast<double>(dy.y),
+                        static_cast<double>(dy.z));
             ImGui::Text("Direction Z: %6.2f %6.2f %6.2f",
-                        static_cast<double>(state.camera.direction_z.x),
-                        static_cast<double>(state.camera.direction_z.y),
-                        static_cast<double>(state.camera.direction_z.z));
+                        static_cast<double>(dz.x),
+                        static_cast<double>(dz.y),
+                        static_cast<double>(dz.z));
             ImGui::Text("Position:    %6.2f %6.2f %6.2f",
                         static_cast<double>(state.camera.position.x),
                         static_cast<double>(state.camera.position.y),
                         static_cast<double>(state.camera.position.z));
 
             ImGui::SeparatorText("New camera");
+            const auto new_dx = normalize(new_direction_x);
+            const auto new_dy = normalize(new_direction_y);
+            const auto new_dz = normalize(new_direction_z);
             ImGui::Text("Direction X: %6.2f %6.2f %6.2f",
-                        static_cast<double>(new_direction_x.x),
-                        static_cast<double>(new_direction_x.y),
-                        static_cast<double>(new_direction_x.z));
+                        static_cast<double>(new_dx.x),
+                        static_cast<double>(new_dx.y),
+                        static_cast<double>(new_dx.z));
             ImGui::Text("Direction Y: %6.2f %6.2f %6.2f",
-                        static_cast<double>(new_direction_y.x),
-                        static_cast<double>(new_direction_y.y),
-                        static_cast<double>(new_direction_y.z));
+                        static_cast<double>(new_dy.x),
+                        static_cast<double>(new_dy.y),
+                        static_cast<double>(new_dy.z));
             ImGui::Text("Direction Z: %6.2f %6.2f %6.2f",
-                        static_cast<double>(new_direction_z.x),
-                        static_cast<double>(new_direction_z.y),
-                        static_cast<double>(new_direction_z.z));
+                        static_cast<double>(new_dz.x),
+                        static_cast<double>(new_dz.y),
+                        static_cast<double>(new_dz.z));
             ImGui::Text("Position:    %6.2f %6.2f %6.2f",
                         static_cast<double>(new_position.x),
                         static_cast<double>(new_position.y),
@@ -525,32 +528,7 @@ void make_ui(Application_state &state)
                         static_cast<double>(view[3][3]));
 
             float inverse_view[4][4] {};
-            inverse_view[0][0] = view[0][0];
-            inverse_view[0][1] = view[1][0];
-            inverse_view[0][2] = view[2][0];
-            inverse_view[0][3] = 0.0f;
-            inverse_view[1][0] = view[0][1];
-            inverse_view[1][1] = view[1][1];
-            inverse_view[1][2] = view[2][1];
-            inverse_view[1][3] = 0.0f;
-            inverse_view[2][0] = view[0][2];
-            inverse_view[2][1] = view[1][2];
-            inverse_view[2][2] = view[2][2];
-            inverse_view[2][3] = 0.0f;
-            const vec3 t {view[3][0], view[3][1], view[3][2]};
-            inverse_view[3][0] = -dot(vec3 {inverse_view[0][0],
-                                            inverse_view[1][0],
-                                            inverse_view[2][0]},
-                                      t);
-            inverse_view[3][1] = -dot(vec3 {inverse_view[0][1],
-                                            inverse_view[1][1],
-                                            inverse_view[2][1]},
-                                      t);
-            inverse_view[3][2] = -dot(vec3 {inverse_view[0][2],
-                                            inverse_view[1][2],
-                                            inverse_view[2][2]},
-                                      t);
-            inverse_view[3][3] = 1.0f;
+            invert_transform(inverse_view, view);
             ImGui::SeparatorText("Inverse view");
             ImGui::Text("%6.2f %6.2f %6.2f %6.2f",
                         static_cast<double>(inverse_view[0][0]),

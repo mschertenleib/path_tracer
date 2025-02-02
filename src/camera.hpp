@@ -17,6 +17,27 @@ struct Camera
     float aperture_radius;
 };
 
+constexpr void invert_transform(float dst[4][4], const float src[4][4]) noexcept
+{
+    dst[0][0] = src[0][0];
+    dst[0][1] = src[1][0];
+    dst[0][2] = src[2][0];
+    dst[0][3] = 0.0f;
+    dst[1][0] = src[0][1];
+    dst[1][1] = src[1][1];
+    dst[1][2] = src[2][1];
+    dst[1][3] = 0.0f;
+    dst[2][0] = src[0][2];
+    dst[2][1] = src[1][2];
+    dst[2][2] = src[2][2];
+    dst[2][3] = 0.0f;
+    const vec3 t {src[3][0], src[3][1], src[3][2]};
+    dst[3][0] = -dot(vec3 {dst[0][0], dst[1][0], dst[2][0]}, t);
+    dst[3][1] = -dot(vec3 {dst[0][1], dst[1][1], dst[2][1]}, t);
+    dst[3][2] = -dot(vec3 {dst[0][2], dst[1][2], dst[2][2]}, t);
+    dst[3][3] = 1.0f;
+}
+
 // (target - position) and world_up must not be colinear
 [[nodiscard]] Camera create_camera(const vec3 &position,
                                    const vec3 &target,
