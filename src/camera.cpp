@@ -44,26 +44,6 @@ Camera create_camera(const vec3 &position,
     camera.direction_y =
         normalize(cross(camera.direction_z, camera.direction_x));
 
-    const auto vx = camera.direction_x;
-    const auto vy = -camera.direction_y;
-    const auto vz = -camera.direction_z;
-    camera.view[0][0] = vx.x;
-    camera.view[0][1] = vy.x;
-    camera.view[0][2] = vz.x;
-    camera.view[0][3] = 0.0f;
-    camera.view[1][0] = vx.y;
-    camera.view[1][1] = vy.y;
-    camera.view[1][2] = vz.y;
-    camera.view[1][3] = 0.0f;
-    camera.view[2][0] = vx.z;
-    camera.view[2][1] = vy.z;
-    camera.view[2][2] = vz.z;
-    camera.view[2][3] = 0.0f;
-    camera.view[3][0] = -dot(vx, position);
-    camera.view[3][1] = -dot(vy, position);
-    camera.view[3][2] = -dot(vz, position);
-    camera.view[3][3] = 1.0f;
-
     camera.direction_z *= focal_length;
     camera.direction_x *= sensor_width * 0.5f;
     camera.direction_y *= sensor_height * 0.5f;

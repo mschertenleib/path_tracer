@@ -11,7 +11,6 @@ struct Camera
     vec3 direction_x; // x points to the right
     vec3 direction_y; // y points down
     vec3 direction_z; // z points forward
-    float view[4][4]; // OpenGL convention (right, up, back)
     float yaw;
     float pitch;
     float focus_distance;
