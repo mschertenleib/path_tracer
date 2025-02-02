@@ -23,32 +23,32 @@ hitAttributeEXT vec2 attributes;
 // This uses an improved technique by Carsten Wächter and
 // Nikolaus Binder from "A Fast and Robust Method for Avoiding
 // Self-Intersection" from Ray Tracing Gems (version 1.7, 2020).
-// The normal can be negated if one wants the ray to pass through
-// the surface instead.
-vec3 offset_position_along_normal(vec3 world_position, vec3 normal)
+vec3 offset_position_along_normal(vec3 position, vec3 normal)
 {
     // Convert the normal to an integer offset.
-    const ivec3 of_i = ivec3(256.0f * normal);
+    const ivec3 of_i = ivec3(256.0 * normal);
 
-    // Offset each component of worldPosition using its binary representation.
+    // Offset each component of position using its binary representation.
     // Handle the sign bits correctly.
     const vec3 p_i = vec3(
-        intBitsToFloat(floatBitsToInt(world_position.x) + ((world_position.x < 0) ? -of_i.x : of_i.x)),
-        intBitsToFloat(floatBitsToInt(world_position.y) + ((world_position.y < 0) ? -of_i.y : of_i.y)),
-        intBitsToFloat(floatBitsToInt(world_position.z) + ((world_position.z < 0) ? -of_i.z : of_i.z)));
+        intBitsToFloat(floatBitsToInt(position.x) + ((position.x < 0.0) ? -of_i.x : of_i.x)),
+        intBitsToFloat(floatBitsToInt(position.y) + ((position.y < 0.0) ? -of_i.y : of_i.y)),
+        intBitsToFloat(floatBitsToInt(position.z) + ((position.z < 0.0) ? -of_i.z : of_i.z)));
 
     // Use a floating-point offset instead for points near (0,0,0), the origin.
-    const float origin = 1.0f / 32.0f;
-    const float float_scale = 1.0f / 65536.0f;
+    const float origin = 1.0 / 32.0;
+    const float float_scale = 1.0 / 65536.0;
     return vec3(
-        abs(world_position.x) < origin ? world_position.x + float_scale * normal.x : p_i.x,
-        abs(world_position.y) < origin ? world_position.y + float_scale * normal.y : p_i.y,
-        abs(world_position.z) < origin ? world_position.z + float_scale * normal.z : p_i.z);
+        abs(position.x) < origin ? position.x + float_scale * normal.x : p_i.x,
+        abs(position.y) < origin ? position.y + float_scale * normal.y : p_i.y,
+        abs(position.z) < origin ? position.z + float_scale * normal.z : p_i.z);
 }
 
 vec3 reflect_diffuse(vec3 normal, inout uint rng_state)
 {
     // Random point on a unit sphere centered on the normal
+    // FIXME: check that the distribution is uniform on the sphere, else look at
+    // https://pbr-book.org/3ed-2018/Monte_Carlo_Integration/2D_Sampling_with_Multidimensional_Transformations
     const float theta = 2.0 * pi * random(rng_state);
     const float z = 2.0 * random(rng_state) - 1.0;
     const float r = sqrt(1.0 - z * z);

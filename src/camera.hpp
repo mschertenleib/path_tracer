@@ -5,14 +5,13 @@
 
 struct Camera
 {
-    float view[4][4];
-    float perspective[4][4];
     float distance;
     vec3 position;
     vec3 target;
     vec3 direction_x; // x points to the right
     vec3 direction_y; // y points down
-    vec3 direction_z; // z points into the scene
+    vec3 direction_z; // z points forward
+    float view[4][4]; // OpenGL convention (right, up, back)
     float yaw;
     float pitch;
     float focus_distance;

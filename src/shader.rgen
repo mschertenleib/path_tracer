@@ -107,7 +107,7 @@ void main()
     {
         const float u_offset = random(rng_state);
         const float v_offset = random(rng_state);
-        // u, v in [-1, 1]
+        // u, v in [-1, 1)
         const float u = 2.0 * (float(gl_LaunchIDEXT.x) + u_offset) / float(image_size.x) - 1.0;
         const float v = 2.0 * (float(gl_LaunchIDEXT.y) + v_offset) / float(image_size.y) - 1.0;
 

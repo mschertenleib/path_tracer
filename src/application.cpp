@@ -333,26 +333,76 @@ void make_ui(Application_state &state)
 
         if (ImGui::Begin("Gizmo values"))
         {
-            ImGui::Text("View: %6.2f %6.2f %6.2f %6.2f",
+            ImGui::Text("View:\n%6.2f %6.2f %6.2f %6.2f",
                         static_cast<double>(state.camera.view[0][0]),
                         static_cast<double>(state.camera.view[1][0]),
                         static_cast<double>(state.camera.view[2][0]),
                         static_cast<double>(state.camera.view[3][0]));
-            ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
+            ImGui::Text("%6.2f %6.2f %6.2f %6.2f",
                         static_cast<double>(state.camera.view[0][1]),
                         static_cast<double>(state.camera.view[1][1]),
                         static_cast<double>(state.camera.view[2][1]),
                         static_cast<double>(state.camera.view[3][1]));
-            ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
+            ImGui::Text("%6.2f %6.2f %6.2f %6.2f",
                         static_cast<double>(state.camera.view[0][2]),
                         static_cast<double>(state.camera.view[1][2]),
                         static_cast<double>(state.camera.view[2][2]),
                         static_cast<double>(state.camera.view[3][2]));
-            ImGui::Text("      %6.2f %6.2f %6.2f %6.2f",
+            ImGui::Text("%6.2f %6.2f %6.2f %6.2f",
                         static_cast<double>(state.camera.view[0][3]),
                         static_cast<double>(state.camera.view[1][3]),
                         static_cast<double>(state.camera.view[2][3]),
                         static_cast<double>(state.camera.view[3][3]));
+
+            float inverse_view[4][4] {};
+            inverse_view[0][0] = state.camera.view[0][0];
+            inverse_view[0][1] = state.camera.view[1][0];
+            inverse_view[0][2] = state.camera.view[2][0];
+            inverse_view[0][3] = 0.0f;
+            inverse_view[1][0] = state.camera.view[0][1];
+            inverse_view[1][1] = state.camera.view[1][1];
+            inverse_view[1][2] = state.camera.view[2][1];
+            inverse_view[1][3] = 0.0f;
+            inverse_view[2][0] = state.camera.view[0][2];
+            inverse_view[2][1] = state.camera.view[1][2];
+            inverse_view[2][2] = state.camera.view[2][2];
+            inverse_view[2][3] = 0.0f;
+            const vec3 t {state.camera.view[3][0],
+                          state.camera.view[3][1],
+                          state.camera.view[3][2]};
+            inverse_view[3][0] = -dot(vec3 {inverse_view[0][0],
+                                            inverse_view[1][0],
+                                            inverse_view[2][0]},
+                                      t);
+            inverse_view[3][1] = -dot(vec3 {inverse_view[0][1],
+                                            inverse_view[1][1],
+                                            inverse_view[2][1]},
+                                      t);
+            inverse_view[3][2] = -dot(vec3 {inverse_view[0][2],
+                                            inverse_view[1][2],
+                                            inverse_view[2][2]},
+                                      t);
+            inverse_view[3][3] = 1.0f;
+            ImGui::Text("Inverse view:\n%6.2f %6.2f %6.2f %6.2f",
+                        static_cast<double>(inverse_view[0][0]),
+                        static_cast<double>(inverse_view[1][0]),
+                        static_cast<double>(inverse_view[2][0]),
+                        static_cast<double>(inverse_view[3][0]));
+            ImGui::Text("%6.2f %6.2f %6.2f %6.2f",
+                        static_cast<double>(inverse_view[0][1]),
+                        static_cast<double>(inverse_view[1][1]),
+                        static_cast<double>(inverse_view[2][1]),
+                        static_cast<double>(inverse_view[3][1]));
+            ImGui::Text("%6.2f %6.2f %6.2f %6.2f",
+                        static_cast<double>(inverse_view[0][2]),
+                        static_cast<double>(inverse_view[1][2]),
+                        static_cast<double>(inverse_view[2][2]),
+                        static_cast<double>(inverse_view[3][2]));
+            ImGui::Text("%6.2f %6.2f %6.2f %6.2f",
+                        static_cast<double>(inverse_view[0][3]),
+                        static_cast<double>(inverse_view[1][3]),
+                        static_cast<double>(inverse_view[2][3]),
+                        static_cast<double>(inverse_view[3][3]));
         }
         ImGui::End();
     }
