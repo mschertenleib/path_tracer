@@ -8,6 +8,11 @@ struct vec3
     float x;
     float y;
     float z;
+
+    [[nodiscard]] constexpr bool
+    operator==(const vec3 &other) const noexcept = default;
+    [[nodiscard]] constexpr bool
+    operator!=(const vec3 &other) const noexcept = default;
 };
 
 [[nodiscard]] constexpr vec3 operator+(const vec3 &v) noexcept

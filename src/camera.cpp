@@ -5,11 +5,6 @@
 namespace
 {
 
-struct mat4x4
-{
-    float m[4][4];
-};
-
 [[nodiscard]] [[maybe_unused]] mat4x4
 make_perspective(float vertical_fov, float aspect, float z_near)
 {

@@ -15,7 +15,7 @@
 #include <vector>
 
 #ifndef NDEBUG
-// #define ENABLE_VALIDATION
+#define ENABLE_VALIDATION
 #endif
 
 class Unique_allocator
