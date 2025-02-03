@@ -32,6 +32,9 @@ struct Push_constants
     vec3 camera_dir_x;
     vec3 camera_dir_y;
     vec3 camera_dir_z;
+    float sensor_distance;
+    float sensor_half_width;
+    float sensor_half_height;
     float focus_distance;
     float aperture_radius;
 };
@@ -1852,6 +1855,9 @@ void draw_frame(Vulkan_context &context,
                 .camera_dir_x = camera.direction_x,
                 .camera_dir_y = camera.direction_y,
                 .camera_dir_z = camera.direction_z,
+                .sensor_distance = camera.sensor_distance,
+                .sensor_half_width = camera.sensor_half_width,
+                .sensor_half_height = camera.sensor_half_height,
                 .focus_distance = camera.focus_distance,
                 .aperture_radius = camera.aperture_radius};
 

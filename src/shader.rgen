@@ -29,6 +29,9 @@ layout (push_constant, scalar) uniform Push_constants
     vec3 camera_dir_x;
     vec3 camera_dir_y;
     vec3 camera_dir_z;
+    float sensor_distance;
+    float sensor_half_width;
+    float sensor_half_height;
     float focus_distance;
     float aperture_radius;
 } push;
@@ -112,10 +115,12 @@ void main()
         const float v = 2.0 * (float(gl_LaunchIDEXT.y) + v_offset) / float(image_size.y) - 1.0;
 
         const vec2 defocus = push.aperture_radius * sample_disk(rng_state);
-        const vec3 defocus_offset = normalize(push.camera_dir_x) * defocus.x + normalize(push.camera_dir_y) * defocus.y;
+        const vec3 defocus_offset = push.camera_dir_x * defocus.x + push.camera_dir_y * defocus.y;
         payload.ray_origin = push.camera_position + defocus_offset;
         payload.ray_direction = normalize(push.focus_distance *
-            (push.camera_dir_z + push.camera_dir_x * u + push.camera_dir_y * v)
+            (push.camera_dir_z * push.sensor_distance
+                + push.camera_dir_x * push.sensor_half_width * u
+                + push.camera_dir_y * push.sensor_half_height* v)
             - defocus_offset);
 
         pixel_accumulated_color += vec4(radiance(rng_state), 1.0);

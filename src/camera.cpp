@@ -5,7 +5,7 @@
 namespace
 {
 
-[[maybe_unused]] [[nodiscard]] mat4x4
+/*[[nodiscard]] mat4x4
 make_perspective(float vertical_fov, float aspect, float z_near)
 {
     const auto range = std::tan(vertical_fov * 0.5f) * z_near;
@@ -20,7 +20,7 @@ make_perspective(float vertical_fov, float aspect, float z_near)
     return perspective;
 }
 
-[[maybe_unused]] void orbital_camera_set_yaw(Camera &camera, float yaw)
+void orbital_camera_set_yaw(Camera &camera, float yaw)
 {
     const auto angle = yaw - camera.yaw;
     const auto cos_angle = std::cos(angle);
@@ -38,7 +38,7 @@ make_perspective(float vertical_fov, float aspect, float z_near)
     camera.yaw = yaw;
 }
 
-[[maybe_unused]] void orbital_camera_set_pitch(Camera &camera, float pitch)
+void orbital_camera_set_pitch(Camera &camera, float pitch)
 {
     const auto angle = pitch - camera.pitch;
     const auto cos_angle = std::cos(angle);
@@ -58,15 +58,15 @@ make_perspective(float vertical_fov, float aspect, float z_near)
     camera.position =
         camera.target - camera.distance * normalize(camera.direction_z);
     camera.pitch = pitch;
-}
+}*/
 
 } // namespace
 
 Camera create_camera(const vec3 &position,
                      const vec3 &target,
-                     float focal_length,
-                     float sensor_width,
-                     float sensor_height)
+                     float sensor_distance,
+                     float sensor_half_width,
+                     float sensor_half_height)
 {
     constexpr vec3 world_up {0.0f, 1.0f, 0.0f};
 
@@ -79,15 +79,9 @@ Camera create_camera(const vec3 &position,
     camera.direction_y =
         normalize(cross(camera.direction_z, camera.direction_x));
 
-    camera.direction_z *= focal_length;
-    camera.direction_x *= sensor_width * 0.5f;
-    camera.direction_y *= sensor_height * 0.5f;
-
-    // FIXME: this assumes world Y is up
-    camera.yaw = std::atan2(-camera.direction_z.z, camera.direction_z.x);
-    camera.pitch =
-        std::atan2(camera.direction_z.y,
-                   std::hypot(camera.direction_z.x, camera.direction_z.z));
+    camera.sensor_distance = sensor_distance;
+    camera.sensor_half_width = sensor_half_width;
+    camera.sensor_half_height = sensor_half_height;
 
     camera.focus_distance = camera.distance;
     camera.aperture_radius = 0.0f;

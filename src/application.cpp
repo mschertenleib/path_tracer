@@ -167,12 +167,15 @@ void open_scene(Application_state &state, const char *file_name)
     const auto vertical_fov = 45.0f / 180.0f * std::numbers::pi_v<float>;
     const auto aspect_ratio = static_cast<float>(state.render_width) /
                               static_cast<float>(state.render_height);
-    const float focal_length {1.0f};
-    const auto sensor_height =
-        2.0f * std::tan(vertical_fov * 0.5f) * focal_length;
-    const auto sensor_width = aspect_ratio * sensor_height;
-    state.camera = create_camera(
-        position, target, focal_length, sensor_width, sensor_height);
+    const float sensor_distance {1.0f};
+    const auto sensor_half_height =
+        std::tan(vertical_fov * 0.5f) * sensor_distance;
+    const auto sensor_half_width = aspect_ratio * sensor_half_height;
+    state.camera = create_camera(position,
+                                 target,
+                                 sensor_distance,
+                                 sensor_half_width,
+                                 sensor_half_height);
 
     wait_idle(state.context);
 
@@ -326,9 +329,9 @@ void do_ui(Application_state &state)
             }();
 
             mat4x4 old_inverse_view {};
-            const auto vx = normalize(state.camera.direction_x);
-            const auto vy = -normalize(state.camera.direction_y);
-            const auto vz = -normalize(state.camera.direction_z);
+            const auto vx = state.camera.direction_x;
+            const auto vy = -state.camera.direction_y;
+            const auto vz = -state.camera.direction_z;
             old_inverse_view.m[0][0] = vx.x;
             old_inverse_view.m[0][1] = vx.y;
             old_inverse_view.m[0][2] = vx.z;
@@ -364,15 +367,18 @@ void do_ui(Application_state &state)
             }
 
             inverse_view = invert_rigid_transform(view);
-            const auto unit_direction_x = vec3 {inverse_view.m[0][0],
-                                                inverse_view.m[0][1],
-                                                inverse_view.m[0][2]};
-            const auto unit_direction_y = vec3 {inverse_view.m[1][0],
-                                                inverse_view.m[1][1],
-                                                inverse_view.m[1][2]};
-            const auto unit_direction_z = vec3 {inverse_view.m[2][0],
-                                                inverse_view.m[2][1],
-                                                inverse_view.m[2][2]};
+            const auto unit_direction_x =
+                normalize(vec3 {inverse_view.m[0][0],
+                                inverse_view.m[0][1],
+                                inverse_view.m[0][2]});
+            const auto unit_direction_y =
+                normalize(vec3 {inverse_view.m[1][0],
+                                inverse_view.m[1][1],
+                                inverse_view.m[1][2]});
+            const auto unit_direction_z =
+                normalize(vec3 {inverse_view.m[2][0],
+                                inverse_view.m[2][1],
+                                inverse_view.m[2][2]});
             state.camera.direction_x =
                 unit_direction_x * norm(state.camera.direction_x);
             state.camera.direction_y =

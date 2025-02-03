@@ -11,8 +11,9 @@ struct Camera
     vec3 direction_x; // x points to the right
     vec3 direction_y; // y points down
     vec3 direction_z; // z points forward
-    float yaw;
-    float pitch;
+    float sensor_distance;
+    float sensor_half_width;
+    float sensor_half_height;
     float focus_distance;
     float aperture_radius;
 };
@@ -59,9 +60,9 @@ invert_rigid_transform(const mat4x4 &matrix) noexcept
 // (target - position) and world_up must not be colinear
 [[nodiscard]] Camera create_camera(const vec3 &position,
                                    const vec3 &target,
-                                   float focal_length,
-                                   float sensor_width,
-                                   float sensor_height);
+                                   float sensor_distance,
+                                   float sensor_half_width,
+                                   float sensor_half_height);
 
 void camera_set_distance(Camera &camera, float distance);
 
