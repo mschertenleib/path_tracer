@@ -33,10 +33,10 @@ be required from a performance/memory point of view if we want to render large
 scenes with lots of objects.
 
 The [Cornell Box](http://www.graphics.cornell.edu/online/box):
-![](images/cornell_box.png)
+![cornell_box.png](data/cornell_box.png)
 
 A metallic [Stanford dragon](https://graphics.stanford.edu/data/3Dscanrep/):
-![](images/dragon.png)
+![dragon.png](data/dragon.png)
 
 ## Build
 
