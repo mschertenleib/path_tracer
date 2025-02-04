@@ -84,11 +84,19 @@ vec3 radiance(inout uint rng_state)
     return accumulated_color;
 }
 
+// Normal distribution with zero mean and unit standard deviation
+vec2 sample_normal(inout uint rng_state)
+{
+  const float r = sqrt(-2.0 * log(max(1e-38, random(rng_state))));
+  const float theta = 2.0 * pi * random(rng_state);
+  return r * vec2(cos(theta), sin(theta));
+}
+
 vec2 sample_disk(inout uint rng_state)
 {
     const float r = sqrt(random(rng_state));
     const float theta = 2.0 * pi * random(rng_state);
-    return vec2(r * cos(theta), r * sin(theta));
+    return r * vec2(cos(theta), sin(theta));
 }
 
 void main()
@@ -108,19 +116,17 @@ void main()
 
     for (uint s = 0; s < push.samples_per_frame; ++s)
     {
-        const float u_offset = random(rng_state);
-        const float v_offset = random(rng_state);
-        // u, v in [-1, 1)
-        const float u = 2.0 * (float(gl_LaunchIDEXT.x) + u_offset) / float(image_size.x) - 1.0;
-        const float v = 2.0 * (float(gl_LaunchIDEXT.y) + v_offset) / float(image_size.y) - 1.0;
+        const vec2 offset = vec2(0.5) + 0.375 * sample_normal(rng_state);
+        // uv in [-1, 1]
+        const vec2 uv = 2.0 * (vec2(gl_LaunchIDEXT.xy) + offset) / vec2(image_size) - vec2(1.0);
 
         const vec2 defocus = push.aperture_radius * sample_disk(rng_state);
         const vec3 defocus_offset = push.camera_dir_x * defocus.x + push.camera_dir_y * defocus.y;
         payload.ray_origin = push.camera_position + defocus_offset;
         payload.ray_direction = normalize(push.focus_distance *
             (push.camera_dir_z * push.sensor_distance
-                + push.camera_dir_x * push.sensor_half_width * u
-                + push.camera_dir_y * push.sensor_half_height* v)
+                + push.camera_dir_x * push.sensor_half_width * uv.x
+                + push.camera_dir_y * push.sensor_half_height * uv.y)
             - defocus_offset);
 
         pixel_accumulated_color += vec4(radiance(rng_state), 1.0);
