@@ -43,6 +43,32 @@ float max_component(vec3 v)
     return v.x > v.y && v.x > v.z ? v.x : v.y > v.z ? v.y : v.z;
 }
 
+uint hash(uint x)
+{
+    x += x << 10;
+    x ^= x >> 6;
+    x += x << 3;
+    x ^= x >> 11;
+    x += x << 15;
+    return x;
+}
+
+// Normal distribution with zero mean and unit standard deviation
+vec2 sample_gaussian(inout uint rng_state)
+{
+    const float float_min = 1.175494351e-38;
+    const float r = sqrt(-2.0 * log(max(float_min, random(rng_state))));
+    const float theta = 2.0 * pi * random(rng_state);
+    return r * vec2(cos(theta), sin(theta));
+}
+
+vec2 sample_disk(inout uint rng_state)
+{
+    const float r = sqrt(random(rng_state));
+    const float theta = 2.0 * pi * random(rng_state);
+    return r * vec2(cos(theta), sin(theta));
+}
+
 vec3 radiance(inout uint rng_state)
 {
     vec3 accumulated_color = vec3(0.0);
@@ -84,21 +110,6 @@ vec3 radiance(inout uint rng_state)
     return accumulated_color;
 }
 
-// Normal distribution with zero mean and unit standard deviation
-vec2 sample_normal(inout uint rng_state)
-{
-  const float r = sqrt(-2.0 * log(max(1e-38, random(rng_state))));
-  const float theta = 2.0 * pi * random(rng_state);
-  return r * vec2(cos(theta), sin(theta));
-}
-
-vec2 sample_disk(inout uint rng_state)
-{
-    const float r = sqrt(random(rng_state));
-    const float theta = 2.0 * pi * random(rng_state);
-    return r * vec2(cos(theta), sin(theta));
-}
-
 void main()
 {
     const uvec2 image_size = imageSize(storage_image);
@@ -116,8 +127,7 @@ void main()
 
     for (uint s = 0; s < push.samples_per_frame; ++s)
     {
-        const vec2 offset = vec2(0.5) + 0.375 * sample_normal(rng_state);
-        // uv in [-1, 1]
+        const vec2 offset = vec2(0.5) + 0.375 * sample_gaussian(rng_state);
         const vec2 uv = 2.0 * (vec2(gl_LaunchIDEXT.xy) + offset) / vec2(image_size) - vec2(1.0);
 
         const vec2 defocus = push.aperture_radius * sample_disk(rng_state);
@@ -133,6 +143,17 @@ void main()
     }
 
     vec4 average_color = imageLoad(storage_image, ivec2(gl_LaunchIDEXT.xy));
-    average_color = (average_color * push.sample_count + pixel_accumulated_color) / (push.sample_count + push.samples_per_frame);
+    // NOTE: if the image is uninitialized, it might contain NaNs which will propagate.
+    // So we must explicitely handle the first sample.
+    // TODO: it is probably better to clear the image to zero when creating it, and then always
+    // load the old value even if we will end up multiplying it by zero on a render reset.
+    if (push.sample_count > 0)
+    {
+        average_color = (average_color * push.sample_count + pixel_accumulated_color) / (push.sample_count + push.samples_per_frame);
+    }
+    else
+    {
+        average_color = pixel_accumulated_color / push.samples_per_frame;    
+    }
     imageStore(storage_image, ivec2(gl_LaunchIDEXT.xy), average_color);
 }

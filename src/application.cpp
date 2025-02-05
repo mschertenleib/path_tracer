@@ -142,6 +142,7 @@ void open_scene(Application_state &state, const char *file_name)
 
     const auto *const scene = importer.ReadFile(
         file_name,
+        // FIXME: we probably want additional flags
         aiProcess_Triangulate | aiProcess_PreTransformVertices |
             aiProcess_GenBoundingBoxes | aiProcess_JoinIdenticalVertices |
             aiProcess_SortByPType);

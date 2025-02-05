@@ -67,6 +67,7 @@ cmake --build build --target path_tracer
 ## References
 
 - [vk_mini_path_tracer](https://github.com/nvpro-samples/vk_mini_path_tracer)
+- [NVIDIA Vulkan Ray Tracing Tutorial](https://nvpro-samples.github.io/vk_raytracing_tutorial_KHR/)
 - [smallpt](http://www.kevinbeason.com/smallpt)
 - [_Ray Tracing in One
   Weekend_](https://raytracing.github.io/books/RayTracingInOneWeekend.html)

@@ -44,16 +44,17 @@ vec3 offset_position_along_normal(vec3 position, vec3 normal)
         abs(position.z) < origin ? position.z + float_scale * normal.z : p_i.z);
 }
 
-vec3 reflect_diffuse(vec3 normal, inout uint rng_state)
+vec3 sample_sphere(inout uint rng_state)
 {
-    // Random point on a unit sphere centered on the normal
-    // FIXME: check that the distribution is uniform on the sphere, else look at
-    // https://pbr-book.org/3ed-2018/Monte_Carlo_Integration/2D_Sampling_with_Multidimensional_Transformations
     const float theta = 2.0 * pi * random(rng_state);
     const float z = 2.0 * random(rng_state) - 1.0;
     const float r = sqrt(1.0 - z * z);
-    const vec3 direction = normal + vec3(r * cos(theta), r * sin(theta), z);
-    return normalize(direction);
+    return vec3(r * cos(theta), r * sin(theta), z);
+}
+
+vec3 reflect_diffuse(vec3 normal, inout uint rng_state)
+{
+    return normalize(normal + sample_sphere(rng_state));
 }
 
 vec3 reflect_specular(vec3 normal, inout uint rng_state)
@@ -81,10 +82,8 @@ void main()
     vec3 world_normal = normalize((object_normal * gl_WorldToObjectEXT).xyz);
     world_normal = faceforward(world_normal, gl_WorldRayDirectionEXT, world_normal);
 
-    uint rng_state = payload.rng_state;
-
     payload.ray_origin = offset_position_along_normal(world_position, world_normal);
-    payload.ray_direction = reflect_diffuse(world_normal, rng_state);
+    payload.ray_direction = reflect_diffuse(world_normal, payload.rng_state);
     payload.color = (world_normal + vec3(1.0)) * 0.5;
     payload.emissivity = vec3(0.0);
     payload.hit_sky = false;

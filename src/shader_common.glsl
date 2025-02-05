@@ -11,21 +11,12 @@ struct Ray_payload
     bool hit_sky;
 };
 
-uint hash(uint x)
-{
-    x += x << 10;
-    x ^= x >> 6;
-    x += x << 3;
-    x ^= x >> 11;
-    x += x << 15;
-    return x;
-}
-
 float random(inout uint rng_state)
 {
-    // Uniform distribution in [0.0, 1.0]
     rng_state ^= rng_state << 13;
     rng_state ^= rng_state >> 17;
     rng_state ^= rng_state << 5;
-    return float(rng_state) * (1.0 / 4294967295.0);
+    // NOTE: due to rounding when converting to float,
+    // this can still return 1.0.
+    return float(rng_state) * (1.0 / 4294967296.0);
 }

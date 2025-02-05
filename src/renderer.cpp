@@ -960,6 +960,11 @@ create_buffer_from_host_data(const Vulkan_context &context,
                              const void *data,
                              std::size_t size)
 {
+    // TODO: is this ever called with memory_usage other than
+    // VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE ? If it isn't, we should probably
+    // remove that parameter. If it is, then we can probably remove the staging
+    // buffer when the buffer is created in CPU memory anyways.
+
     VmaAllocationInfo staging_allocation_info {};
     const auto staging_buffer =
         create_buffer(context.allocator.get(),
@@ -1130,19 +1135,27 @@ void create_blas(const Vulkan_context &context,
 void create_tlas(const Vulkan_context &context,
                  Vulkan_render_resources &render_resources)
 {
-    const vk::TransformMatrixKHR transform {
-        .matrix = std::array {std::array {1.0f, 0.0f, 0.0f, 0.0f},
-                              std::array {0.0f, 1.0f, 0.0f, 0.0f},
-                              std::array {0.0f, 0.0f, 1.0f, 0.0f}}};
+    const std::vector<vk::TransformMatrixKHR> transforms {
+        {std::array {std::array {1.0f, 0.0f, 0.0f, -1.0f},
+                     std::array {0.0f, 1.0f, 0.0f, 0.0f},
+                     std::array {0.0f, 0.0f, 1.0f, 0.0f}}},
+        {std::array {std::array {0.7f, 0.0f, 0.0f, 1.0f},
+                     std::array {0.0f, 0.7f, 0.0f, 0.0f},
+                     std::array {0.0f, 0.0f, 0.7f, 0.0f}}}};
 
-    const vk::AccelerationStructureInstanceKHR as_instance {
-        .transform = transform,
-        .instanceCustomIndex = 0,
-        .mask = 0xFF,
-        .instanceShaderBindingTableRecordOffset = 0,
-        .flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
-        .accelerationStructureReference = get_device_address(
-            context.device.get(), render_resources.blas.get())};
+    std::vector<vk::AccelerationStructureInstanceKHR> instances;
+    instances.reserve(transforms.size());
+    for (const auto &transform : transforms)
+    {
+        instances.push_back(
+            {.transform = transform,
+             .instanceCustomIndex = 0,
+             .mask = 0xFF,
+             .instanceShaderBindingTableRecordOffset = 0,
+             .flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
+             .accelerationStructureReference = get_device_address(
+                 context.device.get(), render_resources.blas.get())});
+    }
 
     const auto instance_buffer = create_buffer_from_host_data(
         context,
@@ -1150,8 +1163,8 @@ void create_tlas(const Vulkan_context &context,
             vk::BufferUsageFlagBits::eShaderDeviceAddress |
             vk::BufferUsageFlagBits::eTransferDst,
         VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-        &as_instance,
-        sizeof(VkAccelerationStructureInstanceKHR));
+        instances.data(),
+        instances.size() * sizeof(vk::AccelerationStructureInstanceKHR));
 
     const auto command_buffer = begin_one_time_submit_command_buffer(context);
 
@@ -1189,12 +1202,12 @@ void create_tlas(const Vulkan_context &context,
         .ppGeometries = {},
         .scratchData = {}};
 
-    constexpr std::uint32_t primitive_count {1};
+    const auto num_instances = static_cast<std::uint32_t>(instances.size());
     const auto build_sizes_info =
         context.device->getAccelerationStructureBuildSizesKHR(
             vk::AccelerationStructureBuildTypeKHR::eDevice,
             build_geometry_info,
-            {primitive_count});
+            {num_instances});
 
     render_resources.tlas_buffer = create_buffer(
         context.allocator.get(),
@@ -1235,8 +1248,8 @@ void create_tlas(const Vulkan_context &context,
     build_geometry_info.dstAccelerationStructure = render_resources.tlas.get();
     build_geometry_info.scratchData.deviceAddress = scratch_buffer_address;
 
-    constexpr vk::AccelerationStructureBuildRangeInfoKHR build_range_info {
-        .primitiveCount = 1,
+    const vk::AccelerationStructureBuildRangeInfoKHR build_range_info {
+        .primitiveCount = num_instances,
         .primitiveOffset = 0,
         .firstVertex = 0,
         .transformOffset = 0};
@@ -1635,15 +1648,6 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
 {
     Vulkan_render_resources render_resources {};
 
-    const auto *const mesh = scene->mMeshes[0];
-    std::vector<std::uint32_t> indices(mesh->mNumFaces * 3);
-    for (unsigned int i {0}; i < mesh->mNumFaces; ++i)
-    {
-        indices[i * 3 + 0] = mesh->mFaces[i].mIndices[0];
-        indices[i * 3 + 1] = mesh->mFaces[i].mIndices[1];
-        indices[i * 3 + 2] = mesh->mFaces[i].mIndices[2];
-    }
-
     constexpr auto storage_image_format = vk::Format::eR32G32B32A32Sfloat;
     render_resources.storage_image =
         create_image(context.allocator.get(),
@@ -1717,6 +1721,15 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
     }
 
     create_sampler(context, render_resources);
+
+    const auto *const mesh = scene->mMeshes[0];
+    std::vector<std::uint32_t> indices(mesh->mNumFaces * 3);
+    for (unsigned int i {0}; i < mesh->mNumFaces; ++i)
+    {
+        indices[i * 3 + 0] = mesh->mFaces[i].mIndices[0];
+        indices[i * 3 + 1] = mesh->mFaces[i].mIndices[1];
+        indices[i * 3 + 2] = mesh->mFaces[i].mIndices[2];
+    }
 
     render_resources.vertex_buffer = create_vertex_or_index_buffer(
         context,
