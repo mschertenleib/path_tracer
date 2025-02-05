@@ -144,9 +144,9 @@ add_custom_command(TARGET path_tracer POST_BUILD
 set(SHADER_SOURCES
         shader.rgen
         shader.rmiss
-        shader.rchit
+        diffuse.rchit
 )
-cmake_path(APPEND CMAKE_SOURCE_DIR src OUTPUT_VARIABLE GLSL_DIR)
+cmake_path(APPEND CMAKE_SOURCE_DIR src shaders OUTPUT_VARIABLE GLSL_DIR)
 foreach (SHADER_SOURCE IN LISTS SHADER_SOURCES)
         cmake_path(ABSOLUTE_PATH SHADER_SOURCE BASE_DIRECTORY ${GLSL_DIR} OUTPUT_VARIABLE GLSL_SHADER)
         cmake_path(GET GLSL_SHADER FILENAME SPV_SHADER)

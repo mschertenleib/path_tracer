@@ -1207,7 +1207,9 @@ void create_tlas(const Vulkan_context &context,
         context.device->getAccelerationStructureBuildSizesKHR(
             vk::AccelerationStructureBuildTypeKHR::eDevice,
             build_geometry_info,
-            {num_instances});
+            {num_instances} // NOTE: this array should have size equal to
+                            // build_geometry_info.pGeometryCount
+        );
 
     render_resources.tlas_buffer = create_buffer(
         context.allocator.get(),
@@ -1446,7 +1448,7 @@ void create_ray_tracing_pipeline(const Vulkan_context &context,
     const auto rmiss_shader_module =
         create_shader_module(context.device.get(), "shader.rmiss.spv");
     const auto rchit_shader_module =
-        create_shader_module(context.device.get(), "shader.rchit.spv");
+        create_shader_module(context.device.get(), "diffuse.rchit.spv");
 
     const vk::PipelineShaderStageCreateInfo shader_stage_create_infos[] {
         {.stage = vk::ShaderStageFlagBits::eRaygenKHR,
