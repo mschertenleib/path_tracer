@@ -640,7 +640,7 @@ void create_descriptor_pool(Vulkan_context &context)
     // Actually, that probably means we have to create a specific descriptor
     // pool for ray tracing render resources, since we might not know the number
     // of textures in the scene (or is there a maximum ? Maybe we could use
-    // image arrays for many HDR texture cases)
+    // image arrays for many PBR texture cases)
     constexpr vk::DescriptorPoolSize pool_sizes[] {
         {vk::DescriptorType::eSampler, 1000},
         {vk::DescriptorType::eCombinedImageSampler, 1000},
@@ -1154,7 +1154,7 @@ void create_tlas(const Vulkan_context &context,
             {.transform = transforms[i],
              .instanceCustomIndex = 0,
              .mask = 0xFF,
-             .instanceShaderBindingTableRecordOffset = i & ((1 << 24) - 1),
+             .instanceShaderBindingTableRecordOffset = i & 0xffffff,
              .flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
              .accelerationStructureReference = get_device_address(
                  context.device.get(), render_resources.blas.get())});
@@ -1283,14 +1283,16 @@ void create_descriptor_set_layout(const Vulkan_context &context,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
          .descriptorCount = 1,
          .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR |
-                       vk::ShaderStageFlagBits::eClosestHitKHR
-
-        },
+                       vk::ShaderStageFlagBits::eClosestHitKHR},
         {.binding = 3,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
          .descriptorCount = 1,
          .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR |
-                       vk::ShaderStageFlagBits::eClosestHitKHR}};
+                       vk::ShaderStageFlagBits::eClosestHitKHR},
+        {.binding = 4,
+         .descriptorType = vk::DescriptorType::eStorageImage,
+         .descriptorCount = 1,
+         .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR}};
 
     const vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
         .bindingCount = static_cast<std::uint32_t>(
@@ -1354,7 +1356,12 @@ void create_descriptor_set(const Vulkan_context &context,
         .offset = 0,
         .range = render_resources.index_buffer.size};
 
-    const vk::WriteDescriptorSet descriptor_writes[4] {
+    const vk::DescriptorImageInfo descriptor_render_target {
+        .sampler = VK_NULL_HANDLE,
+        .imageView = render_resources.render_target_view.get(),
+        .imageLayout = vk::ImageLayout::eGeneral};
+
+    const vk::WriteDescriptorSet descriptor_writes[] {
         {.dstSet = render_resources.descriptor_set.get(),
          .dstBinding = 0,
          .dstArrayElement = 0,
@@ -1378,7 +1385,13 @@ void create_descriptor_set(const Vulkan_context &context,
          .dstArrayElement = 0,
          .descriptorCount = 1,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
-         .pBufferInfo = &descriptor_indices}};
+         .pBufferInfo = &descriptor_indices},
+        {.dstSet = render_resources.descriptor_set.get(),
+         .dstBinding = 4,
+         .dstArrayElement = 0,
+         .descriptorCount = 1,
+         .descriptorType = vk::DescriptorType::eStorageImage,
+         .pImageInfo = &descriptor_render_target}};
 
     context.device->updateDescriptorSets({descriptor_writes}, {});
 }
@@ -1400,7 +1413,7 @@ void create_final_render_descriptor_set(
     const vk::DescriptorImageInfo descriptor_render_target {
         .sampler = render_resources.render_target_sampler.get(),
         .imageView = render_resources.render_target_view.get(),
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
+        .imageLayout = vk::ImageLayout::eGeneral};
 
     const vk::WriteDescriptorSet descriptor_write {
         .dstSet = render_resources.final_render_descriptor_set.get(),
@@ -1681,23 +1694,21 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
                      render_height,
                      storage_image_format,
                      vk::ImageUsageFlagBits::eStorage |
-                         vk::ImageUsageFlagBits::eTransferSrc |
                          vk::ImageUsageFlagBits::eTransferDst);
     render_resources.storage_image_view =
         create_image_view(context.device.get(),
                           render_resources.storage_image.image.get(),
                           storage_image_format);
 
-    constexpr auto render_target_format = vk::Format::eR8G8B8A8Srgb;
-    render_resources.render_target =
-        create_image(context.allocator.get(),
-                     context.device.get(),
-                     render_width,
-                     render_height,
-                     render_target_format,
-                     vk::ImageUsageFlagBits::eSampled |
-                         vk::ImageUsageFlagBits::eTransferSrc |
-                         vk::ImageUsageFlagBits::eTransferDst);
+    constexpr auto render_target_format = vk::Format::eR8G8B8A8Unorm;
+    render_resources.render_target = create_image(
+        context.allocator.get(),
+        context.device.get(),
+        render_width,
+        render_height,
+        render_target_format,
+        vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage |
+            vk::ImageUsageFlagBits::eTransferSrc);
     render_resources.render_target_view =
         create_image_view(context.device.get(),
                           render_resources.render_target.image.get(),
@@ -1725,9 +1736,10 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
              .image = render_resources.storage_image.image.get(),
              .subresourceRange = subresource_range},
             {.srcAccessMask = vk::AccessFlagBits::eNone,
-             .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+             .dstAccessMask = vk::AccessFlagBits::eShaderRead |
+                              vk::AccessFlagBits::eShaderWrite,
              .oldLayout = vk::ImageLayout::eUndefined,
-             .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+             .newLayout = vk::ImageLayout::eGeneral,
              .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
              .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
              .image = render_resources.render_target.image.get(),
@@ -1735,8 +1747,7 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
 
         command_buffer->pipelineBarrier(
             vk::PipelineStageFlagBits::eTopOfPipe,
-            vk::PipelineStageFlagBits::eRayTracingShaderKHR |
-                vk::PipelineStageFlagBits::eTransfer,
+            vk::PipelineStageFlagBits::eRayTracingShaderKHR,
             {},
             {},
             {},
@@ -1839,24 +1850,40 @@ void draw_frame(Vulkan_context &context,
     {
         if (render_resources.sample_count == 0)
         {
+            // FIXME: this is actually not necessary on each reset, we should
+            // only do it once at creation
+
             constexpr vk::ClearColorValue clear_value {
                 .float32 = std::array {0.0f, 0.0f, 0.0f, 1.0f}};
-            command_buffer.clearColorImage(
-                render_resources.storage_image.image.get(),
-                vk::ImageLayout::eGeneral,
-                clear_value,
-                {subresource_range});
 
-            const vk::ImageMemoryBarrier image_memory_barrier {
-                .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-                .dstAccessMask = vk::AccessFlagBits::eShaderRead |
-                                 vk::AccessFlagBits::eShaderWrite,
+            vk::ImageMemoryBarrier image_memory_barrier {
+                .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
+                .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
                 .oldLayout = vk::ImageLayout::eGeneral,
                 .newLayout = vk::ImageLayout::eGeneral,
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .image = render_resources.storage_image.image.get(),
                 .subresourceRange = subresource_range};
+
+            command_buffer.pipelineBarrier(
+                vk::PipelineStageFlagBits::eRayTracingShaderKHR,
+                vk::PipelineStageFlagBits::eTransfer,
+                {},
+                {},
+                {},
+                {image_memory_barrier});
+
+            command_buffer.clearColorImage(
+                render_resources.storage_image.image.get(),
+                vk::ImageLayout::eGeneral,
+                clear_value,
+                {subresource_range});
+
+            image_memory_barrier.srcAccessMask =
+                vk::AccessFlagBits::eTransferWrite;
+            image_memory_barrier.dstAccessMask =
+                vk::AccessFlagBits::eShaderRead;
 
             command_buffer.pipelineBarrier(
                 vk::PipelineStageFlagBits::eTransfer,
@@ -1907,91 +1934,31 @@ void draw_frame(Vulkan_context &context,
                 &push_constants);
             render_resources.sample_count += samples_this_frame;
 
-            command_buffer.traceRaysKHR(&render_resources.sbt_raygen_region,
-                                        &render_resources.sbt_miss_region,
-                                        &render_resources.sbt_hit_region,
-                                        &render_resources.sbt_callable_region,
+            command_buffer.traceRaysKHR(render_resources.sbt_raygen_region,
+                                        render_resources.sbt_miss_region,
+                                        render_resources.sbt_hit_region,
+                                        render_resources.sbt_callable_region,
                                         render_resources.storage_image.width,
                                         render_resources.storage_image.height,
                                         1);
 
-            vk::ImageMemoryBarrier image_memory_barriers[] {
-                {.srcAccessMask = vk::AccessFlagBits::eShaderRead |
-                                  vk::AccessFlagBits::eShaderWrite,
-                 .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
-                 .oldLayout = vk::ImageLayout::eGeneral,
-                 .newLayout = vk::ImageLayout::eTransferSrcOptimal,
-                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .image = render_resources.storage_image.image.get(),
-                 .subresourceRange = subresource_range},
-                {.srcAccessMask = vk::AccessFlagBits::eShaderRead,
-                 .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
-                 .oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-                 .newLayout = vk::ImageLayout::eTransferDstOptimal,
-                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .image = render_resources.render_target.image.get(),
-                 .subresourceRange = subresource_range}};
+            const vk::ImageMemoryBarrier image_memory_barrier {
+                .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
+                .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+                .oldLayout = vk::ImageLayout::eGeneral,
+                .newLayout = vk::ImageLayout::eGeneral,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = render_resources.render_target.image.get(),
+                .subresourceRange = subresource_range};
 
             command_buffer.pipelineBarrier(
-                vk::PipelineStageFlagBits::eRayTracingShaderKHR |
-                    vk::PipelineStageFlagBits::eFragmentShader,
-                vk::PipelineStageFlagBits::eTransfer,
+                vk::PipelineStageFlagBits::eRayTracingShaderKHR,
+                vk::PipelineStageFlagBits::eFragmentShader,
                 {},
                 {},
                 {},
-                {image_memory_barriers});
-
-            constexpr vk::ImageSubresourceLayers subresource_layers {
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .mipLevel = 0,
-                .baseArrayLayer = 0,
-                .layerCount = 1};
-
-            const vk::ImageBlit image_blit {
-                .srcSubresource = subresource_layers,
-                .srcOffsets =
-                    std::array {vk::Offset3D {0, 0, 0},
-                                vk::Offset3D {
-                                    static_cast<std::int32_t>(
-                                        render_resources.render_target.width),
-                                    static_cast<std::int32_t>(
-                                        render_resources.render_target.height),
-                                    1}},
-                .dstSubresource = subresource_layers,
-                .dstOffsets = std::array {
-                    vk::Offset3D {0, 0, 0},
-                    vk::Offset3D {static_cast<std::int32_t>(
-                                      render_resources.render_target.width),
-                                  static_cast<std::int32_t>(
-                                      render_resources.render_target.height),
-                                  1}}};
-
-            command_buffer.blitImage(render_resources.storage_image.image.get(),
-                                     vk::ImageLayout::eTransferSrcOptimal,
-                                     render_resources.render_target.image.get(),
-                                     vk::ImageLayout::eTransferDstOptimal,
-                                     {image_blit},
-                                     vk::Filter::eNearest);
-
-            std::swap(image_memory_barriers[0].srcAccessMask,
-                      image_memory_barriers[0].dstAccessMask);
-            std::swap(image_memory_barriers[0].oldLayout,
-                      image_memory_barriers[0].newLayout);
-            std::swap(image_memory_barriers[1].srcAccessMask,
-                      image_memory_barriers[1].dstAccessMask);
-            std::swap(image_memory_barriers[1].oldLayout,
-                      image_memory_barriers[1].newLayout);
-
-            command_buffer.pipelineBarrier(
-                vk::PipelineStageFlagBits::eTransfer,
-                vk::PipelineStageFlagBits::eRayTracingShaderKHR |
-                    vk::PipelineStageFlagBits::eFragmentShader,
-                {},
-                {},
-                {},
-                {image_memory_barriers});
+                {image_memory_barrier});
         }
     }
 
@@ -2115,6 +2082,8 @@ std::string write_to_png(const Vulkan_context &context,
         .baseArrayLayer = 0,
         .layerCount = 1};
 
+    // FIXME: these are probably wrong since we changed the way we write to the
+    // final image
     vk::ImageMemoryBarrier image_memory_barrier {
         .srcAccessMask = vk::AccessFlagBits::eShaderRead,
         .dstAccessMask = vk::AccessFlagBits::eTransferRead,

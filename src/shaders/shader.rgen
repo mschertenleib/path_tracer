@@ -2,7 +2,7 @@
 
 #extension GL_EXT_ray_tracing: require
 #extension GL_EXT_scalar_block_layout: require
-// #extension GL_EXT_debug_printf: enable
+#extension GL_EXT_debug_printf: enable
 
 #include "shader_common.glsl"
 
@@ -19,6 +19,8 @@ layout (binding = 3, scalar) buffer Indices
 {
     uint indices[];
 };
+
+layout (binding = 4, rgba8) uniform image2D render_target;
 
 layout (push_constant, scalar) uniform Push_constants
 {
@@ -156,4 +158,8 @@ void main()
         average_color = pixel_accumulated_color / push.samples_per_frame;    
     }
     imageStore(storage_image, ivec2(gl_LaunchIDEXT.xy), average_color);
+    
+    // TODO: this is where we would do our tone-mapping etc.
+    const vec4 render_color = clamp(average_color, 0.0, 1.0);
+    imageStore(render_target, ivec2(gl_LaunchIDEXT.xy), render_color);
 }
