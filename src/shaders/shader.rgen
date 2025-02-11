@@ -71,12 +71,12 @@ vec2 sample_disk(inout uint rng_state)
     return r * vec2(cos(theta), sin(theta));
 }
 
-vec3 radiance(inout uint rng_state)
+vec3 radiance(out uint depth)
 {
     vec3 accumulated_color = vec3(0.0);
     vec3 accumulated_reflectance = vec3(1.0);
 
-    for (uint depth = 0; depth < 32; ++depth)
+    for (depth = 0; depth < 32; ++depth)
     {
         traceRayEXT(tlas,
                     gl_RayFlagsOpaqueEXT,
@@ -156,17 +156,17 @@ void main()
     }
 
     const uint pixel_index = gl_LaunchIDEXT.y * image_size.x + gl_LaunchIDEXT.x;
-    uint rng_state = hash(pixel_index) ^ hash(push.global_frame_count + 1);
-    payload.rng_state = rng_state;
+    payload.rng_state = hash(pixel_index) ^ hash(push.global_frame_count + 1);
 
-    vec4 pixel_accumulated_color = vec4(0.0);
+    vec3 accumulated_color = vec3(0.0);
+    uint accumulated_depth = 0;
 
     for (uint s = 0; s < push.samples_per_frame; ++s)
     {
-        const vec2 offset = vec2(0.5) + 0.375 * sample_gaussian(rng_state);
+        const vec2 offset = vec2(0.5) + 0.375 * sample_gaussian(payload.rng_state);
         const vec2 uv = 2.0 * (vec2(gl_LaunchIDEXT.xy) + offset) / vec2(image_size) - vec2(1.0);
 
-        const vec2 defocus = push.aperture_radius * sample_disk(rng_state);
+        const vec2 defocus = push.aperture_radius * sample_disk(payload.rng_state);
         const vec3 defocus_offset = push.camera_dir_x * defocus.x + push.camera_dir_y * defocus.y;
         payload.ray_origin = push.camera_position + defocus_offset;
         payload.ray_direction = normalize(push.focus_distance *
@@ -175,8 +175,14 @@ void main()
                 + push.camera_dir_y * push.sensor_half_height * uv.y)
             - defocus_offset);
 
-        pixel_accumulated_color += vec4(radiance(rng_state), 1.0);
+        uint depth;
+        accumulated_color += radiance(depth);
+        accumulated_depth += depth;
     }
+
+#if 0
+    accumulated_color = vec3(accumulated_depth / 16.0);
+#endif
 
     vec4 average_color = imageLoad(storage_image, ivec2(gl_LaunchIDEXT.xy));
     // NOTE: if the image is uninitialized, it might contain NaNs which will propagate.
@@ -185,11 +191,11 @@ void main()
     // load the old value even if we will end up multiplying it by zero on a render reset.
     if (push.sample_count > 0)
     {
-        average_color = (average_color * push.sample_count + pixel_accumulated_color) / (push.sample_count + push.samples_per_frame);
+        average_color = (average_color * push.sample_count + vec4(accumulated_color, 1.0)) / (push.sample_count + push.samples_per_frame);
     }
     else
     {
-        average_color = pixel_accumulated_color / push.samples_per_frame;    
+        average_color = vec4(accumulated_color, 1.0) / push.samples_per_frame;    
     }
     imageStore(storage_image, ivec2(gl_LaunchIDEXT.xy), average_color);
     

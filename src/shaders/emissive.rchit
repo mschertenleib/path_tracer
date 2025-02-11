@@ -9,6 +9,6 @@ void main()
     payload.ray_origin = offset_position_along_normal(hit.world_position, hit.world_normal);
     payload.ray_direction = reflect_diffuse(hit.world_normal, payload.rng_state);
     payload.color = vec3(0.75, 0.75, 0.75);
-    payload.emissivity = vec3(2.0, 2.0, 2.0);
+    payload.emissivity = vec3(5.0, 5.0, 5.0);
     payload.hit_sky = false;
 }
