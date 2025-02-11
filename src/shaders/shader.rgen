@@ -71,16 +71,16 @@ vec2 sample_disk(inout uint rng_state)
     return r * vec2(cos(theta), sin(theta));
 }
 
-vec3 radiance(out uint depth)
+vec3 radiance(out uint bounces)
 {
     vec3 accumulated_color = vec3(0.0);
     vec3 accumulated_reflectance = vec3(1.0);
 
-    for (depth = 0; depth < 32; ++depth)
+    for (bounces = 0; bounces < 32; ++bounces)
     {
         traceRayEXT(tlas,
                     gl_RayFlagsOpaqueEXT,
-                    0xFF,
+                    0xff,
                     0,
                     0,
                     0,
@@ -156,10 +156,9 @@ void main()
     }
 
     const uint pixel_index = gl_LaunchIDEXT.y * image_size.x + gl_LaunchIDEXT.x;
-    payload.rng_state = hash(pixel_index) ^ hash(push.global_frame_count + 1);
+    payload.rng_state = hash(pixel_index) + hash(push.global_frame_count + 1);
 
-    vec3 accumulated_color = vec3(0.0);
-    uint accumulated_depth = 0;
+    vec4 accumulated_color = vec4(0.0);
 
     for (uint s = 0; s < push.samples_per_frame; ++s)
     {
@@ -175,14 +174,14 @@ void main()
                 + push.camera_dir_y * push.sensor_half_height * uv.y)
             - defocus_offset);
 
-        uint depth;
-        accumulated_color += radiance(depth);
-        accumulated_depth += depth;
-    }
-
-#if 0
-    accumulated_color = vec3(accumulated_depth / 16.0);
+        uint bounces;
+        const vec3 color = radiance(bounces);
+#if 1
+        accumulated_color += vec4(color, 1.0);
+#else
+        accumulated_color += vec4(vec3(bounces / 16.0), 1.0);
 #endif
+    }
 
     vec4 average_color = imageLoad(storage_image, ivec2(gl_LaunchIDEXT.xy));
     // NOTE: if the image is uninitialized, it might contain NaNs which will propagate.
@@ -191,11 +190,12 @@ void main()
     // load the old value even if we will end up multiplying it by zero on a render reset.
     if (push.sample_count > 0)
     {
-        average_color = (average_color * push.sample_count + vec4(accumulated_color, 1.0)) / (push.sample_count + push.samples_per_frame);
+        average_color = (average_color * push.sample_count + accumulated_color)
+            / (push.sample_count + push.samples_per_frame);
     }
     else
     {
-        average_color = vec4(accumulated_color, 1.0) / push.samples_per_frame;    
+        average_color = accumulated_color / push.samples_per_frame;    
     }
     imageStore(storage_image, ivec2(gl_LaunchIDEXT.xy), average_color);
     
