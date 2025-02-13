@@ -385,6 +385,25 @@ void get_queue_family_indices(
         std::cout << '\n';
     }
 
+    const auto limits = physical_device.getProperties().limits;
+    if (limits.timestampPeriod == 0.0f)
+    {
+        std::cout << "    Timestamp queries not supported by the device\n";
+        suitable = false;
+    }
+    if (!limits.timestampComputeAndGraphics)
+    {
+        const auto queue_family_properties =
+            physical_device.getQueueFamilyProperties()
+                [graphics_compute_queue_family_index];
+        if (queue_family_properties.timestampValidBits == 0)
+        {
+            std::cout << "    Timestamp queries not supported by the "
+                         "graphics/compute queue family\n";
+            suitable = false;
+        }
+    }
+
     return suitable;
 }
 
@@ -1674,6 +1693,10 @@ Vulkan_context create_context(GLFWwindow *window)
     create_command_buffers(context);
     create_synchronization_objects(context);
 
+    constexpr vk::QueryPoolCreateInfo query_pool_info {
+        .queryType = vk::QueryType::eTimestamp, .queryCount = 2};
+    context.query_pool = context.device->createQueryPoolUnique(query_pool_info);
+
     init_imgui(context);
 
     return context;
@@ -1700,6 +1723,7 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
                           render_resources.storage_image.image.get(),
                           storage_image_format);
 
+    // FIXME: why isn't this sRGB ?
     constexpr auto render_target_format = vk::Format::eR8G8B8A8Unorm;
     render_resources.render_target = create_image(
         context.allocator.get(),
@@ -1799,9 +1823,10 @@ void draw_frame(Vulkan_context &context,
     if (context.framebuffer_width == 0 || context.framebuffer_height == 0)
     {
         // FIXME: We want to
-        // continue tracing when the window is minimized, just not draw to the
-        // framebuffer. But this requires a better separation of the tracing vs
-        // drawing code. And this separation would probably be best anyways.
+        // continue tracing when the window is minimized, just not draw to
+        // the framebuffer. But this requires a better separation of the
+        // tracing vs drawing code. And this separation would probably be
+        // best anyways.
         return;
     }
 
@@ -1838,6 +1863,10 @@ void draw_frame(Vulkan_context &context,
     constexpr vk::CommandBufferBeginInfo begin_info {};
     command_buffer.begin(begin_info);
 
+    command_buffer.resetQueryPool(context.query_pool.get(), 0, 2);
+    command_buffer.writeTimestamp(
+        vk::PipelineStageFlagBits::eTopOfPipe, context.query_pool.get(), 0);
+
     constexpr vk::ImageSubresourceRange subresource_range {
         .aspectMask = vk::ImageAspectFlagBits::eColor,
         .baseMipLevel = 0,
@@ -1850,8 +1879,8 @@ void draw_frame(Vulkan_context &context,
     {
         if (render_resources.sample_count == 0)
         {
-            // FIXME: this is actually not necessary on each reset, we should
-            // only do it once at creation
+            // FIXME: this is actually not necessary on each reset, we
+            // should only do it once at creation
 
             constexpr vk::ClearColorValue clear_value {
                 .float32 = std::array {0.0f, 0.0f, 0.0f, 1.0f}};
@@ -1962,6 +1991,9 @@ void draw_frame(Vulkan_context &context,
         }
     }
 
+    command_buffer.writeTimestamp(
+        vk::PipelineStageFlagBits::eBottomOfPipe, context.query_pool.get(), 1);
+
     constexpr vk::ClearValue clear_value {
         .color = {.float32 = std::array {0.0f, 0.0f, 0.0f, 1.0f}}};
 
@@ -2001,6 +2033,25 @@ void draw_frame(Vulkan_context &context,
         {submit_info},
         context.in_flight_fences[context.current_frame_in_flight].get());
 
+    // FIXME: we shouldn't have the "eWait" flag here, see the bottom of
+    // https://docs.vulkan.org/samples/latest/samples/api/timestamp_queries/README.html
+    std::uint64_t timestamps[2] {};
+    vk::detail::resultCheck(
+        context.device->getQueryPoolResults(context.query_pool.get(),
+                                            0,
+                                            2,
+                                            sizeof(timestamps),
+                                            timestamps,
+                                            sizeof(std::uint64_t),
+                                            vk::QueryResultFlagBits::e64 |
+                                                vk::QueryResultFlagBits::eWait),
+        "vk::Device::getQueryPoolResults");
+    const auto period =
+        context.physical_device_properties.limits.timestampPeriod;
+    const float elapsed_ms =
+        static_cast<float>(timestamps[1] - timestamps[0]) * period / 1e6f;
+    std::cout << elapsed_ms << " ms\n";
+
     const vk::PresentInfoKHR present_info {
         .waitSemaphoreCount = 1,
         .pWaitSemaphores =
@@ -2012,17 +2063,17 @@ void draw_frame(Vulkan_context &context,
         .pResults = {}};
 
     // NOTE: we use the noexcept version of presentKHR that takes the
-    // vk::PresentInfoKHR by pointer, because we don't want the call to throw an
-    // exception in case of vk::Result::ErrorOutOfDateKHR
+    // vk::PresentInfoKHR by pointer, because we don't want the call to
+    // throw an exception in case of vk::Result::ErrorOutOfDateKHR
     result = context.present_queue.presentKHR(&present_info);
 
     if (result == vk::Result::eErrorOutOfDateKHR ||
         result == vk::Result::eSuboptimalKHR || context.framebuffer_resized)
     {
         context.framebuffer_resized = false;
-        // FIXME: we should really understand the difference between this and
-        // the former call to recreate_swapchain at the beginning of this
-        // function
+        // FIXME: we should really understand the difference between this
+        // and the former call to recreate_swapchain at the beginning of
+        // this function
         recreate_swapchain(context);
     }
     else
@@ -2082,8 +2133,8 @@ std::string write_to_png(const Vulkan_context &context,
         .baseArrayLayer = 0,
         .layerCount = 1};
 
-    // FIXME: these are probably wrong since we changed the way we write to the
-    // final image
+    // FIXME: these are probably wrong since we changed the way we write to
+    // the final image
     vk::ImageMemoryBarrier image_memory_barrier {
         .srcAccessMask = vk::AccessFlagBits::eShaderRead,
         .dstAccessMask = vk::AccessFlagBits::eTransferRead,

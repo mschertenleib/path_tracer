@@ -215,6 +215,8 @@ struct Vulkan_context
     std::uint32_t current_frame_in_flight;
     std::uint32_t global_frame_count;
 
+    vk::UniqueQueryPool query_pool;
+
     ImGui_backend imgui_backend;
 };
 
