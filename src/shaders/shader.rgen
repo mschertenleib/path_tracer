@@ -40,10 +40,6 @@ layout (push_constant, scalar) uniform Push_constants
 
 layout (location = 0) rayPayloadEXT Ray_payload payload;
 
-float max_component(vec3 v)
-{
-    return v.x > v.y && v.x > v.z ? v.x : v.y > v.z ? v.y : v.z;
-}
 
 uint hash(uint x)
 {
@@ -97,7 +93,7 @@ vec3 radiance(out uint bounces)
         }
 
         vec3 hit_color = payload.color;
-        const float p = max_component(hit_color);
+        const float p = max(hit_color.r, max(hit_color.g, hit_color.b));
         if (random(payload.rng_state) < p)
         {
             hit_color /= p;
@@ -113,7 +109,9 @@ vec3 radiance(out uint bounces)
 }
 
 
-// ACES tonemapping code by Stephen Hill (@self_shadow)
+// ACES tone mapping code from
+// https://github.com/TheRealMJP/BakingLab/blob/master/BakingLab/ACES.hlsl,
+// originally written by Stephen Hill (@self_shadow)
 
 vec3 rrt_and_odt_fit(vec3 v)
 {
@@ -122,7 +120,7 @@ vec3 rrt_and_odt_fit(vec3 v)
     return a / b;
 }
 
-vec3 aces_tonemap(vec3 color)
+vec3 ACES_tone_map(vec3 color)
 {
     // sRGB => XYZ => D65_2_D60 => AP1 => RRT_SAT
     const mat3 input_mat = mat3(
@@ -143,6 +141,33 @@ vec3 aces_tonemap(vec3 color)
     color = output_mat * color;
 
     return clamp(color, 0.0, 1.0);
+}
+
+
+// Khronos PBR neutral tone mapper from
+// https://modelviewer.dev/examples/tone-mapping
+
+vec3 PBR_neutral_tone_map(vec3 color)
+{
+    const float start_compression = 0.8 - 0.04;
+    const float desaturation = 0.15;
+
+    const float x = min(color.r, min(color.g, color.b));
+    const float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
+    color -= offset;
+
+    const float peak = max(color.r, max(color.g, color.b));
+    if (peak < start_compression)
+    {
+        return color;
+    }
+
+    const float d = 1.0 - start_compression;
+    const float new_peak = 1.0 - d * d / (peak + d - start_compression);
+    color *= new_peak / peak;
+
+    const float g = 1.0 - 1.0 / (desaturation * (peak - new_peak) + 1.0);
+    return mix(color, new_peak * vec3(1.0, 1.0, 1.0), g);
 }
 
 
@@ -198,7 +223,11 @@ void main()
         average_color = accumulated_color / push.samples_per_frame;    
     }
     imageStore(storage_image, ivec2(gl_LaunchIDEXT.xy), average_color);
-    
-    const vec3 render_color = aces_tonemap(average_color.rgb);
+
+#if 1
+    const vec3 render_color = PBR_neutral_tone_map(average_color.rgb);
+#else
+    const vec3 render_color = ACES_tone_map(average_color.rgb);
+#endif
     imageStore(render_target, ivec2(gl_LaunchIDEXT.xy), vec4(render_color, 1.0));
 }
