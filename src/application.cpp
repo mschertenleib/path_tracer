@@ -22,11 +22,13 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <numbers>
 #include <ranges>
 #include <stdexcept>
+#include <string>
 
 namespace
 {
@@ -51,6 +53,10 @@ struct Application_state
     std::unique_ptr<ImGuiContext, Deleter> imgui_context;
     Vulkan_context context;
     Vulkan_render_resources render_resources;
+    Assimp::Importer importer; // FIXME: this is just to keep the imported scene
+                               // alive for debugging. We will end up having our
+                               // own scene representation anyways.
+    const aiScene *scene;
     bool scene_loaded;
     Camera camera;
     std::uint32_t render_width;
@@ -137,10 +143,9 @@ void glfw_framebuffer_size_callback(GLFWwindow *window, int width, int height)
 
 void open_scene(Application_state &state, const char *file_name)
 {
-    Assimp::Importer importer;
-    importer.SetPropertyBool(AI_CONFIG_PP_PTV_NORMALIZE, true);
+    state.importer.SetPropertyBool(AI_CONFIG_PP_PTV_NORMALIZE, true);
 
-    const auto *const scene = importer.ReadFile(
+    const auto *const scene = state.importer.ReadFile(
         file_name,
         // FIXME: we probably want additional flags
         aiProcess_Triangulate | aiProcess_PreTransformVertices |
@@ -148,7 +153,7 @@ void open_scene(Application_state &state, const char *file_name)
             aiProcess_SortByPType);
     if (scene == nullptr)
     {
-        std::string importer_error(importer.GetErrorString());
+        std::string importer_error(state.importer.GetErrorString());
         remove_quotes(importer_error);
         tinyfd_messageBox("Error", importer_error.c_str(), "ok", "error", 1);
         return;
@@ -159,6 +164,8 @@ void open_scene(Application_state &state, const char *file_name)
         tinyfd_messageBox("Error", "Scene has no meshes", "ok", "error", 1);
         return;
     }
+
+    state.scene = scene;
 
     state.render_width = 640;
     state.render_height = 480;
@@ -178,11 +185,12 @@ void open_scene(Application_state &state, const char *file_name)
                                  sensor_half_width,
                                  sensor_half_height);
 
-    wait_idle(state.context);
+    state.context.device->waitIdle();
 
     state.render_resources = {};
     state.render_resources = create_render_resources(
         state.context, state.render_width, state.render_height, scene);
+
     state.scene_loaded = true;
 }
 
@@ -200,7 +208,7 @@ void close_scene(Application_state &state)
 {
     if (state.scene_loaded)
     {
-        wait_idle(state.context);
+        state.context.device->waitIdle();
         state.render_resources = {};
         state.scene_loaded = false;
     }
@@ -253,7 +261,185 @@ void make_centered_image(ImTextureID texture_id, float aspect_ratio)
     }
 }
 
-void do_ui(Application_state &state)
+void material_properties_table(const aiScene *scene)
+{
+    if (ImGui::BeginTable(
+            "properties",
+            3,
+            ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH |
+                ImGuiTableFlags_Resizable | ImGuiTableFlags_RowBg |
+                ImGuiTableFlags_NoBordersInBody))
+    {
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_NoHide);
+        ImGui::TableSetupColumn("Texture type/index",
+                                ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableHeadersRow();
+
+        for (unsigned int mat_i {0}; mat_i < scene->mNumMaterials; ++mat_i)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+
+            const auto *const material = scene->mMaterials[mat_i];
+            const auto name = material->GetName();
+            const auto open = ImGui::TreeNode(name.C_Str());
+            if (open)
+            {
+                for (unsigned int prop_i {0}; prop_i < material->mNumProperties;
+                     ++prop_i)
+                {
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+
+                    const auto *const property = material->mProperties[prop_i];
+                    ImGui::TextUnformatted(property->mKey.C_Str());
+                    ImGui::TableNextColumn();
+                    if (property->mSemantic != 0)
+                    {
+                        const auto type = aiTextureTypeToString(
+                            static_cast<aiTextureType>(property->mSemantic));
+                        ImGui::Text("%s, %u", type, property->mIndex);
+                    }
+                    ImGui::TableNextColumn();
+
+                    switch (property->mType)
+                    {
+                    case aiPTI_Float: [[fallthrough]];
+                    case aiPTI_Double:
+                    {
+                        // NOTE: this assumes there are no float/double
+                        // properties with more than 4 components
+                        ai_real values[4] {};
+                        unsigned int size {4};
+                        const auto result =
+                            material->Get(property->mKey.C_Str(),
+                                          property->mSemantic,
+                                          property->mIndex,
+                                          values,
+                                          &size);
+                        if (result != aiReturn_SUCCESS)
+                        {
+                            throw std::runtime_error(
+                                "Assimp material float property read failed");
+                        }
+                        switch (size)
+                        {
+                        case 1:
+                            ImGui::Text("%f", static_cast<double>(values[0]));
+                            break;
+                        case 2:
+                            ImGui::Text("%f %f",
+                                        static_cast<double>(values[0]),
+                                        static_cast<double>(values[1]));
+                            break;
+                        case 3:
+                            ImGui::Text("%f %f %f",
+                                        static_cast<double>(values[0]),
+                                        static_cast<double>(values[1]),
+                                        static_cast<double>(values[2]));
+                            break;
+                        case 4:
+                            ImGui::Text("%f %f %f %f",
+                                        static_cast<double>(values[0]),
+                                        static_cast<double>(values[1]),
+                                        static_cast<double>(values[2]),
+                                        static_cast<double>(values[3]));
+                            break;
+                        default: break;
+                        }
+                        break;
+                    }
+                    case aiPTI_Integer:
+                    {
+                        // NOTE: this assumes there are no integer
+                        // properties with more than 4 components
+                        int values[4];
+                        unsigned int size {4};
+                        const auto result =
+                            material->Get(property->mKey.C_Str(),
+                                          property->mSemantic,
+                                          property->mIndex,
+                                          values,
+                                          &size);
+                        if (result != aiReturn_SUCCESS)
+                        {
+                            throw std::runtime_error(
+                                "Assimp material integer property read failed");
+                        }
+                        switch (size)
+                        {
+                        case 1: ImGui::Text("%d", values[0]); break;
+                        case 2:
+                            ImGui::Text("%d %d", values[0], values[1]);
+                            break;
+                        case 3:
+                            ImGui::Text(
+                                "%d %d %d", values[0], values[1], values[2]);
+                            break;
+                        case 4:
+                            ImGui::Text("%d %d %d %d",
+                                        values[0],
+                                        values[1],
+                                        values[2],
+                                        values[3]);
+                            break;
+                        default: break;
+                        }
+                        break;
+                    }
+                    case aiPTI_String:
+                    {
+                        aiString str;
+                        const auto result =
+                            material->Get(property->mKey.C_Str(),
+                                          property->mSemantic,
+                                          property->mIndex,
+                                          str);
+                        if (result != aiReturn_SUCCESS)
+                        {
+                            throw std::runtime_error(
+                                "Assimp material string property read failed");
+                        }
+                        ImGui::TextUnformatted(str.C_Str());
+                        break;
+                    }
+                    case aiPTI_Buffer:
+                    {
+                        if (property->mDataLength <= 4)
+                        {
+                            std::ostringstream oss;
+                            oss << "0x";
+                            for (unsigned int i {0}; i < property->mDataLength;
+                                 ++i)
+                            {
+                                oss << std::hex << std::setw(2)
+                                    << std::setfill('0')
+                                    << static_cast<int>(property->mData[i]);
+                            }
+                            const auto str = oss.str();
+                            ImGui::TextUnformatted(str.c_str());
+                        }
+                        else
+                        {
+                            ImGui::Text("%u byte buffer",
+                                        property->mDataLength);
+                        }
+                        break;
+                    }
+                    default: break;
+                    }
+                }
+
+                ImGui::TreePop();
+            }
+        }
+
+        ImGui::EndTable();
+    }
+}
+
+void make_ui(Application_state &state)
 {
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 
@@ -527,6 +713,15 @@ void do_ui(Application_state &state)
         }
     }
     ImGui::End();
+
+    if (state.scene_loaded)
+    {
+        if (ImGui::Begin("Materials"))
+        {
+            material_properties_table(state.scene);
+        }
+        ImGui::End();
+    }
 }
 
 } // namespace
@@ -546,30 +741,42 @@ void run(const char *file_name)
     // for creating the surface).
     state.context = create_context(state.window.get());
 
-    if (file_name != nullptr)
+    try
     {
-        open_scene(state, file_name);
+        if (file_name != nullptr)
+        {
+            open_scene(state, file_name);
+        }
+
+        glfwSetWindowUserPointer(state.window.get(), &state);
+
+        while (!glfwWindowShouldClose(state.window.get()))
+        {
+            glfwPollEvents();
+
+            ImGui_ImplGlfw_NewFrame();
+            ImGui_ImplVulkan_NewFrame();
+            ImGui::NewFrame();
+            ImGuizmo::BeginFrame();
+
+            make_ui(state);
+
+            ImGui::Render();
+
+            draw_frame(state.context, state.render_resources, state.camera);
+        }
+
+        state.context.device->waitIdle();
     }
-
-    glfwSetWindowUserPointer(state.window.get(), &state);
-
-    while (!glfwWindowShouldClose(state.window.get()))
+    catch (...)
     {
-        glfwPollEvents();
+        // FIXME: find the best way to handle this to be as exception safe as
+        // possible, though that might not be actually possible...
+        // FIXME: what if we get a device lost error? In that case we can not
+        // wait
+        state.context.device->waitIdle();
 
-        ImGui_ImplGlfw_NewFrame();
-        ImGui_ImplVulkan_NewFrame();
-        ImGui::NewFrame();
-        ImGuizmo::BeginFrame();
-
-        do_ui(state);
-
-        ImGui::Render();
-
-        draw_frame(state.context, state.render_resources, state.camera);
+        throw; // FIXME: it makes no sense to throw again just to catch the
+               // exception in main immediately
     }
-
-    // FIXME: find the best way to handle this to be as exception safe as
-    // possible, though that might not be actually possible...
-    wait_idle(state.context);
 }

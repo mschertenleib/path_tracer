@@ -2095,11 +2095,6 @@ void resize_framebuffer(Vulkan_context &context,
     context.framebuffer_height = height;
 }
 
-void wait_idle(const Vulkan_context &context)
-{
-    context.device->waitIdle();
-}
-
 void reset_render(Vulkan_render_resources &render_resources)
 {
     render_resources.sample_count = 0;

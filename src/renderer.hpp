@@ -265,8 +265,6 @@ void resize_framebuffer(Vulkan_context &context,
                         std::uint32_t width,
                         std::uint32_t height);
 
-void wait_idle(const Vulkan_context &context);
-
 void reset_render(Vulkan_render_resources &render_resources);
 
 // On failure, returns an error message. On success, returns an empty string.
