@@ -235,7 +235,7 @@ void save_as_png_with_dialog(Application_state &state)
     }
 }
 
-void make_centered_image(ImTextureID texture_id, float aspect_ratio)
+void centered_image(ImTextureID texture_id, float aspect_ratio)
 {
     const auto region_size = ImGui::GetContentRegionAvail();
     if (region_size.x > 0.0f && region_size.y > 0.0f)
@@ -261,6 +261,25 @@ void make_centered_image(ImTextureID texture_id, float aspect_ratio)
     }
 }
 
+void scene_graph_table(const aiScene *scene)
+{
+    if (ImGui::BeginTable(
+            "scene_graph",
+            2,
+            ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH |
+                ImGuiTableFlags_Resizable | ImGuiTableFlags_RowBg |
+                ImGuiTableFlags_NoBordersInBody))
+    {
+        ImGui::TableSetupColumn("Node", ImGuiTableColumnFlags_NoHide);
+        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableHeadersRow();
+
+        const auto *const node = scene->mRootNode;
+
+        ImGui::EndTable();
+    }
+}
+
 void material_properties_table(const aiScene *scene)
 {
     if (ImGui::BeginTable(
@@ -271,9 +290,8 @@ void material_properties_table(const aiScene *scene)
                 ImGuiTableFlags_NoBordersInBody))
     {
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_NoHide);
-        ImGui::TableSetupColumn("Texture type/index",
-                                ImGuiTableColumnFlags_WidthFixed);
-        ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("Texture type/index");
+        ImGui::TableSetupColumn("Data");
         ImGui::TableHeadersRow();
 
         for (unsigned int mat_i {0}; mat_i < scene->mNumMaterials; ++mat_i)
@@ -439,6 +457,77 @@ void material_properties_table(const aiScene *scene)
     }
 }
 
+void scene_metadata_table(const aiScene *scene)
+{
+    if (ImGui::BeginTable(
+            "scene_metadata",
+            2,
+            ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH |
+                ImGuiTableFlags_Resizable | ImGuiTableFlags_RowBg |
+                ImGuiTableFlags_NoBordersInBody))
+    {
+        ImGui::TableSetupColumn("Key");
+        ImGui::TableSetupColumn("Value");
+        ImGui::TableHeadersRow();
+
+        for (unsigned int i {0}; i < scene->mMetaData->mNumProperties; ++i)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+
+            const auto key = scene->mMetaData->mKeys[i];
+            ImGui::TextUnformatted(key.C_Str());
+            ImGui::TableNextColumn();
+
+            const auto value = scene->mMetaData->mValues[i];
+            switch (value.mType)
+            {
+            case AI_BOOL:
+                ImGui::TextUnformatted(
+                    *static_cast<bool *>(value.mData) ? "true" : "false");
+                break;
+            case AI_INT32:
+                ImGui::Text("%d", *static_cast<std::int32_t *>(value.mData));
+                break;
+            case AI_UINT64:
+                ImGui::Text("%lu", *static_cast<std::uint64_t *>(value.mData));
+                break;
+            case AI_FLOAT:
+                ImGui::Text(
+                    "%f",
+                    static_cast<double>(*static_cast<float *>(value.mData)));
+                break;
+            case AI_DOUBLE:
+                ImGui::Text("%f", *static_cast<double *>(value.mData));
+                break;
+            case AI_AISTRING:
+                ImGui::TextUnformatted(
+                    static_cast<aiString *>(value.mData)->C_Str());
+                break;
+            case AI_AIVECTOR3D:
+            {
+                const auto v = *static_cast<aiVector3D *>(value.mData);
+                ImGui::Text("%f %f %f",
+                            static_cast<double>(v.x),
+                            static_cast<double>(v.y),
+                            static_cast<double>(v.z));
+            }
+            break;
+            case AI_AIMETADATA: ImGui::TextUnformatted("[metadata]"); break;
+            case AI_INT64:
+                ImGui::Text("%ld", *static_cast<std::int64_t *>(value.mData));
+                break;
+            case AI_UINT32:
+                ImGui::Text("%u", *static_cast<std::uint32_t *>(value.mData));
+                break;
+            default: break;
+            }
+        }
+
+        ImGui::EndTable();
+    }
+}
+
 void make_ui(Application_state &state)
 {
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
@@ -500,7 +589,7 @@ void make_ui(Application_state &state)
             const auto cursor_pos = ImGui::GetCursorScreenPos();
             const auto region_size = ImGui::GetContentRegionAvail();
 
-            make_centered_image(
+            centered_image(
                 static_cast<ImTextureID>(
                     state.render_resources.final_render_descriptor_set.get()),
                 static_cast<float>(state.render_width) /
@@ -515,6 +604,8 @@ void make_ui(Application_state &state)
                 return ImVec2 {128 * y_scale, 128 * y_scale};
             }();
 
+            // FIXME: this back-and-forth between view and inverse view can
+            // cause accumulating errors
             mat4x4 old_inverse_view {};
             const auto vx = state.camera.direction_x;
             const auto vy = -state.camera.direction_y;
@@ -582,7 +673,7 @@ void make_ui(Application_state &state)
 
     if (ImGui::Begin("Parameters"))
     {
-        ImGui::Text("%.2f ms/frame, %.1f fps",
+        ImGui::Text("%.3f ms/frame, %.2f fps",
                     1000.0 / static_cast<double>(ImGui::GetIO().Framerate),
                     static_cast<double>(ImGui::GetIO().Framerate));
 
@@ -716,9 +807,23 @@ void make_ui(Application_state &state)
 
     if (state.scene_loaded)
     {
-        if (ImGui::Begin("Materials"))
+        if (ImGui::Begin("Scene"))
         {
-            material_properties_table(state.scene);
+            if (ImGui::TreeNode("Graph"))
+            {
+                scene_graph_table(state.scene);
+                ImGui::TreePop();
+            }
+            if (ImGui::TreeNode("Materials"))
+            {
+                material_properties_table(state.scene);
+                ImGui::TreePop();
+            }
+            if (ImGui::TreeNode("Metadata"))
+            {
+                scene_metadata_table(state.scene);
+                ImGui::TreePop();
+            }
         }
         ImGui::End();
     }
@@ -772,7 +877,7 @@ void run(const char *file_name)
     {
         // FIXME: find the best way to handle this to be as exception safe as
         // possible, though that might not be actually possible...
-        // FIXME: what if we get a device lost error? In that case we can not
+        // What if we get a device lost error? In that case we can not
         // wait
         state.context.device->waitIdle();
 
