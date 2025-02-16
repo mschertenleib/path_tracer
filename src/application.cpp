@@ -1,7 +1,7 @@
 #include "application.hpp"
 #include "camera.hpp"
 #include "renderer.hpp"
-#include "utility.hpp"
+#include "vec3.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -9,9 +9,13 @@
 
 #include <ImGuizmo.h>
 
+#include <assimp/config.h>
 #include <assimp/Importer.hpp>
+#include <assimp/material.h>
+#include <assimp/metadata.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+#include <assimp/types.h>
 
 #include <tinyfiledialogs.h>
 
@@ -27,6 +31,7 @@
 #include <memory>
 #include <numbers>
 #include <ranges>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -261,6 +266,66 @@ void centered_image(ImTextureID texture_id, float aspect_ratio)
     }
 }
 
+void display_node(const aiNode *node)
+{
+    ImGui::TableNextRow();
+    ImGui::TableNextColumn();
+
+    if (ImGui::TreeNode(node->mName.C_Str()))
+    {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted("Metadata");
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(node->mMetaData != nullptr ? "[metadata]" : "");
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted("Transform");
+        ImGui::TableNextColumn();
+        const auto tf = node->mTransformation;
+        ImGui::Text("%8.3f %8.3f %8.3f %8.3f",
+                    static_cast<double>(tf.a1),
+                    static_cast<double>(tf.a2),
+                    static_cast<double>(tf.a3),
+                    static_cast<double>(tf.a4));
+        ImGui::Text("%8.3f %8.3f %8.3f %8.3f",
+                    static_cast<double>(tf.b1),
+                    static_cast<double>(tf.b2),
+                    static_cast<double>(tf.b3),
+                    static_cast<double>(tf.b4));
+        ImGui::Text("%8.3f %8.3f %8.3f %8.3f",
+                    static_cast<double>(tf.c1),
+                    static_cast<double>(tf.c2),
+                    static_cast<double>(tf.c3),
+                    static_cast<double>(tf.c4));
+        ImGui::Text("%8.3f %8.3f %8.3f %8.3f",
+                    static_cast<double>(tf.d1),
+                    static_cast<double>(tf.d2),
+                    static_cast<double>(tf.d3),
+                    static_cast<double>(tf.d4));
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted("Meshes");
+        ImGui::TableNextColumn();
+        std::ostringstream oss;
+        for (unsigned int i {0}; i < node->mNumMeshes; ++i)
+        {
+            oss << node->mMeshes[i] << ' ';
+        }
+        const auto str = oss.str();
+        ImGui::TextUnformatted(str.c_str());
+
+        for (unsigned int i {0}; i < node->mNumChildren; ++i)
+        {
+            display_node(node->mChildren[i]);
+        }
+
+        ImGui::TreePop();
+    }
+}
+
 void scene_graph_table(const aiScene *scene)
 {
     if (ImGui::BeginTable(
@@ -274,7 +339,9 @@ void scene_graph_table(const aiScene *scene)
         ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed);
         ImGui::TableHeadersRow();
 
-        const auto *const node = scene->mRootNode;
+        // TODO: the nodes store a pointer to their parent, so we could actually
+        // display them without recursion nor a stack
+        display_node(scene->mRootNode);
 
         ImGui::EndTable();
     }
@@ -328,7 +395,7 @@ void material_properties_table(const aiScene *scene)
                     {
                         // NOTE: this assumes there are no float/double
                         // properties with more than 4 components
-                        ai_real values[4] {};
+                        float values[4] {};
                         unsigned int size {4};
                         const auto result =
                             material->Get(property->mKey.C_Str(),
@@ -506,11 +573,11 @@ void scene_metadata_table(const aiScene *scene)
                 break;
             case AI_AIVECTOR3D:
             {
-                const auto v = *static_cast<aiVector3D *>(value.mData);
+                const auto *const v = static_cast<float *>(value.mData);
                 ImGui::Text("%f %f %f",
-                            static_cast<double>(v.x),
-                            static_cast<double>(v.y),
-                            static_cast<double>(v.z));
+                            static_cast<double>(v[0]),
+                            static_cast<double>(v[1]),
+                            static_cast<double>(v[2]));
             }
             break;
             case AI_AIMETADATA: ImGui::TextUnformatted("[metadata]"); break;
