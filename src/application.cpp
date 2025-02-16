@@ -10,6 +10,7 @@
 #include <ImGuizmo.h>
 
 #include <assimp/config.h>
+#include <assimp/DefaultLogger.hpp>
 #include <assimp/Importer.hpp>
 #include <assimp/material.h>
 #include <assimp/metadata.h>
@@ -59,8 +60,8 @@ struct Application_state
     Vulkan_context context;
     Vulkan_render_resources render_resources;
     Assimp::Importer importer; // FIXME: this is just to keep the imported scene
-                               // alive for debugging. We will end up having our
-                               // own scene representation anyways.
+                               // alive for debugging. We will probably end up
+                               // having our own scene representation anyways.
     const aiScene *scene;
     bool scene_loaded;
     Camera camera;
@@ -156,6 +157,9 @@ void open_scene(Application_state &state, const char *file_name)
         AI_CONFIG_PP_SBP_REMOVE, aiPrimitiveType_LINE | aiPrimitiveType_POINT);
     state.importer.SetPropertyBool(AI_CONFIG_PP_FD_CHECKAREA, false);
 
+    // FIXME: remove
+    state.importer.SetPropertyBool(AI_CONFIG_PP_PTV_NORMALIZE, true);
+
     const auto *const scene = state.importer.ReadFile(
         file_name,
         // aiProcess_CalcTangentSpace| // TODO: do we want these to be
@@ -163,7 +167,8 @@ void open_scene(Application_state &state, const char *file_name)
         // shader? Also, what if a mesh has normals but no normal map (which is
         // common)? In that case pre-computing tangents/bitangents is just a
         // waste of memory.
-        aiProcess_JoinIdenticalVertices | aiProcess_Triangulate |
+        aiProcess_PreTransformVertices // FIXME: remove
+            | aiProcess_JoinIdenticalVertices | aiProcess_Triangulate |
             aiProcess_RemoveComponent |
             aiProcess_GenSmoothNormals | // TODO: if the file does not contain
                                          // normals, do we want them to be
@@ -179,7 +184,7 @@ void open_scene(Application_state &state, const char *file_name)
                                       // slow
             aiProcess_EmbedTextures // TODO: do we really want this? If it does
                                     // not consistently embed ALL texture
-                                    // formats, we will have to load some of
+                                    // files, we will have to load some of
                                     // them manually anyways.
             | aiProcess_GenBoundingBoxes);
     if (scene == nullptr)
@@ -939,6 +944,14 @@ void run(const char *file_name)
     // for creating the surface).
     state.context = create_context(state.window.get());
 
+    Assimp::DefaultLogger::create();
+    Assimp::DefaultLogger::get()->setLogSeverity(Assimp::Logger::VERBOSE);
+    const auto stream =
+        Assimp::LogStream::createDefaultStream(aiDefaultLogStream_STDOUT);
+    constexpr auto severity = Assimp::Logger::Debugging | Assimp::Logger::Info |
+                              Assimp::Logger::Err | Assimp::Logger::Warn;
+    Assimp::DefaultLogger::get()->attachStream(stream, severity);
+
     try
     {
         if (file_name != nullptr)
@@ -965,6 +978,9 @@ void run(const char *file_name)
         }
 
         state.context.device->waitIdle();
+
+        // FIXME: this won't be executed when an exception is thrown
+        Assimp::DefaultLogger::kill();
     }
     catch (...)
     {
