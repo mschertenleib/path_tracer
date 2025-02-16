@@ -86,7 +86,6 @@ set(ASSIMP_BUILD_TESTS OFF)
 set(ASSIMP_WARNINGS_AS_ERRORS OFF)
 set(ASSIMP_INSTALL OFF)
 set(ASSIMP_BUILD_ASSIMP_VIEW OFF)
-# TODO: we should probably disable some importer formats that we could never load anyway
 CPMAddPackage(
         GITHUB_REPOSITORY assimp/assimp
         GIT_TAG v5.3.1

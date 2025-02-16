@@ -148,14 +148,40 @@ void glfw_framebuffer_size_callback(GLFWwindow *window, int width, int height)
 
 void open_scene(Application_state &state, const char *file_name)
 {
-    state.importer.SetPropertyBool(AI_CONFIG_PP_PTV_NORMALIZE, true);
+    state.importer.SetPropertyInteger(AI_CONFIG_PP_RVC_FLAGS,
+                                      aiComponent_ANIMATIONS |
+                                          aiComponent_BONEWEIGHTS);
+    state.importer.SetPropertyFloat(AI_CONFIG_PP_GSN_MAX_SMOOTHING_ANGLE, 80);
+    state.importer.SetPropertyInteger(
+        AI_CONFIG_PP_SBP_REMOVE, aiPrimitiveType_LINE | aiPrimitiveType_POINT);
+    state.importer.SetPropertyBool(AI_CONFIG_PP_FD_CHECKAREA, false);
 
     const auto *const scene = state.importer.ReadFile(
         file_name,
-        // FIXME: we probably want additional flags
-        aiProcess_Triangulate | aiProcess_PreTransformVertices |
-            aiProcess_GenBoundingBoxes | aiProcess_JoinIdenticalVertices |
-            aiProcess_SortByPType);
+        // aiProcess_CalcTangentSpace| // TODO: do we want these to be
+        // pre-computed, or can we compute them on the fly in the closest hit
+        // shader? Also, what if a mesh has normals but no normal map (which is
+        // common)? In that case pre-computing tangents/bitangents is just a
+        // waste of memory.
+        aiProcess_JoinIdenticalVertices | aiProcess_Triangulate |
+            aiProcess_RemoveComponent |
+            aiProcess_GenSmoothNormals | // TODO: if the file does not contain
+                                         // normals, do we want them to be
+                                         // smooth, or do we just move on with
+                                         // per-triangle normals computed in the
+                                         // closest hit shader?
+            aiProcess_ValidateDataStructure |
+            aiProcess_RemoveRedundantMaterials | aiProcess_FixInfacingNormals |
+            aiProcess_SortByPType | aiProcess_FindDegenerates |
+            aiProcess_FindInvalidData | aiProcess_GenUVCoords |
+            aiProcess_TransformUVCoords |
+            aiProcess_FindInstances | // TODO: remove if the import becomes too
+                                      // slow
+            aiProcess_EmbedTextures // TODO: do we really want this? If it does
+                                    // not consistently embed ALL texture
+                                    // formats, we will have to load some of
+                                    // them manually anyways.
+            | aiProcess_GenBoundingBoxes);
     if (scene == nullptr)
     {
         std::string importer_error(state.importer.GetErrorString());
