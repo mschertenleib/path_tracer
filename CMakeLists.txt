@@ -133,8 +133,6 @@ target_link_libraries(path_tracer PRIVATE
         assimp
         tinyfiledialogs
 )
-# TODO: check that this actually works in all cases ? It seems like we might
-# have to build twice for the copy to take effect in some cases
 add_custom_command(TARGET path_tracer POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:assimp> $<TARGET_FILE_DIR:path_tracer>
 )
@@ -150,13 +148,15 @@ set(SHADER_SOURCES
 cmake_path(APPEND CMAKE_SOURCE_DIR src shaders OUTPUT_VARIABLE GLSL_DIR)
 foreach (SHADER_SOURCE IN LISTS SHADER_SOURCES)
         cmake_path(ABSOLUTE_PATH SHADER_SOURCE BASE_DIRECTORY ${GLSL_DIR} OUTPUT_VARIABLE GLSL_SHADER)
-        cmake_path(GET GLSL_SHADER FILENAME SPV_SHADER)
-        cmake_path(APPEND_STRING SPV_SHADER .spv)
-        cmake_path(ABSOLUTE_PATH SPV_SHADER BASE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+        cmake_path(GET GLSL_SHADER FILENAME SPV_SHADER_FILENAME)
+        cmake_path(APPEND_STRING SPV_SHADER_FILENAME .spv)
+        cmake_path(ABSOLUTE_PATH SPV_SHADER_FILENAME BASE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} OUTPUT_VARIABLE SPV_SHADER)
         add_custom_command(
                 OUTPUT ${SPV_SHADER}
                 COMMAND ${Vulkan_GLSLC_EXECUTABLE} --target-env=vulkan1.3 -O ${GLSL_SHADER} -o ${SPV_SHADER}
-                COMMAND ${CMAKE_COMMAND} -E copy ${SPV_SHADER} $<TARGET_FILE_DIR:path_tracer>
+                # NOTE: this is not ideal, but if we just use the directory it doesn't work with MSBuild, and
+                # we can't use the TARGET_FILE_DIR generator in cmake_path()
+                COMMAND ${CMAKE_COMMAND} -E copy ${SPV_SHADER} $<TARGET_FILE_DIR:path_tracer>/${SPV_SHADER_FILENAME}
                 MAIN_DEPENDENCY ${GLSL_SHADER}
                 VERBATIM
                 COMMENT "Compiling ${SHADER_SOURCE}"

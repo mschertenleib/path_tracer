@@ -42,46 +42,45 @@ static_assert(sizeof(Push_constants) <= 128);
 
 #ifdef ENABLE_VALIDATION
 
-VKAPI_ATTR VkBool32 VKAPI_CALL
-debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
-               VkDebugUtilsMessageTypeFlagsEXT message_type,
-               const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
+VKAPI_ATTR vk::Bool32 VKAPI_CALL
+debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
+               vk::DebugUtilsMessageTypeFlagsEXT message_type,
+               const vk::DebugUtilsMessengerCallbackDataEXT *callback_data,
                void *user_data [[maybe_unused]])
 {
     std::ostringstream message;
 
     switch (message_severity)
     {
-    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose:
         message << "[VERBOSE]";
         break;
-    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo:
         message << "[INFO]";
         break;
-    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning:
         message << "[WARNING]";
         break;
-    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eError:
         message << "[ERROR]";
         break;
     default: break;
     }
 
     std::ostringstream types;
-    if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
+    if (message_type & vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral)
     {
         types << "GENERAL|";
     }
-    if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
+    if (message_type & vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation)
     {
         types << "VALIDATION|";
     }
-    if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
+    if (message_type & vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance)
     {
         types << "PERFORMANCE|";
     }
-    if (message_type &
-        VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT)
+    if (message_type & vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding)
     {
         types << "DEVICE_ADDRESS_BINDING|";
     }
@@ -213,7 +212,7 @@ void create_instance(Vulkan_context &context)
                 vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
                 vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
             .pfnUserCallback = &debug_callback}};
-
+    
     context.instance = vk::createInstanceUnique(
         create_info_chain.get<vk::InstanceCreateInfo>());
 

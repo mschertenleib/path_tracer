@@ -168,7 +168,7 @@ struct Vulkan_buffer
 
 struct Vulkan_context
 {
-    vk::DynamicLoader dl;
+    vk::detail::DynamicLoader dl;
 
     vk::UniqueInstance instance;
 #ifdef ENABLE_VALIDATION
