@@ -48,55 +48,13 @@ debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
                const vk::DebugUtilsMessengerCallbackDataEXT *callback_data,
                void *user_data [[maybe_unused]])
 {
-    std::ostringstream message;
-
-    switch (message_severity)
+    auto type = vk::to_string(message_type);
+    if (type.starts_with("{ ") && type.ends_with(" }"))
     {
-    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose:
-        message << "[VERBOSE]";
-        break;
-    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo:
-        message << "[INFO]";
-        break;
-    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning:
-        message << "[WARNING]";
-        break;
-    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eError:
-        message << "[ERROR]";
-        break;
-    default: break;
+        type.assign(type.begin() + 2, type.end() - 2);
     }
-
-    std::ostringstream types;
-    if (message_type & vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral)
-    {
-        types << "GENERAL|";
-    }
-    if (message_type & vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation)
-    {
-        types << "VALIDATION|";
-    }
-    if (message_type & vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance)
-    {
-        types << "PERFORMANCE|";
-    }
-    if (message_type & vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding)
-    {
-        types << "DEVICE_ADDRESS_BINDING|";
-    }
-
-    if (auto types_str = types.str(); types_str.empty())
-    {
-        message << ' ';
-    }
-    else
-    {
-        message << '[' << types_str.erase(types_str.size() - 1) << "] ";
-    }
-
-    message << callback_data->pMessage;
-
-    std::cout << message.str() << std::endl;
+    std::cout << '[' << vk::to_string(message_severity) << "][" << type << "] "
+              << callback_data->pMessage << '\n';
 
     return VK_FALSE;
 }
@@ -212,7 +170,7 @@ void create_instance(Vulkan_context &context)
                 vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
                 vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
             .pfnUserCallback = &debug_callback}};
-    
+
     context.instance = vk::createInstanceUnique(
         create_info_chain.get<vk::InstanceCreateInfo>());
 
@@ -2034,7 +1992,7 @@ void draw_frame(Vulkan_context &context,
 
     // FIXME: we shouldn't have the "eWait" flag here, see the bottom of
     // https://docs.vulkan.org/samples/latest/samples/api/timestamp_queries/README.html
-    std::uint64_t timestamps[2] {};
+    /*std::uint64_t timestamps[2] {};
     vk::detail::resultCheck(
         context.device->getQueryPoolResults(context.query_pool.get(),
                                             0,
@@ -2049,7 +2007,7 @@ void draw_frame(Vulkan_context &context,
         context.physical_device_properties.limits.timestampPeriod;
     const float elapsed_ms =
         static_cast<float>(timestamps[1] - timestamps[0]) * period / 1e6f;
-    std::cout << elapsed_ms << " ms\n";
+    std::cout << elapsed_ms << " ms\n";*/
 
     const vk::PresentInfoKHR present_info {
         .waitSemaphoreCount = 1,
