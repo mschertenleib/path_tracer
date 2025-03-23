@@ -1120,17 +1120,21 @@ void create_tlas(const Vulkan_context &context,
                      std::array {0.0f, 0.0f, 0.7f, 0.0f}}},
         {std::array {std::array {0.2f, 0.0f, 0.0f, 0.0f},
                      std::array {0.0f, 0.2f, 0.0f, 0.0f},
-                     std::array {0.0f, 0.0f, 0.2f, 0.0f}}}};
+                     std::array {0.0f, 0.0f, 0.2f, 0.0f}}},
+        {std::array {std::array {0.8f, 0.0f, 0.0f, 0.0f},
+                     std::array {0.0f, 0.8f, 0.0f, 0.0f},
+                     std::array {0.0f, 0.0f, 0.8f, 0.8f}}}};
 
     std::vector<vk::AccelerationStructureInstanceKHR> instances;
     instances.reserve(transforms.size());
-    for (std::uint32_t i {0}; i < transforms.size(); ++i)
+    for (std::uint32_t i {0}; i < static_cast<std::uint32_t>(transforms.size());
+         ++i)
     {
         instances.push_back(
             {.transform = transforms[i],
              .instanceCustomIndex = 0,
              .mask = 0xFF,
-             .instanceShaderBindingTableRecordOffset = i & 0xffffff,
+             .instanceShaderBindingTableRecordOffset = (i % 4) & 0xffffff,
              .flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
              .accelerationStructureReference = get_device_address(
                  context.device.get(), render_resources.blas.get())});
@@ -1445,6 +1449,8 @@ void create_ray_tracing_pipeline(const Vulkan_context &context,
         create_shader_module(context.device.get(), "specular.rchit.spv");
     const auto rchit_emissive_shader_module =
         create_shader_module(context.device.get(), "emissive.rchit.spv");
+    const auto rchit_dielectric_shader_module =
+        create_shader_module(context.device.get(), "dielectric.rchit.spv");
 
     const vk::PipelineShaderStageCreateInfo shader_stage_create_infos[] {
         {.stage = vk::ShaderStageFlagBits::eRaygenKHR,
@@ -1461,6 +1467,9 @@ void create_ray_tracing_pipeline(const Vulkan_context &context,
          .pName = "main"},
         {.stage = vk::ShaderStageFlagBits::eClosestHitKHR,
          .module = rchit_emissive_shader_module.get(),
+         .pName = "main"},
+        {.stage = vk::ShaderStageFlagBits::eClosestHitKHR,
+         .module = rchit_dielectric_shader_module.get(),
          .pName = "main"}};
 
     const vk::RayTracingShaderGroupCreateInfoKHR ray_tracing_shader_groups[] {
@@ -1487,6 +1496,11 @@ void create_ray_tracing_pipeline(const Vulkan_context &context,
         {.type = vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
          .generalShader = VK_SHADER_UNUSED_KHR,
          .closestHitShader = 4,
+         .anyHitShader = VK_SHADER_UNUSED_KHR,
+         .intersectionShader = VK_SHADER_UNUSED_KHR},
+        {.type = vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
+         .generalShader = VK_SHADER_UNUSED_KHR,
+         .closestHitShader = 5,
          .anyHitShader = VK_SHADER_UNUSED_KHR,
          .intersectionShader = VK_SHADER_UNUSED_KHR}};
 
@@ -1528,7 +1542,7 @@ void create_shader_binding_table(const Vulkan_context &context,
     const auto handle_size_aligned = align_up(handle_size, handle_alignment);
 
     const std::uint32_t miss_count {1};
-    const std::uint32_t hit_count {3}; // FIXME: this should not be hardcoded
+    const std::uint32_t hit_count {4}; // FIXME: this should not be hardcoded
     const std::uint32_t handle_count {1 + miss_count + hit_count};
 
     render_resources.sbt_raygen_region.stride =

@@ -7,6 +7,7 @@ struct Ray_payload
     vec3 emissivity;
     vec3 ray_origin;
     vec3 ray_direction;
+    float reflectance_attenuation;
     uint rng_state;
     bool hit_sky;
 };

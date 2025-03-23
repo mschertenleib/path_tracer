@@ -144,6 +144,7 @@ set(SHADER_SOURCES
         diffuse.rchit
         specular.rchit
         emissive.rchit
+        dielectric.rchit
 )
 cmake_path(APPEND CMAKE_SOURCE_DIR src shaders OUTPUT_VARIABLE GLSL_DIR)
 foreach (SHADER_SOURCE IN LISTS SHADER_SOURCES)

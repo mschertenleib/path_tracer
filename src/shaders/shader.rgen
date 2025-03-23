@@ -74,6 +74,7 @@ vec3 radiance(out uint bounces)
 
     for (bounces = 0; bounces < 32; ++bounces)
     {
+        payload.reflectance_attenuation = 1.0;
         traceRayEXT(tlas,
                     gl_RayFlagsOpaqueEXT,
                     0xff,
@@ -102,7 +103,7 @@ vec3 radiance(out uint bounces)
         {
             return accumulated_color;
         }
-        accumulated_reflectance *= hit_color;
+        accumulated_reflectance *= hit_color * payload.reflectance_attenuation;
     }
 
     return accumulated_color;
