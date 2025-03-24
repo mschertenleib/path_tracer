@@ -10,16 +10,6 @@ layout (binding = 0, rgba32f) uniform restrict image2D storage_image;
 
 layout (binding = 1) uniform accelerationStructureEXT tlas;
 
-layout (binding = 2, scalar) restrict readonly buffer Vertices
-{
-    vec3 vertices[];
-};
-
-layout (binding = 3, scalar) restrict readonly buffer Indices
-{
-    uint indices[];
-};
-
 layout (binding = 4, rgba8) uniform restrict writeonly image2D render_target;
 
 layout (push_constant, scalar) uniform Push_constants

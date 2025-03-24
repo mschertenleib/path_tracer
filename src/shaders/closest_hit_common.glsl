@@ -4,15 +4,9 @@
 #include "shader_common.glsl"
 
 
-layout (binding = 2, scalar) buffer Vertices
-{
-    vec3 vertices[];
-};
-
-layout (binding = 3, scalar) buffer Indices
-{
-    uint indices[];
-};
+layout (binding = 2, scalar) restrict readonly buffer Vertices { vec3 vertices[]; };
+layout (binding = 3, scalar) restrict readonly buffer Indices { uint indices[]; };
+layout (binding = 5, scalar) restrict readonly buffer Normals { vec3 normals[]; };
 
 layout (location = 0) rayPayloadInEXT Ray_payload payload;
 
@@ -70,17 +64,25 @@ Hit get_hit()
     const vec3 v0 = vertices[i0];
     const vec3 v1 = vertices[i1];
     const vec3 v2 = vertices[i2];
+    const vec3 n0 = normals[i0];
+    const vec3 n1 = normals[i1];
+    const vec3 n2 = normals[i2];
 
     const vec3 barycentrics = vec3(1.0 - attributes.x - attributes.y, attributes.x, attributes.y);
     const vec3 object_position = v0 * barycentrics.x + v1 * barycentrics.y + v2 * barycentrics.z;
-    Hit hit;
-    hit.world_position = gl_ObjectToWorldEXT * vec4(object_position, 1.0);
-
+#if 1
+    const vec3 object_normal = n0 * barycentrics.x + n1 * barycentrics.y + n2 * barycentrics.z;
+#else
     const vec3 object_normal = cross(v1 - v0, v2 - v0);
+#endif
+
     // TODO: properly understand this
     // Use the transpose of the inverse matrix for the transformation, because
     // normals are directions, not positions.
-    vec3 world_normal = normalize((object_normal * gl_WorldToObjectEXT).xyz);
+    const vec3 world_normal = normalize((object_normal * gl_WorldToObjectEXT).xyz);
+    
+    Hit hit;
+    hit.world_position = gl_ObjectToWorldEXT * vec4(object_position, 1.0);
     hit.world_normal = faceforward(world_normal, gl_WorldRayDirectionEXT, world_normal);
 
     return hit;

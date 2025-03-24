@@ -229,6 +229,7 @@ struct Vulkan_render_resources
     vk::UniqueSampler render_target_sampler;
     Vulkan_buffer vertex_buffer;
     Vulkan_buffer index_buffer;
+    Vulkan_buffer normal_buffer;
     Vulkan_buffer blas_buffer;
     vk::UniqueAccelerationStructureKHR blas;
     Vulkan_buffer tlas_buffer;

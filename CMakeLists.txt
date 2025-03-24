@@ -146,7 +146,15 @@ set(SHADER_SOURCES
         emissive.rchit
         dielectric.rchit
 )
+set(SHADER_INCLUDES
+        shader_common.glsl
+        closest_hit_common.glsl
+)
 cmake_path(APPEND CMAKE_SOURCE_DIR src shaders OUTPUT_VARIABLE GLSL_DIR)
+foreach (SHADER_INCLUDE IN LISTS SHADER_INCLUDES)
+        cmake_path(ABSOLUTE_PATH SHADER_INCLUDE BASE_DIRECTORY ${GLSL_DIR} OUTPUT_VARIABLE GLSL_INCLUDE)
+        list(APPEND GLSL_INCLUDES ${GLSL_INCLUDE})
+endforeach ()
 foreach (SHADER_SOURCE IN LISTS SHADER_SOURCES)
         cmake_path(ABSOLUTE_PATH SHADER_SOURCE BASE_DIRECTORY ${GLSL_DIR} OUTPUT_VARIABLE GLSL_SHADER)
         cmake_path(GET GLSL_SHADER FILENAME SPV_SHADER_FILENAME)
@@ -159,6 +167,7 @@ foreach (SHADER_SOURCE IN LISTS SHADER_SOURCES)
                 # we can't use the TARGET_FILE_DIR generator in cmake_path()
                 COMMAND ${CMAKE_COMMAND} -E copy ${SPV_SHADER} $<TARGET_FILE_DIR:path_tracer>/${SPV_SHADER_FILENAME}
                 MAIN_DEPENDENCY ${GLSL_SHADER}
+                DEPENDS ${GLSL_INCLUDES}
                 VERBATIM
                 COMMENT "Compiling ${SHADER_SOURCE}"
         )

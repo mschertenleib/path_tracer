@@ -992,6 +992,19 @@ create_buffer_from_host_data(const Vulkan_context &context,
         size);
 }
 
+[[nodiscard]] Vulkan_buffer create_storage_buffer(const Vulkan_context &context,
+                                                  const void *data,
+                                                  std::size_t size)
+{
+    return create_buffer_from_host_data(
+        context,
+        vk::BufferUsageFlagBits::eStorageBuffer |
+            vk::BufferUsageFlagBits::eTransferDst,
+        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+        data,
+        size);
+}
+
 [[nodiscard]] vk::DeviceAddress get_device_address(vk::Device device,
                                                    vk::Buffer buffer) noexcept
 {
@@ -1262,17 +1275,19 @@ void create_descriptor_set_layout(const Vulkan_context &context,
         {.binding = 2,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
          .descriptorCount = 1,
-         .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR |
-                       vk::ShaderStageFlagBits::eClosestHitKHR},
+         .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR},
         {.binding = 3,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
          .descriptorCount = 1,
-         .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR |
-                       vk::ShaderStageFlagBits::eClosestHitKHR},
+         .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR},
         {.binding = 4,
          .descriptorType = vk::DescriptorType::eStorageImage,
          .descriptorCount = 1,
-         .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR}};
+         .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR},
+        {.binding = 5,
+         .descriptorType = vk::DescriptorType::eStorageBuffer,
+         .descriptorCount = 1,
+         .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR}};
 
     const vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
         .bindingCount = static_cast<std::uint32_t>(
@@ -1336,6 +1351,11 @@ void create_descriptor_set(const Vulkan_context &context,
         .offset = 0,
         .range = render_resources.index_buffer.size};
 
+    const vk::DescriptorBufferInfo descriptor_normals {
+        .buffer = render_resources.normal_buffer.buffer.get(),
+        .offset = 0,
+        .range = render_resources.normal_buffer.size};
+
     const vk::DescriptorImageInfo descriptor_render_target {
         .sampler = VK_NULL_HANDLE,
         .imageView = render_resources.render_target_view.get(),
@@ -1371,7 +1391,13 @@ void create_descriptor_set(const Vulkan_context &context,
          .dstArrayElement = 0,
          .descriptorCount = 1,
          .descriptorType = vk::DescriptorType::eStorageImage,
-         .pImageInfo = &descriptor_render_target}};
+         .pImageInfo = &descriptor_render_target},
+        {.dstSet = render_resources.descriptor_set.get(),
+         .dstBinding = 5,
+         .dstArrayElement = 0,
+         .descriptorCount = 1,
+         .descriptorType = vk::DescriptorType::eStorageBuffer,
+         .pBufferInfo = &descriptor_normals}};
 
     context.device->updateDescriptorSets({descriptor_writes}, {});
 }
@@ -1769,6 +1795,11 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
 
     render_resources.index_buffer = create_vertex_or_index_buffer(
         context, indices.data(), indices.size() * sizeof(indices.front()));
+
+    render_resources.normal_buffer =
+        create_storage_buffer(context,
+                              mesh->mNormals,
+                              mesh->mNumVertices * sizeof(mesh->mNormals[0]));
 
     create_blas(context, render_resources);
     create_tlas(context, render_resources);
