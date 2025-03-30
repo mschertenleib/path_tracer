@@ -737,33 +737,34 @@ void make_ui(Application_state &state)
                 view_manipulate_size,
                 0x00000000);
 
+            inverse_view = invert_rigid_transform(view);
+
             if (view != old_view)
             {
                 need_to_reset = true;
-            }
 
-            inverse_view = invert_rigid_transform(view);
-            const auto unit_direction_x =
-                normalize(vec3 {inverse_view.m[0][0],
-                                inverse_view.m[0][1],
-                                inverse_view.m[0][2]});
-            const auto unit_direction_y =
-                normalize(vec3 {inverse_view.m[1][0],
-                                inverse_view.m[1][1],
-                                inverse_view.m[1][2]});
-            const auto unit_direction_z =
-                normalize(vec3 {inverse_view.m[2][0],
-                                inverse_view.m[2][1],
-                                inverse_view.m[2][2]});
-            state.camera.direction_x =
-                unit_direction_x * norm(state.camera.direction_x);
-            state.camera.direction_y =
-                -unit_direction_y * norm(state.camera.direction_y);
-            state.camera.direction_z =
-                -unit_direction_z * norm(state.camera.direction_z);
-            state.camera.position = vec3 {inverse_view.m[3][0],
-                                          inverse_view.m[3][1],
-                                          inverse_view.m[3][2]};
+                const auto unit_direction_x =
+                    normalize(vec3 {inverse_view.m[0][0],
+                                    inverse_view.m[0][1],
+                                    inverse_view.m[0][2]});
+                const auto unit_direction_y =
+                    normalize(vec3 {inverse_view.m[1][0],
+                                    inverse_view.m[1][1],
+                                    inverse_view.m[1][2]});
+                const auto unit_direction_z =
+                    normalize(vec3 {inverse_view.m[2][0],
+                                    inverse_view.m[2][1],
+                                    inverse_view.m[2][2]});
+                state.camera.direction_x =
+                    unit_direction_x * norm(state.camera.direction_x);
+                state.camera.direction_y =
+                    -unit_direction_y * norm(state.camera.direction_y);
+                state.camera.direction_z =
+                    -unit_direction_z * norm(state.camera.direction_z);
+                state.camera.position = vec3 {inverse_view.m[3][0],
+                                              inverse_view.m[3][1],
+                                              inverse_view.m[3][2]};
+            }
         }
         ImGui::End();
         ImGui::PopStyleColor();
