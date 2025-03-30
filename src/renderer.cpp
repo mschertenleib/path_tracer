@@ -1837,19 +1837,22 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
                               mesh->mNumVertices * sizeof(mesh->mNormals[0]));
 
     {
-        int environment_map_width {};
-        int environment_map_height {};
-        // FIXME
-        const auto environment_pixels = read_hdr_image("../../powerplant.hdr",
-                                                       environment_map_width,
-                                                       environment_map_height);
+        int width {};
+        int height {};
+        // FIXME: hardcoded filename
+        // FIXME: double CPU allocation: once for the std::vector, once for
+        // the staging buffer
+        const auto environment_pixels =
+            read_hdr_image("../../powerplant.hdr", width, height);
+        const auto environment_map_width = static_cast<std::uint32_t>(width);
+        const auto environment_map_height = static_cast<std::uint32_t>(height);
 
         constexpr auto environment_map_format = vk::Format::eR32G32B32A32Sfloat;
         render_resources.environment_map =
             create_image(context.allocator.get(),
                          context.device.get(),
-                         static_cast<std::uint32_t>(environment_map_width),
-                         static_cast<std::uint32_t>(environment_map_height),
+                         environment_map_width,
+                         environment_map_height,
                          environment_map_format,
                          vk::ImageUsageFlagBits::eSampled |
                              vk::ImageUsageFlagBits::eTransferDst);
@@ -1858,6 +1861,23 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
                               render_resources.environment_map.image.get(),
                               environment_map_format);
         create_environment_map_sampler(context, render_resources);
+
+        const std::size_t buffer_size {
+            environment_map_width * environment_map_height * 4 * sizeof(float)};
+        VmaAllocationInfo staging_allocation_info {};
+        const auto staging_buffer = create_buffer(
+            context.allocator.get(),
+            context.device.get(),
+            buffer_size,
+            vk::BufferUsageFlagBits::eTransferSrc,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                VMA_ALLOCATION_CREATE_MAPPED_BIT,
+            VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+            &staging_allocation_info);
+
+        auto *const mapped_data =
+            static_cast<float *>(staging_allocation_info.pMappedData);
+        std::memcpy(mapped_data, environment_pixels.data(), buffer_size);
 
         const auto command_buffer =
             begin_one_time_submit_command_buffer(context);
@@ -1869,18 +1889,51 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
             .baseArrayLayer = 0,
             .layerCount = 1};
 
-        const vk::ImageMemoryBarrier image_memory_barrier {
+        vk::ImageMemoryBarrier image_memory_barrier {
             .srcAccessMask = vk::AccessFlagBits::eNone,
-            .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
             .oldLayout = vk::ImageLayout::eUndefined,
-            .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+            .newLayout = vk::ImageLayout::eTransferDstOptimal,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .image = render_resources.environment_map.image.get(),
             .subresourceRange = subresource_range};
 
+        command_buffer->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                        vk::PipelineStageFlagBits::eTransfer,
+                                        {},
+                                        {},
+                                        {},
+                                        {image_memory_barrier});
+
+        constexpr vk::ImageSubresourceLayers subresource_layers {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1};
+
+        const vk::BufferImageCopy copy_region {
+            .bufferOffset = 0,
+            .bufferRowLength = {},
+            .bufferImageHeight = environment_map_height,
+            .imageSubresource = subresource_layers,
+            .imageOffset = {0, 0, 0},
+            .imageExtent = {environment_map_width, environment_map_height, 1}};
+
+        command_buffer->copyBufferToImage(
+            staging_buffer.buffer.get(),
+            render_resources.environment_map.image.get(),
+            vk::ImageLayout::eTransferDstOptimal,
+            {copy_region});
+
+        image_memory_barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+        image_memory_barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        image_memory_barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+        image_memory_barrier.newLayout =
+            vk::ImageLayout::eShaderReadOnlyOptimal;
+
         command_buffer->pipelineBarrier(
-            vk::PipelineStageFlagBits::eTopOfPipe,
+            vk::PipelineStageFlagBits::eTransfer,
             vk::PipelineStageFlagBits::eRayTracingShaderKHR,
             {},
             {},
