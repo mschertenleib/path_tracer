@@ -11,6 +11,11 @@
 #include <fstream>
 #include <sstream>
 
+void Image_deleter::operator()(void *ptr) const
+{
+    stbi_image_free(ptr);
+}
+
 std::vector<std::uint32_t> read_binary_file(const char *file_name)
 {
     const std::filesystem::path path(file_name);
@@ -48,51 +53,42 @@ std::vector<std::uint32_t> read_binary_file(const char *file_name)
     return buffer;
 }
 
-std::vector<std::uint8_t>
-read_image(const char *file_name, int &width, int &height)
+Image<std::uint8_t> read_image(const char *file_name)
 {
+    int width {};
+    int height {};
     int channels_in_file {};
     constexpr int desired_channels {4};
-    const auto free_image = [](std::uint8_t *pointer)
-    { stbi_image_free(pointer); };
-    std::unique_ptr<std::uint8_t, decltype(free_image)> image(
-        stbi_load(
-            file_name, &width, &height, &channels_in_file, desired_channels),
-        free_image);
-    if (!image)
+    auto *const pixels = stbi_load(
+        file_name, &width, &height, &channels_in_file, desired_channels);
+    if (!pixels)
     {
         // FIXME
         throw std::runtime_error(stbi_failure_reason());
     }
 
-    const auto image_size =
-        static_cast<std::size_t>(width * height * desired_channels);
-    std::vector<std::uint8_t> buffer(image.get(), image.get() + image_size);
-
-    return buffer;
+    return {.data = std::unique_ptr<std::uint8_t, Image_deleter>(pixels),
+            .width = static_cast<std::uint32_t>(width),
+            .height = static_cast<std::uint32_t>(height)};
 }
 
-std::vector<float>
-read_hdr_image(const char *file_name, int &width, int &height)
+Image<float> read_hdr_image(const char *file_name)
 {
+    int width {};
+    int height {};
     int channels_in_file {};
     constexpr int desired_channels {4};
-    const auto free_image = [](float *pointer) { stbi_image_free(pointer); };
-    std::unique_ptr<float, decltype(free_image)> image(
-        stbi_loadf(
-            file_name, &width, &height, &channels_in_file, desired_channels),
-        free_image);
-    if (!image)
+    auto *const pixels = stbi_loadf(
+        file_name, &width, &height, &channels_in_file, desired_channels);
+    if (!pixels)
     {
         // FIXME
         throw std::runtime_error(stbi_failure_reason());
     }
 
-    const auto image_size =
-        static_cast<std::size_t>(width * height * desired_channels);
-    std::vector<float> buffer(image.get(), image.get() + image_size);
-
-    return buffer;
+    return {.data = std::unique_ptr<float, Image_deleter>(pixels),
+            .width = static_cast<std::uint32_t>(width),
+            .height = static_cast<std::uint32_t>(height)};
 }
 
 std::string write_png(const char *file_name,

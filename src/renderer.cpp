@@ -1837,22 +1837,15 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
                               mesh->mNumVertices * sizeof(mesh->mNormals[0]));
 
     {
-        int width {};
-        int height {};
         // FIXME: hardcoded filename
-        // FIXME: double CPU allocation: once for the std::vector, once for
-        // the staging buffer
-        const auto environment_pixels =
-            read_hdr_image("../../powerplant.hdr", width, height);
-        const auto environment_map_width = static_cast<std::uint32_t>(width);
-        const auto environment_map_height = static_cast<std::uint32_t>(height);
+        const auto environment_map = read_hdr_image("../../powerplant.hdr");
 
         constexpr auto environment_map_format = vk::Format::eR32G32B32A32Sfloat;
         render_resources.environment_map =
             create_image(context.allocator.get(),
                          context.device.get(),
-                         environment_map_width,
-                         environment_map_height,
+                         environment_map.width,
+                         environment_map.height,
                          environment_map_format,
                          vk::ImageUsageFlagBits::eSampled |
                              vk::ImageUsageFlagBits::eTransferDst);
@@ -1863,7 +1856,7 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
         create_environment_map_sampler(context, render_resources);
 
         const std::size_t buffer_size {
-            environment_map_width * environment_map_height * 4 * sizeof(float)};
+            environment_map.width * environment_map.height * 4 * sizeof(float)};
         VmaAllocationInfo staging_allocation_info {};
         const auto staging_buffer = create_buffer(
             context.allocator.get(),
@@ -1877,7 +1870,7 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
 
         auto *const mapped_data =
             static_cast<float *>(staging_allocation_info.pMappedData);
-        std::memcpy(mapped_data, environment_pixels.data(), buffer_size);
+        std::memcpy(mapped_data, environment_map.data.get(), buffer_size);
 
         const auto command_buffer =
             begin_one_time_submit_command_buffer(context);
@@ -1915,10 +1908,10 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
         const vk::BufferImageCopy copy_region {
             .bufferOffset = 0,
             .bufferRowLength = {},
-            .bufferImageHeight = environment_map_height,
+            .bufferImageHeight = environment_map.height,
             .imageSubresource = subresource_layers,
             .imageOffset = {0, 0, 0},
-            .imageExtent = {environment_map_width, environment_map_height, 1}};
+            .imageExtent = {environment_map.width, environment_map.height, 1}};
 
         command_buffer->copyBufferToImage(
             staging_buffer.buffer.get(),
