@@ -15,6 +15,7 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <ranges>
 #include <sstream>
 #include <vector>
 
@@ -49,10 +50,10 @@ debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
                void *user_data [[maybe_unused]])
 {
     auto type = vk::to_string(message_type);
-    if (type.starts_with("{ ") && type.ends_with(" }"))
-    {
-        type.assign(type.begin() + 2, type.end() - 2);
-    }
+    auto filtered_type = std::views::filter(
+        type, [](char c) { return c != '{' && c != '}' && c != ' '; });
+    type.assign(filtered_type.begin(), filtered_type.end());
+
     std::cout << '[' << vk::to_string(message_severity) << "][" << type << "] "
               << callback_data->pMessage << '\n';
 
