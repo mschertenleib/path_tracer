@@ -45,7 +45,7 @@ vec3 offset_position_along_normal(vec3 position, vec3 normal)
 
 vec3 sample_sphere(inout uint rng_state)
 {
-    const float theta = 2.0 * pi * random(rng_state);
+    const float theta = 2.0 * PI * random(rng_state);
     const float z = 2.0 * random(rng_state) - 1.0;
     const float r = sqrt(1.0 - z * z);
     return vec3(r * cos(theta), r * sin(theta), z);

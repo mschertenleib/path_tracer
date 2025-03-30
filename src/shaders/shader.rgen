@@ -46,14 +46,14 @@ vec2 sample_gaussian(inout uint rng_state)
 {
     const float float_min = 1.175494351e-38;
     const float r = sqrt(-2.0 * log(max(float_min, random(rng_state))));
-    const float theta = 2.0 * pi * random(rng_state);
+    const float theta = 2.0 * PI * random(rng_state);
     return r * vec2(cos(theta), sin(theta));
 }
 
 vec2 sample_disk(inout uint rng_state)
 {
     const float r = sqrt(random(rng_state));
-    const float theta = 2.0 * pi * random(rng_state);
+    const float theta = 2.0 * PI * random(rng_state);
     return r * vec2(cos(theta), sin(theta));
 }
 

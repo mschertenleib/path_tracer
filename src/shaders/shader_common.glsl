@@ -1,5 +1,5 @@
 
-const float pi = 3.1415926535897931;
+#define PI 3.1415926535897931
 
 struct Ray_payload
 {

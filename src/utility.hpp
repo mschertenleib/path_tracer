@@ -18,7 +18,11 @@ template <std::unsigned_integral U>
 [[nodiscard]] std::vector<std::uint32_t>
 read_binary_file(const char *file_name);
 
-[[nodiscard]] std::vector<float> read_hdr_image(const char *file_name, int &width, int &height);
+[[nodiscard]] std::vector<std::uint8_t>
+read_image(const char *file_name, int &width, int &height);
+
+[[nodiscard]] std::vector<float>
+read_hdr_image(const char *file_name, int &width, int &height);
 
 // On failure, returns an error message. On success, returns an empty string.
 [[nodiscard]] std::string write_png(const char *file_name,

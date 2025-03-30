@@ -838,8 +838,8 @@ void recreate_swapchain(Vulkan_context &context)
     return image;
 }
 
-void create_sampler(const Vulkan_context &context,
-                    Vulkan_render_resources &render_resources)
+void create_render_target_sampler(const Vulkan_context &context,
+                                  Vulkan_render_resources &render_resources)
 {
     constexpr vk::SamplerCreateInfo sampler_create_info {
         .magFilter = vk::Filter::eNearest,
@@ -854,6 +854,25 @@ void create_sampler(const Vulkan_context &context,
         .unnormalizedCoordinates = VK_FALSE};
 
     render_resources.render_target_sampler =
+        context.device->createSamplerUnique(sampler_create_info);
+}
+
+void create_environment_map_sampler(const Vulkan_context &context,
+                                    Vulkan_render_resources &render_resources)
+{
+    constexpr vk::SamplerCreateInfo sampler_create_info {
+        .magFilter = vk::Filter::eLinear,
+        .minFilter = vk::Filter::eLinear,
+        .mipmapMode = vk::SamplerMipmapMode::eNearest,
+        .addressModeU = vk::SamplerAddressMode::eRepeat,
+        .addressModeV = vk::SamplerAddressMode::eRepeat,
+        .addressModeW = vk::SamplerAddressMode::eRepeat,
+        .anisotropyEnable = VK_FALSE,
+        .compareEnable = VK_FALSE,
+        .borderColor = vk::BorderColor::eIntOpaqueBlack,
+        .unnormalizedCoordinates = VK_FALSE};
+
+    render_resources.environment_map_sampler =
         context.device->createSamplerUnique(sampler_create_info);
 }
 
@@ -1287,7 +1306,11 @@ void create_descriptor_set_layout(const Vulkan_context &context,
         {.binding = 5,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
          .descriptorCount = 1,
-         .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR}};
+         .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR},
+        {.binding = 6,
+         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+         .descriptorCount = 1,
+         .stageFlags = vk::ShaderStageFlagBits::eMissKHR}};
 
     const vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
         .bindingCount = static_cast<std::uint32_t>(
@@ -1361,6 +1384,11 @@ void create_descriptor_set(const Vulkan_context &context,
         .imageView = render_resources.render_target_view.get(),
         .imageLayout = vk::ImageLayout::eGeneral};
 
+    const vk::DescriptorImageInfo descriptor_environment_map {
+        .sampler = render_resources.environment_map_sampler.get(),
+        .imageView = render_resources.environment_map_view.get(),
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
+
     const vk::WriteDescriptorSet descriptor_writes[] {
         {.dstSet = render_resources.descriptor_set.get(),
          .dstBinding = 0,
@@ -1397,7 +1425,14 @@ void create_descriptor_set(const Vulkan_context &context,
          .dstArrayElement = 0,
          .descriptorCount = 1,
          .descriptorType = vk::DescriptorType::eStorageBuffer,
-         .pBufferInfo = &descriptor_normals}};
+         .pBufferInfo = &descriptor_normals},
+        {.dstSet = render_resources.descriptor_set.get(),
+         .dstBinding = 6,
+         .dstArrayElement = 0,
+         .descriptorCount = 1,
+         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+         .pImageInfo = &descriptor_environment_map},
+    };
 
     context.device->updateDescriptorSets({descriptor_writes}, {});
 }
@@ -1777,7 +1812,7 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
         end_one_time_submit_command_buffer(context, command_buffer);
     }
 
-    create_sampler(context, render_resources);
+    create_render_target_sampler(context, render_resources);
 
     const auto *const mesh = scene->mMeshes[0];
     std::vector<std::uint32_t> indices(mesh->mNumFaces * 3);
@@ -1800,6 +1835,60 @@ Vulkan_render_resources create_render_resources(const Vulkan_context &context,
         create_storage_buffer(context,
                               mesh->mNormals,
                               mesh->mNumVertices * sizeof(mesh->mNormals[0]));
+
+    {
+        int environment_map_width {};
+        int environment_map_height {};
+        // FIXME
+        const auto environment_pixels = read_hdr_image("../../powerplant.hdr",
+                                                       environment_map_width,
+                                                       environment_map_height);
+
+        constexpr auto environment_map_format = vk::Format::eR32G32B32A32Sfloat;
+        render_resources.environment_map =
+            create_image(context.allocator.get(),
+                         context.device.get(),
+                         static_cast<std::uint32_t>(environment_map_width),
+                         static_cast<std::uint32_t>(environment_map_height),
+                         environment_map_format,
+                         vk::ImageUsageFlagBits::eSampled |
+                             vk::ImageUsageFlagBits::eTransferDst);
+        render_resources.environment_map_view =
+            create_image_view(context.device.get(),
+                              render_resources.environment_map.image.get(),
+                              environment_map_format);
+        create_environment_map_sampler(context, render_resources);
+
+        const auto command_buffer =
+            begin_one_time_submit_command_buffer(context);
+
+        constexpr vk::ImageSubresourceRange subresource_range {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1};
+
+        const vk::ImageMemoryBarrier image_memory_barrier {
+            .srcAccessMask = vk::AccessFlagBits::eNone,
+            .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = render_resources.environment_map.image.get(),
+            .subresourceRange = subresource_range};
+
+        command_buffer->pipelineBarrier(
+            vk::PipelineStageFlagBits::eTopOfPipe,
+            vk::PipelineStageFlagBits::eRayTracingShaderKHR,
+            {},
+            {},
+            {},
+            {image_memory_barrier});
+
+        end_one_time_submit_command_buffer(context, command_buffer);
+    }
 
     create_blas(context, render_resources);
     create_tlas(context, render_resources);
